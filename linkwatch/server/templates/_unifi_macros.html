@@ -3,12 +3,12 @@
 {% macro bw_chart(integ, key, h=200, label='Bandwidth') %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Download</span><span><i style="background:var(--s2)"></i>Upload</span></div>
 <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ key|urlencode }}" data-unit="bps" data-h="{{ h }}" data-label="{{ label }}" data-series='[{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)"}]'></div>{% endmacro %}
 {% macro where(c, iid) %}{% if c.wired %}{{ c.switch or 'Wired' }}{% if c.switch_port %} <span class="dim">port {{ c.switch_port }}</span>{% endif %}{% else %}<a href="/unifi/{{ iid }}/ssids/{{ c.ssid|urlencode }}">{{ c.ssid or 'Wi-Fi' }}</a>{% if c.ap %} <span class="dim">on {{ c.ap }}</span>{% endif %}{% endif %}{% endmacro %}
-{% set ATTACH = {'uplink': 'behind an uplink', 'unifi': 'behind a UniFi device', 'shared': 'shared port', 'neighbour': 'behind a neighbour', 'gateway': 'learned by the gateway', 'unknown': 'not placed'} %}
+{% set ATTACH = {'behind_phone': 'behind a desk phone', 'uplink': 'behind an uplink', 'unifi': 'behind a UniFi device', 'shared': 'shared port', 'neighbour': 'behind a neighbour', 'gateway': 'learned by the gateway', 'unknown': 'not placed'} %}
 {% macro client_rows(clients, iid) %}{% for c in clients %}
 <tr data-kind="{{ 'wired' if c.wired else 'wifi' }}" data-direct="{{ 'no' if c.direct == false else 'yes' }}" data-q="{{ [c.name, c.hostname, c.ip, c.mac, c.vendor, c.ssid, c.ap, c.switch, c.network]|select|join(' ')|lower }}">
   <td><a class="row" href="/unifi/{{ iid }}/clients/{{ c.mac }}">{{ c.name }}</a>{% if c.guest %} <span class="tag">guest</span>{% endif %}<div class="dim" style="font-size:12px">{{ c.vendor or '' }}</div></td>
   <td class="mono nw">{{ c.ip or '' }}</td>
-  <td>{{ where(c, iid) }}{% if c.direct == false %} <span class="tag" title="{{ c.attach_note or '' }}">{{ ATTACH.get(c.attach, 'indirect') }}</span>{% endif %}</td>
+  <td>{{ where(c, iid) }}{% if c.attach == 'phone' %} <span class="tag" title="A PC is plugged in through it">desk phone</span>{% endif %}{% if c.direct == false %} <span class="tag" title="{{ c.attach_note or '' }}">{{ ATTACH.get(c.attach, 'indirect') }}</span>{% endif %}</td>
   <td class="nw">{% if not c.wired %}{{ c.band or '' }}{% if c.channel %} <span class="dim">ch {{ c.channel }}</span>{% endif %}{% endif %}</td>
   <td class="n" data-v="{{ c.signal if c.signal is not none else -999 }}">{% if not c.wired %}{{ signal(c.signal) }}{% endif %}</td>
   <td class="n" data-v="{{ c.tx_rate_mbps or 0 }}">{% if c.tx_rate_mbps %}{{ c.tx_rate_mbps|round|int }} / {{ (c.rx_rate_mbps or 0)|round|int }} Mb/s{% endif %}</td>

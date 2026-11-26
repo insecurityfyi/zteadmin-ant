@@ -106,6 +106,7 @@ class User(Base):
     auth_source: Mapped[str | None] = mapped_column(String(16))      # None/local | saml (no usable password)
     external_id: Mapped[str | None] = mapped_column(String(255))     # Entra object ID for SSO users
     theme: Mapped[str | None] = mapped_column(String(16))           # None = the site default
+    layout: Mapped[str | None] = mapped_column(String(16))          # top | sidebar; None = the site default or the theme's
     dashboard: Mapped[list | None] = mapped_column(JSON)            # widget layout; None = the site default
 
 

@@ -14,8 +14,10 @@
 
   function draw(host, data, series, opts) {
     const ts = data.ts.map(t => Date.parse(t));
-    if (ts.length < 2) { host.innerHTML = '<div class="empty">Not enough data yet. Graphs fill in after a few polls.</div>'; return; }
-    const W = Math.max(280, host.clientWidth || 600), H = +(opts.h || 160), L = 52, R = 10, T = 8, B = 22;
+    if (ts.length < 2) { host.innerHTML = opts.spark ? "" : '<div class="empty">Not enough data yet. Graphs fill in after a few polls.</div>'; return; }
+    const spark = !!opts.spark;
+    const W = spark ? Math.max(60, host.clientWidth || 96) : Math.max(280, host.clientWidth || 600), H = +(opts.h || 160);
+    const L = spark ? 2 : 52, R = spark ? 4 : 10, T = spark ? 4 : 8, B = spark ? 4 : 22;
     const vals = series.flatMap(s => data[s.key].filter(v => v != null));
     const min = opts.min ? +opts.min : 0;
     let max = opts.max ? +opts.max : nice((Math.max(0, ...vals) || 1) * 1.1);
@@ -24,13 +26,13 @@
     const x = t => L + (W - L - R) * (t - t0) / (t1 - t0), y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
     const f = opts.suffix ? (v => (Math.abs(v) < 10 && v !== 0 ? v.toFixed(1) : Math.round(v)) + " " + opts.suffix) : fmt[opts.unit || "num"];
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.label || "chart" });
-    for (let k = 0; k <= 4; k++) {
+    for (let k = 0; k <= 4 && !spark; k++) {
       const v = min + (max - min) * k / 4, yy = y(v);
       svg.append(el("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "gl" }));
       const t = el("text", { x: L - 6, y: yy + 3.5, "text-anchor": "end", class: "ax" }); t.textContent = f(v); svg.append(t);
     }
     const span = t1 - t0, ticks = W < 520 ? 2 : 4;
-    for (let k = 0; k <= ticks; k++) {
+    for (let k = 0; k <= ticks && !spark; k++) {
       const tt = t0 + span * k / ticks, d = new Date(tt);
       const label = span > 2 * 86400e3 ? d.toLocaleDateString([], { day: "numeric", month: "short" }) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
       const t = el("text", { x: x(tt), y: H - 5, "text-anchor": k === 0 ? "start" : k === ticks ? "end" : "middle", class: "ax" });
@@ -42,7 +44,7 @@
       if (cur.length) segs.push(cur);
       segs.forEach(seg => {
         const d = seg.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L");
-        if (s.area !== false && !s.dash) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": .12 }));
+        if (s.area !== false && !s.dash) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": spark ? .18 : .12 }));
         svg.append(el("path", { d: "M" + d, fill: "none", stroke: s.color, "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-dasharray": s.dash ? "4 3" : "" }));
       });
       const last = segs.length ? segs[segs.length - 1].slice(-1)[0] : null;
@@ -66,6 +68,10 @@
   window.lwCharts = { reload: all, load };
   document.addEventListener("DOMContentLoaded", () => {
     all();
+    document.querySelectorAll("[data-range-select]").forEach(sel => sel.addEventListener("change", () => {
+      document.querySelectorAll("[data-range-set]").forEach(o => o.setAttribute("aria-pressed", o.dataset.rangeSet === sel.value));
+      document.querySelectorAll(".fig[data-src]").forEach(f => { f.dataset.range = sel.value; load(f); });
+    }));
     document.querySelectorAll("[data-range-set]").forEach(b => b.addEventListener("click", () => {
       document.querySelectorAll("[data-range-set]").forEach(o => o.setAttribute("aria-pressed", o === b));
       document.querySelectorAll(".fig[data-src]").forEach(f => { f.dataset.range = b.dataset.rangeSet; load(f); });

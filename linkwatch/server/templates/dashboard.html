@@ -61,6 +61,49 @@
 {% elif w.type == 'map' %}
   <svg id="netmap" data-src="/ui/map?site={{ c.site|urlencode }}" data-focus="" style="display:block;width:100%;height:{{ c.height }}px;cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
   <div id="map-empty" class="empty-state" hidden><p>No LLDP or CDP links yet. <a href="/map">Open the map</a> for details.</p></div>
+{% elif w.type == 'cards' %}
+  <div class="kcards">
+    <div class="kcard"><span>Total devices</span><b>{{ c.total|num }}</b><em>{% if c.new_7d %}<span class="okc">↑ {{ c.new_7d }}</span> added in 7 days{% else %}monitored{% endif %}</em>
+      <div class="kv-ic"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg></div></div>
+    <div class="kcard"><span>Online</span><b>{{ c.up|num }}</b><em>{% if c.up_pct is not none %}<span class="{{ 'okc' if c.up_pct >= 95 else 'wa' }}">{{ c.up_pct|round(1) }}%</span> of devices{% else %}&nbsp;{% endif %}</em>
+      <div class="kv-ic"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="var(--up)" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M7.5 12.5l3 3 6-6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+    <div class="kcard"><span>Offline / critical</span><b class="{{ 'bad' if c.down or c.crit else '' }}">{{ c.down|num }}{% if c.crit %}<small class="bad">/ {{ c.crit }}</small>{% endif %}</b><em>{% if c.down or c.crit %}{{ c.down }} down, {{ c.crit }} critical alert{{ '' if c.crit == 1 else 's' }}{% elif c.warn %}<span class="wa">{{ c.warn }} need attention</span>{% else %}<span class="okc">none</span>{% endif %}</em>
+      <div class="kv-ic"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="{{ 'var(--down)' if c.down or c.crit else 'var(--off)' }}" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01" stroke-linecap="round"/></svg></div></div>
+    <div class="kcard"><span>Average latency</span><b>{% if c.latency is not none %}{{ c.latency|round|int if c.latency >= 10 else c.latency|round(1) }}<small>ms</small>{% else %}–{% endif %}</b><em>across reachable devices</em>
+      <div class="kv-ic"><div class="fig spark" data-src="/ui/metrics/network" data-spark="1" data-h="44" data-unit="ms" data-label="Average latency" data-series='[{"key":"ping","color":"var(--s1)"}]'></div></div></div>
+    <div class="kcard"><span>Bandwidth now</span><b>{{ c.bw_value }}<small>{{ c.bw_unit }}</small></b><em>{{ c.bw_in|bps }} in · {{ c.bw_out|bps }} out</em>
+      <div class="kv-ic"><div class="fig spark" data-src="/ui/metrics/network" data-spark="1" data-h="44" data-unit="bps" data-label="Bandwidth" data-series='[{"key":"bw","color":"var(--s2)"}]'></div></div></div>
+  </div>
+{% elif w.type == 'net_traffic' %}
+  <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Inbound</span><span><i style="background:var(--s2)"></i>Outbound</span></div>
+  <div class="fig" data-src="/ui/metrics/network{{ '?ports=edge' if c.scope == 'edge' else '' }}" data-unit="bps" data-h="{{ 330 if c.tall else 220 }}" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]' data-label="Network traffic"></div>
+  <p class="help" style="margin:6px 0 0">{{ 'Ports on routers and firewalls.' if c.scope == 'edge' else 'Summed over every monitored port, so links between two monitored devices count twice.' }}</p>
+{% elif w.type == 'health' %}
+  {% if c.score is none %}<p class="dim" style="margin:0">No devices yet.</p>
+  {% else %}{% set r = 52 %}{% set circ = 2 * 3.14159 * r %}
+  <div class="ring"><svg viewBox="0 0 130 130" role="img" aria-label="Health score {{ c.score }} of 100, {{ c.label }}">
+      <circle cx="65" cy="65" r="{{ r }}" fill="none" stroke="var(--soft)" stroke-width="10"/>
+      <circle cx="65" cy="65" r="{{ r }}" fill="none" stroke="{{ c.color }}" stroke-width="10" stroke-linecap="round" stroke-dasharray="{{ (circ * c.score / 100)|round(1) }} {{ circ|round(1) }}" transform="rotate(-90 65 65)"/>
+      <text x="65" y="62" text-anchor="middle" style="font:700 30px var(--display);fill:var(--ink)">{{ c.score }}</text>
+      <text x="65" y="80" text-anchor="middle" style="font:500 13px var(--body);fill:var(--mute)">/100</text>
+      <text x="65" y="97" text-anchor="middle" style="font:600 13px var(--body);fill:{{ c.color }}">{{ c.label }}</text></svg>
+    <div style="font-size:13.5px"><span class="dot {{ 'd-up' if c.ok else 'd-down' }}"></span> {{ c.note }}</div></div>
+  {% endif %}
+{% elif w.type == 'device_table' %}
+  <div data-dtable data-per="{{ c.per_page }}">
+    <div class="filters" style="justify-content:flex-end;margin:-6px 0 8px"><input type="search" placeholder="Search devices…" aria-label="Search devices" style="font:14px var(--body);padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:min(360px,100%)"></div>
+    <div class="scroll"><table><thead><tr><th>Hostname</th><th>IP address</th><th>Status</th><th>Location</th><th>Poller</th><th>CPU %</th><th>Memory %</th><th>Last poll</th></tr></thead><tbody>
+    {% for d in c.devices %}{% set lbl = {'up':'Online','down':'Offline','warn':'Warning','off':'Disabled'}.get(d.status, 'Unknown') %}
+      <tr data-q="{{ [d.hostname, d.ip, d.site.name if d.site else '', d.poller.name if d.poller else '', lbl, d.type]|select|join(' ')|lower }}">
+        <td><a class="row" href="/devices/{{ d.id }}">{{ d.hostname }}</a></td><td class="mono">{{ d.ip or '' }}</td>
+        <td><span class="pill {{ d.status }}">{{ lbl }}</span></td><td>{{ d.site.name if d.site else '' }}</td>
+        <td>{{ d.poller.name if d.poller else (d.integration.name if d.integration else '') }}</td>
+        <td>{% if d.cpu is not none and d.status != 'down' %}<span class="mbar">{{ d.cpu|round|int }}%<i><b style="width:{{ [d.cpu, 100]|min }}%"></b></i></span>{% else %}<span class="dim">–</span>{% endif %}</td>
+        <td>{% if d.mem is not none and d.status != 'down' %}<span class="mbar">{{ d.mem|round|int }}%<i><b style="width:{{ [d.mem, 100]|min }}%"></b></i></span>{% else %}<span class="dim">–</span>{% endif %}</td>
+        <td class="nw dim">{{ d.last_polled|ago if d.last_polled else '–' }}</td></tr>
+    {% else %}<tr><td colspan="8" class="dim">No devices yet.</td></tr>{% endfor %}</tbody></table></div>
+    <div class="pager"><span data-showing></span><span class="pg" data-pages></span></div>
+  </div>
 {% elif w.type == 'note' %}
   {% if c.text %}<div class="note" style="white-space:pre-wrap;overflow-wrap:anywhere">{{ c.text|urlize(40, true) }}</div>{% else %}<p class="dim" style="margin:0">Add some text in this widget's settings.</p>{% endif %}
 {% endif %}
@@ -93,7 +136,8 @@
     <form method="post" action="/account/dashboard/reset" onsubmit="return confirm('Throw away your layout and use the default?')"><button class="btn" type="submit">Reset</button></form>
     {% if me and me.role == 'admin' %}<form method="post" action="/admin/dashboard/default" title="Everyone who hasn't customised their own dashboard sees this layout"><button class="btn" type="submit">Make default for everyone</button></form>{% endif %}
     <a class="btn pri" href="/" id="w-done">Done</a>
-  {% else %}<a class="btn" href="/?edit=1">Customise</a>{% endif %}
+  {% else %}<select data-range-select aria-label="Time range" style="width:auto"><option value="6h">Last 6 hours</option><option value="24h" selected>Last 24 hours</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
+    <a class="btn" href="/?edit=1">Customise</a>{% endif %}
   </div></div>
 
 {% if n_devices == 0 and not edit and layout_source != 'user' %}
@@ -106,12 +150,12 @@
 {% if edit %}<p class="help" id="w-hint">Drag widgets by their handle to move them, or use the arrows. Changes save as you go. {% if layout_source != 'user' %}You're starting from the {{ 'site default' if layout_source == 'site' else 'built-in' }} layout; your changes only affect your own dashboard.{% endif %}</p>{% endif %}
 <div class="grid{{ ' editing' if edit }}" id="widgets" data-layout='{{ layout_json }}'>
 {% for w in widgets %}
-  <section class="p c{{ w.w }} widget" id="w-{{ w.id }}" data-id="{{ w.id }}" data-type="{{ w.type }}" data-w="{{ w.w }}" data-opts='{{ w.opts|tojson }}'{% if w.type == 'summary' and not edit %} style="padding:0;background:none;border:0;box-shadow:none"{% endif %}>
-    {% if edit or w.type != 'summary' %}<div class="ph">
+  <section class="p c{{ w.w }} widget{{ ' tall' if w.type == 'net_traffic' and w.opts.size == 'tall' }}" id="w-{{ w.id }}" data-id="{{ w.id }}" data-type="{{ w.type }}" data-w="{{ w.w }}" data-opts='{{ w.opts|tojson }}'{% if w.type in ('summary', 'cards') and not edit %} style="padding:0;background:none;border:0;box-shadow:none"{% endif %}>
+    {% if edit or w.type not in ('summary', 'cards') %}<div class="ph">
       {% if edit %}<span class="w-handle" draggable="true" title="Drag to move" aria-hidden="true">⠿</span>{% endif %}
       <h2>{{ title(w) }}</h2>
       {% if not edit %}
-        {% if w.type in ('traffic', 'device_graph') %}{{ ranges() }}{% elif w.type == 'alerts' %}<a href="/alerts" class="sub">View all</a>{% elif w.type == 'map' %}<a href="/map" class="sub">Open</a>{% elif w.type == 'events' %}<a href="/eventlog" class="sub">View all</a>{% elif w.type == 'busiest' %}<a href="/ports?sort=util" class="sub">All ports</a>{% endif %}
+        {% if w.type in ('traffic', 'device_graph') %}{{ ranges() }}{% elif w.type == 'device_table' %}<a href="/devices" class="sub">All devices</a>{% elif w.type == 'alerts' %}<a href="/alerts" class="sub">View all</a>{% elif w.type == 'map' %}<a href="/map" class="sub">Open</a>{% elif w.type == 'events' %}<a href="/eventlog" class="sub">View all</a>{% elif w.type == 'busiest' %}<a href="/ports?sort=util" class="sub">All ports</a>{% endif %}
       {% else %}
         <div class="w-tools">
           <button class="btn sm" type="button" data-move="-1" title="Move earlier" aria-label="Move earlier">←</button><button class="btn sm" type="button" data-move="1" title="Move later" aria-label="Move later">→</button>
@@ -129,4 +173,28 @@
 </div>
 {% if widgets|selectattr('type','equalto','map')|list %}<script src="/static/map.js?v={{ version }}" defer></script>{% endif %}
 {% if edit %}<script src="/static/dashboard.js?v={{ version }}" defer></script>{% endif %}
+{% if widgets|selectattr('type','equalto','device_table')|list %}<script>
+document.querySelectorAll("[data-dtable]").forEach(box => {
+  const rows = [...box.querySelectorAll("tbody tr[data-q]")], per = +box.dataset.per || 10, q = box.querySelector("input[type=search]");
+  const showing = box.querySelector("[data-showing]"), pages = box.querySelector("[data-pages]");
+  let page = 1;
+  const btn = (label, p, cur, dis) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+    if (cur) b.setAttribute("aria-current", "true"); b.disabled = !!dis; b.addEventListener("click", () => { page = p; draw(); }); return b; };
+  function draw() {
+    const t = q.value.trim().toLowerCase(), hits = rows.filter(r => !t || r.dataset.q.includes(t)), n = Math.max(1, Math.ceil(hits.length / per));
+    page = Math.min(page, n);
+    rows.forEach(r => { r.hidden = true; });
+    hits.slice((page - 1) * per, page * per).forEach(r => { r.hidden = false; });
+    showing.textContent = hits.length ? `Showing ${(page - 1) * per + 1} to ${Math.min(page * per, hits.length)} of ${hits.length} devices` : "No matching devices";
+    const list = [btn("‹", page - 1, false, page === 1)];
+    const want = new Set([1, n, page - 1, page, page + 1].filter(p => p >= 1 && p <= n));
+    let last = 0;
+    [...want].sort((a, b) => a - b).forEach(p => { if (p - last > 1) { const s = document.createElement("span"); s.textContent = "…"; s.style.padding = "0 4px"; list.push(s); } list.push(btn(String(p), p, p === page)); last = p; });
+    list.push(btn("›", page + 1, false, page === n));
+    pages.replaceChildren(...list);
+  }
+  q.addEventListener("input", () => { page = 1; draw(); });
+  draw();
+});
+</script>{% endif %}
 {% endblock %}

@@ -5,7 +5,17 @@ from sqlalchemy import select
 
 from linkwatch.server.alerts import Alerter
 from linkwatch.server.ingest import ingest_batch, ingest_integration
-from linkwatch.server.models import Alert, Device, DeviceMetric, Event, Integration, Poller, Port, SnmpProfile, User
+from linkwatch.server.models import (
+    Alert,
+    Device,
+    DeviceMetric,
+    Event,
+    Integration,
+    Poller,
+    Port,
+    SnmpProfile,
+    User,
+)
 
 from .test_ingest import batch, make_db, snmp_item
 from .test_server import enroll
@@ -68,13 +78,66 @@ def test_themes_site_default_and_per_user(logged_in, app):
     logged_in.post("/admin/theme", data={"theme": "midnight"})
     assert 'data-theme="midnight"' in logged_in.get("/").text
     logged_in.post("/account/theme", data={"theme": "graphite"})
-    assert '<html lang="en" data-theme="graphite">' in logged_in.get("/").text
+    assert '<html lang="en" data-theme="graphite" data-layout="top">' in logged_in.get("/").text
     logged_in.post("/account/theme", data={"theme": ""})             # back to the site default
-    assert '<html lang="en" data-theme="midnight">' in logged_in.get("/").text
+    assert '<html lang="en" data-theme="midnight" data-layout="top">' in logged_in.get("/").text
     logged_in.post("/admin/theme", data={"theme": "nonsense"})
-    assert '<html lang="en" data-theme="auto">' in logged_in.get("/").text
+    assert '<html lang="en" data-theme="auto" data-layout="top">' in logged_in.get("/").text
     with app.state.lw.db.session() as s:
         assert s.scalar(select(User.theme).where(User.username == "admin")) is None
+
+
+def test_navy_console_theme_sidebar_and_dashboard(logged_in, app):
+    from datetime import timedelta
+
+    from linkwatch.server.models import (
+        Alert,
+        Device,
+        DeviceMetric,
+        Port,
+        PortMetric,
+        Site,
+        utcnow,
+    )
+    with app.state.lw.db.session() as s:
+        site = Site(name="New York")
+        s.add(site)
+        s.flush()
+        core = Device(hostname="core-switch-01", ip="10.0.1.1", status="up", cpu=82, mem=61, ping_ms=1.5, site_id=site.id, last_polled=utcnow())
+        rtr = Device(hostname="remote-router-02", ip="192.168.5.10", status="down", type="Router", site_id=site.id)
+        s.add_all([core, rtr])
+        s.flush()
+        p1 = Port(device_id=core.id, ifindex=1, name="Te1/1/1", in_bps=4e8, out_bps=1e8)
+        p2 = Port(device_id=rtr.id, ifindex=1, name="ge-0/0/0", in_bps=2e8, out_bps=2e8)
+        s.add_all([p1, p2, Alert(rule_key="device_down", ref="x", device_id=rtr.id, severity="crit", title="Device down: remote-router-02", state="open")])
+        s.flush()
+        now = utcnow()
+        for k in range(4):
+            ts = now - timedelta(minutes=5 * k + 1)
+            s.add_all([PortMetric(port_id=p1.id, ts=ts, in_bps=100.0 + k, out_bps=10.0), PortMetric(port_id=p2.id, ts=ts, in_bps=50.0, out_bps=5.0),
+                       DeviceMetric(device_id=core.id, ts=ts, cpu=80.0, mem=60.0, ping_ms=2.0)])
+
+    logged_in.post("/admin/theme", data={"theme": "navy"})
+    page = logged_in.get("/").text
+    assert '<html lang="en" data-theme="navy" data-layout="sidebar">' in page and "family=Inter" in page
+    assert 'class="m side-only' in page and "Administration" in page            # sidebar extras
+    for text in ("Total devices", "Offline / critical", "Average latency", "Bandwidth now", "Network traffic", "Overall health",
+                 "Highest CPU", "core-switch-01", 'class="pill down"', "Offline", "data-dtable", "data-range-select", "widget tall"):
+        assert text in page, text
+    assert "1 device down, 1 critical alert" in page and ">45<" in page    # 50% up, less 5 for the critical alert
+
+    series = logged_in.get("/ui/metrics/network?range=6h").json()
+    assert len(series["ts"]) >= 2 and max(series["in"]) == 153.0 and series["ping"][0] == 2.0
+    assert logged_in.get("/ui/metrics/network?range=6h&ports=edge").json()["in"][0] == 50.0
+
+    # the layout can be chosen per site and per user
+    logged_in.post("/admin/theme", data={"theme": "navy", "layout": "top"})
+    assert 'data-layout="top"' in logged_in.get("/").text
+    logged_in.post("/account/theme", data={"theme": "light", "layout": "sidebar"})
+    page = logged_in.get("/account").text
+    assert '<html lang="en" data-theme="light" data-layout="sidebar">' in page and "<title>Your account · Linkwatch</title>" in page
+    # the Navy layout is only the starting point for that theme
+    assert "Overall health" not in logged_in.get("/").text
 
 
 def test_ping_only_hosts_can_be_skipped_and_bulk_disabled(logged_in, app):

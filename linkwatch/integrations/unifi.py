@@ -28,6 +28,7 @@ keeps the latest snapshot plus time series for the UniFi dashboard.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -357,10 +358,31 @@ def _mac(v: Any) -> str:
     return str(v or "").strip().lower()
 
 
+PHONE_VENDORS = ("polycom", "poly ", "plantronics", "yealink", "avaya", "mitel", "aastra", "grandstream", "snom", "cisco spa",
+                 "fanvil", "htek", "obihai", "panasonic", "unify", "siemens enterprise", "alcatel-lucent ent", "shoretel",
+                 "nec platforms", "spectralink", "algo")
+PHONE_NAME = re.compile(r"(^|[-_. ])(phone|voip|sip|vvx|polycom|yealink|deskphone)([-_. 0-9]|$)|^sep[0-9a-f]{12}$|^cp-?\d{4}", re.IGNORECASE)
+
+
+def _phone_score(c: dict, lldp_macs: set[str]) -> int:
+    """How sure we are this is a desk phone: it speaks LLDP on the port (LLDP-MED) 3, phone vendor 2, phone-like name 1."""
+    if _mac(c.get("mac")) in lldp_macs:
+        return 3
+    vendor = f" {str(c.get('vendor') or '').lower()} "
+    if any(v in vendor for v in PHONE_VENDORS):
+        return 2
+    return 1 if any(PHONE_NAME.search(str(c.get(k) or "")) for k in ("name", "hostname")) else 0
+
+
+def _is_phone(c: dict, lldp_macs: set[str]) -> bool:
+    return _phone_score(c, lldp_macs) > 0
+
+
 def attachment(devices: list[dict], clients: list[dict], site: str, names: dict) -> list[dict]:
     """Marks each client direct or not (sets ``direct``, ``attach`` and ``attach_note``) and returns one row per switch port.
 
-    ``attach`` is one of: wifi, port (direct), uplink, unifi, shared, neighbour, gateway (not direct).
+    ``attach`` is one of: wifi, port, phone (direct); behind_phone, uplink, unifi, shared, neighbour, gateway (not direct).
+    A desk phone with a PC plugged into it counts as direct; the PC behind it doesn't.
     """
     by_mac = {_mac(d.get("mac")): d for d in devices}
     # ports that lead to another UniFi device: that device reports which port of which switch it hangs off
@@ -399,19 +421,31 @@ def attachment(devices: list[dict], clients: list[dict], site: str, names: dict)
             macs = {_mac(c["mac"]) for c in here}
             others = [n for n in lldp.get(idx, []) if _mac(n.get("chassis_id")) not in macs]
             neighbour = next((str(n.get("system_name") or n.get("chassis_name") or n.get("chassis_id") or "") for n in others), None)
+            phone = None
+            if len(here) == 2:
+                lldp_macs = {_mac(n.get("chassis_id")) for n in lldp.get(idx, [])}
+                a, b = (_phone_score(c, lldp_macs) for c in here)
+                phone = here[0] if a > b else here[1] if b > a else None      # a tie means we can't tell which is the phone
             if p.get("is_uplink"):
                 role, note = "uplink", "Uplink port"
             elif key in downlinks:
                 role, note = "unifi", f"Port to {downlinks[key]}"
             elif others:
                 role, note = "neighbour", f"LLDP neighbour {neighbour}"
+            elif phone is not None:
+                pc = next(c for c in here if c is not phone)
+                role, note = "phone", f"Desk phone {phone['name']} with {pc['name']} plugged into it"
+                phone["attach_role"], pc["attach_role"] = "phone", "behind_phone"
+                pc["attach_via"] = phone["name"]
             elif len(here) > 1:
-                role, note = "shared", f"{len(here)} MACs on this port: a switch, hub or phone passthrough"
+                role, note = "shared", f"{len(here)} MACs on this port: a switch or hub"
             elif here:
                 role, note = "client", ""
             else:
                 role, note = ("empty" if p.get("up") else "down"), ""
             info[key] = {"role": role, "note": note}
+            if phone is not None:   # phone first, then the PC behind it
+                here = [phone] + [c for c in here if c is not phone]
             if d.get("type") in ("usw", "udm", "uxg", "ugw") or here or p.get("is_uplink"):
                 alias = p.get("name") if p.get("name") and p.get("name") != f"Port {idx}" else ""
                 rows.append({"switch": names.get(d.get("mac")) or d.get("name") or d.get("mac"), "switch_mac": d.get("mac"), "site": site,
@@ -431,7 +465,11 @@ def attachment(devices: list[dict], clients: list[dict], site: str, names: dict)
             except (TypeError, ValueError):
                 key = ("", 0)
             role = info.get(key, {"role": "client" if key[0] in by_mac else "gateway", "note": ""})
-            c["attach"] = "port" if role["role"] == "client" else role["role"]
-            c["attach_note"] = role["note"] or ("" if c["attach"] == "port" else "Switch port not reported")
-        c["direct"] = c["attach"] in ("wifi", "port")
+            if role["role"] == "phone":
+                c["attach"] = c.pop("attach_role")
+                c["attach_note"] = f"Plugged into desk phone {c.pop('attach_via')}" if c["attach"] == "behind_phone" else "Desk phone"
+            else:
+                c["attach"] = "port" if role["role"] == "client" else role["role"]
+                c["attach_note"] = role["note"] or ("" if c["attach"] == "port" else "Switch port not reported")
+        c["direct"] = c["attach"] in ("wifi", "port", "phone")
     return rows
