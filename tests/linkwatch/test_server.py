@@ -261,3 +261,34 @@ def test_integration_pages_with_sparse_data(logged_in, app):
     for iid in ids:
         assert logged_in.get(f"/integrations/{iid}/overview").status_code == 200, iid
     assert logged_in.get(f"/integrations/{ids[0]}/overview?tab=zia").status_code == 200
+
+
+def test_outdated_poller_is_explained(logged_in, app):
+    from linkwatch.server.models import Integration
+    ident = enroll(logged_in)
+    with app.state.lw.db.session() as s:
+        s.add(Integration(kind="sonicwall", name="TZ", config_enc=app.state.lw.vault.seal({"host": "fw", "username": "u", "password": "p"}),
+                          poller_id=ident["poller_id"], enabled=True, status="never"))
+    with logged_in.websocket_connect("/api/poller/ws", headers={"Authorization": f"Bearer {ident['key']}"}) as ws:
+        json.loads(ws.receive_text())
+        ws.send_text(json.dumps({"type": "hello", "version": "0.1.0", "hostname": "old-box"}))      # an old image: no list
+        ws.send_text(json.dumps({"type": "results", "batch_id": "b1", "items": []}))
+        json.loads(ws.receive_text())
+    with app.state.lw.db.session() as s:
+        integ = s.scalar(select(Integration).where(Integration.kind == "sonicwall"))
+        assert integ.status == "error" and "older image" in integ.last_error and "install-poller.sh" in integ.last_error
+    assert "update available" in logged_in.get("/pollers").text
+    # an error string from an old poller is rewritten too
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    with app.state.lw.db.session() as s:
+        integ = s.scalar(select(Integration).where(Integration.kind == "sonicwall"))
+        ingest_integration(s, Alerter(s), integ, {"ok": False, "error": "Unknown integration type 'sonicwall'"})
+        assert "doesn't support SonicWall" in integ.last_error
+    with logged_in.websocket_connect("/api/poller/ws", headers={"Authorization": f"Bearer {ident['key']}"}) as ws:
+        json.loads(ws.receive_text())
+        from linkwatch.integrations import REGISTRY
+        ws.send_text(json.dumps({"type": "hello", "version": "0.1.0", "integrations": sorted(REGISTRY)}))
+        ws.send_text(json.dumps({"type": "results", "batch_id": "b2", "items": []}))
+        json.loads(ws.receive_text())
+    assert "update available" not in logged_in.get("/pollers").text

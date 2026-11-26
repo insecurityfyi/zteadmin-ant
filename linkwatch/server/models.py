@@ -51,6 +51,7 @@ class Poller(Base):
     last_ip: Mapped[str | None] = mapped_column(String(64))
     last_cycle_ms: Mapped[int | None] = mapped_column(Integer)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    integrations: Mapped[list | None] = mapped_column(JSON)    # integration kinds its image supports (None = too old to say)
 
 
 class EnrollToken(Base):

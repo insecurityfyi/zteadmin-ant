@@ -121,8 +121,9 @@ class Poller:
                     self.ws = ws
                     backoff = 2.0
                     log.info("Connected to %s", self.ws_url)
+                    from ..integrations import REGISTRY
                     await ws.send(json.dumps({"type": "hello", "version": __version__, "hostname": socket.gethostname(),
-                                              "spooled": len(self.spool)}))
+                                              "spooled": len(self.spool), "integrations": sorted(REGISTRY)}))
                     for batch in self.spool.pending():
                         await ws.send(json.dumps(batch))
                     while self.outbox:

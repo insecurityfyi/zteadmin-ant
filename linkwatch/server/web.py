@@ -648,7 +648,8 @@ def pollers(request: Request):
     new_token = request.session.pop("new_token", None)
     return render(request, "pollers.html", {"pollers": rows, "counts": counts, "integ_counts": integ_counts,
                                             "connected": set(st(request).hub.conns), "interval": interval,
-                                            "new_token": new_token})
+                                            "new_token": new_token,
+                                            "poller_kinds": sorted(k for k, c in REGISTRY.items() if c.runs_on == "poller")})
 
 
 @router.post("/pollers/token")
