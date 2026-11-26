@@ -4,7 +4,7 @@ Two things live in this repository:
 
 * **Linkwatch** (`linkwatch/`): self-hosted network monitoring with
   outbound-only remote pollers. Runs on the CentOS Stream 10 VPS (9 also works) at
-  `utilz.perrego.net` and deploys from GitHub on every push to `main`.
+  `utilz.perrego.net` and updates from GitHub with `deploy/update.sh` on the VPS.
 * **Zscaler Toolbox, ZIA module** (`app/`): the earlier ZIA console. Its
   OneAPI work now also powers Linkwatch's Zscaler integration.
 
@@ -23,7 +23,7 @@ Two things live in this repository:
 linkwatch/server        FastAPI web app, PostgreSQL (SQLite for local runs), alerting
 linkwatch/poller        the LAN poller (pysnmp, ping, local APIs, spool)
 linkwatch/integrations  one module per platform, shared by server and poller
-deploy/                 Quadlet units, nginx site, deploy.sh, bootstrap-centos9.sh
+deploy/                 Quadlet units, nginx site, update.sh, deploy.sh, bootstrap-centos9.sh
 docs/                   install-centos9.md (VPS walkthrough, firewalld), poller.md
 ```
 
