@@ -1,8 +1,8 @@
 # Installing Linkwatch on the CentOS Stream 10 VPS
 
 This guide sets up `utilz.perrego.net` (VPS `129.121.123.176`, deploy account
-`aperrego`) so that every push to `main` on GitHub deploys the app
-automatically.
+`aperrego`) so that after every push to `main` on GitHub, one command on the
+VPS (`deploy/update.sh`) pulls and deploys the new version.
 
 When you're done:
 
@@ -10,7 +10,7 @@ When you're done:
 Internet ──443──▶ firewalld ──▶ nginx (TLS, Let's Encrypt) ──▶ 127.0.0.1:8080 linkwatch-web ──▶ linkwatch-db
                                                                     ▲
 Your LAN: poller ──outbound wss://utilz.perrego.net/api/poller/ws ──┘   (nothing ever connects into your LAN)
-GitHub Actions ──ssh as aperrego──▶ deploy.sh: pull image, restart, health check, roll back on failure
+You on the VPS: update.sh ── git pull from GitHub, build image, restart, health check, roll back on failure
 ```
 
 There are two ways to do steps 2 to 9:
@@ -281,7 +281,7 @@ cp ~/zteadmin-ant/deploy/quadlet/* ~/linkwatch/quadlet/
 cp ~/zteadmin-ant/deploy/deploy.sh ~/linkwatch/ && chmod +x ~/linkwatch/deploy.sh
 ```
 
-GitHub Actions copies fresh versions of these files on every deploy. This
+`update.sh` copies fresh versions of these files on every update. This
 first copy only matters for running things by hand.
 
 ### 8c. Secrets
@@ -311,75 +311,44 @@ grep LW_ADMIN_PASSWORD ~/.config/linkwatch/linkwatch.env    # your web login
 `LW_SECRET_KEY` is lost, every saved SNMP and API credential has to be
 entered again.
 
-## 9. Connect GitHub to the VPS
+## 9. First deploy and every update: `update.sh`
 
-You need a dedicated SSH key that only GitHub Actions uses.
-
-### 9a. Create the deploy key (on your own computer)
-
-```sh
-ssh-keygen -t ed25519 -f linkwatch-deploy -C "github-actions deploy" -N ""
-```
-
-This makes `linkwatch-deploy` (private) and `linkwatch-deploy.pub` (public).
-
-### 9b. Authorize it for `aperrego` (on the VPS)
+The VPS pulls new code from GitHub itself. Nothing on GitHub needs an SSH key
+to your server. The workflow is: you (or Claude) push to `main`, then on the
+VPS you run one command.
 
 ```sh
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-# paste the single line from linkwatch-deploy.pub after the word restrict:
-echo 'restrict ssh-ed25519 AAAA...your-key... github-actions deploy' >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
+~/zteadmin-ant/deploy/update.sh
 ```
 
-`restrict` turns off port forwarding, agent forwarding and terminals for this
-key. It can still run the deploy commands and copy files.
+It fast-forwards `~/zteadmin-ant` to the latest `main`, builds the web image
+with Podman (about two minutes the first time, faster after), installs the
+unit files, restarts the app, checks `/healthz`, and rolls back to the previous
+image if the new one doesn't come up. The database tables are created and
+upgraded by the app when it starts, so there's no separate migration step.
+If nothing changed since the last run it says so and stops.
 
-### 9c. Add the secrets to the repository
+Other forms:
 
-In GitHub, open **zteadmin-ant → Settings → Secrets and variables → Actions**
-and add:
-
-| Secret | Value |
+| Command | Does |
 | --- | --- |
-| `VPS_SSH_KEY` | Full contents of the private file `linkwatch-deploy` |
-| `VPS_SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -t ed25519 129.121.123.176` |
+| `update.sh --force` | Rebuild and restart even if the code didn't change |
+| `update.sh 1a2b3c4d5e6f` | Deploy that exact commit, e.g. to go back to an older version (run plain `update.sh` later to return to `main`) |
 
-The host and user default to `129.121.123.176` and `aperrego`. To change them
-later, set the repository variables `VPS_HOST` and `VPS_USER` on the same
-page, under the Variables tab.
+If the repository is private, `git fetch` needs a credential. Add a
+read-only deploy key: on the VPS run
+`ssh-keygen -t ed25519 -f ~/.ssh/github_ro -N ""`, paste `~/.ssh/github_ro.pub`
+into **GitHub → zteadmin-ant → Settings → Deploy keys** (leave *Allow write
+access* off), then
+`git -C ~/zteadmin-ant remote set-url origin git@github.com:insecurityfyi/zteadmin-ant.git`
+and add to `~/.ssh/config`:
 
-Delete the private key from your computer once it's saved in GitHub, or keep
-it in your password manager.
+```
+Host github.com
+  IdentityFile ~/.ssh/github_ro
+```
 
-### 9d. Container images
-
-The workflow publishes two images to GitHub Container Registry:
-`ghcr.io/insecurityfyi/linkwatch` (web) and `ghcr.io/insecurityfyi/linkwatch-poller`.
-The VPS logs in with the workflow's own short-lived token on every deploy, so
-the web image can stay private.
-
-For the poller on your LAN, either:
-
-* make the poller package public (**GitHub → your profile → Packages →
-  linkwatch-poller → Package settings → Change visibility**). It contains no
-  secrets. Or:
-* log in on the poller machine with a classic personal access token that has
-  only `read:packages`: `podman login ghcr.io -u insecurityfyi`.
-
-## 10. First deploy
-
-Merge the pull request (or push to `main`, or open **Actions → deploy → Run
-workflow**). The workflow:
-
-1. runs the tests,
-2. builds both images and pushes them to GHCR,
-3. copies `deploy/quadlet/*` and `deploy/deploy.sh` to the VPS,
-4. runs `deploy.sh <tag>`, which pulls the image, tags it `:current`, restarts
-   the service, polls `/healthz`, and rolls back to `:previous` if the new
-   version doesn't come up.
-
-Check it on the VPS:
+After the first run, check it:
 
 ```sh
 systemctl --user status linkwatch-db linkwatch-web
@@ -389,7 +358,7 @@ journalctl --user -u linkwatch-web -f        # live logs
 
 Then open **https://utilz.perrego.net** and sign in with `LW_ADMIN_PASSWORD`.
 
-## 11. Install the poller on your LAN
+## 10. Install the poller on your LAN
 
 In the web UI, open **Pollers → Add poller**. It shows a one-time command
 like the one below. Run it on any always-on Linux box on your network: a
@@ -425,6 +394,7 @@ Then:
 | Task | Command (as `aperrego`) |
 | --- | --- |
 | Logs | `journalctl --user -u linkwatch-web -f` |
+| Update to the latest code | `~/zteadmin-ant/deploy/update.sh` |
 | Restart | `systemctl --user restart linkwatch-web` |
 | Change admin password | edit `~/.config/linkwatch/linkwatch.env`, then restart |
 | Roll back by hand | `podman tag ghcr.io/insecurityfyi/linkwatch:previous ghcr.io/insecurityfyi/linkwatch:current && systemctl --user restart linkwatch-web` |
@@ -443,7 +413,7 @@ A nightly backup with cron (`crontab -e` as `aperrego`):
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | 502 Bad Gateway | App not running, or SELinux blocking nginx | `systemctl --user status linkwatch-web`; `getsebool httpd_can_network_connect` must be `on` |
-| Deploy job: `Permission denied (publickey)` | Deploy key not in `authorized_keys`, or `VPS_SSH_KEY` copied without its first/last lines | Repeat step 9b/9c |
+| Deploy job: `Permission denied (publickey)` | Deploy key not in `authorized_keys`, or `VPS_SSH_KEY` copied without its first/last lines | Redo the key steps under *Optional: deploy from GitHub Actions* |
 | Deploy job: `Host key verification failed` | `VPS_SSH_KNOWN_HOSTS` missing or for a different key type | Re-run `ssh-keyscan -t ed25519 129.121.123.176` and update the secret |
 | `Failed to connect to bus` when running `systemctl --user` over plain `su` | No user session | Log in as `aperrego` over SSH (not `su`), or `export XDG_RUNTIME_DIR=/run/user/$(id -u)` |
 | Services gone after reboot | Linger not enabled | `sudo loginctl enable-linger aperrego` |
@@ -451,10 +421,81 @@ A nightly backup with cron (`crontab -e` as `aperrego`):
 | Poller shows devices down but they're up | Poller can't reach UDP 161 or ICMP, or the SNMP credentials are wrong | From the poller box: `snmpget -v3 -l authPriv -u USER -a SHA -A ... -x AES -X ... DEVICE 1.3.6.1.2.1.1.5.0` |
 | Certificate didn't renew | Port 80 closed or DNS changed | `sudo certbot renew --dry-run` shows why |
 
-## Alternative: deploys without SSH from GitHub
+## Optional: deploy from GitHub Actions instead
 
-If you'd rather allow SSH only from your own IP (step 4e), the VPS can pull
-updates itself instead. Run `podman auto-update` from a systemd timer, with
+Every push to `main` already builds both images on GitHub (the poller image is
+needed on your LAN). Deploying to the VPS from GitHub is off unless you start
+it yourself: **Actions → deploy → Run workflow**. That needs the SSH key
+below; skip all of this if you use `update.sh`.
+
+You need a dedicated SSH key that only GitHub Actions uses.
+
+### Create the deploy key (on your own computer)
+
+```sh
+ssh-keygen -t ed25519 -f linkwatch-deploy -C "github-actions deploy" -N ""
+```
+
+This makes `linkwatch-deploy` (private) and `linkwatch-deploy.pub` (public).
+
+### Authorize it for `aperrego` (on the VPS)
+
+```sh
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+# paste the single line from linkwatch-deploy.pub after the word restrict:
+echo 'restrict ssh-ed25519 AAAA...your-key... github-actions deploy' >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+`restrict` turns off port forwarding, agent forwarding and terminals for this
+key. It can still run the deploy commands and copy files.
+
+### Add the secrets to the repository
+
+In GitHub, open **zteadmin-ant → Settings → Secrets and variables → Actions**
+and add:
+
+| Secret | Value |
+| --- | --- |
+| `VPS_SSH_KEY` | Full contents of the private file `linkwatch-deploy` |
+| `VPS_SSH_KNOWN_HOSTS` | Output of `ssh-keyscan -t ed25519 129.121.123.176` |
+
+The host and user default to `129.121.123.176` and `aperrego`. To change them
+later, set the repository variables `VPS_HOST` and `VPS_USER` on the same
+page, under the Variables tab.
+
+Delete the private key from your computer once it's saved in GitHub, or keep
+it in your password manager.
+
+### Container images
+
+The workflow publishes two images to GitHub Container Registry:
+`ghcr.io/insecurityfyi/linkwatch` (web) and `ghcr.io/insecurityfyi/linkwatch-poller`.
+The VPS logs in with the workflow's own short-lived token on every deploy, so
+the web image can stay private.
+
+For the poller on your LAN, either:
+
+* make the poller package public (**GitHub → your profile → Packages →
+  linkwatch-poller → Package settings → Change visibility**). It contains no
+  secrets. Or:
+* log in on the poller machine with a classic personal access token that has
+  only `read:packages`: `podman login ghcr.io -u insecurityfyi`.
+
+### What the manual run does
+
+When you press **Run workflow**, it:
+
+1. runs the tests,
+2. builds both images and pushes them to GHCR,
+3. copies `deploy/quadlet/*` and `deploy/deploy.sh` to the VPS,
+4. runs `deploy.sh <tag>`, which pulls the image, tags it `:current`, restarts
+   the service, polls `/healthz`, and rolls back to `:previous` if the new
+   version doesn't come up.
+
+## Alternative: fully automatic pulls
+
+If you want updates with no command at all, run `podman auto-update` from a systemd timer, with
 `AutoUpdate=registry` and `Image=ghcr.io/insecurityfyi/linkwatch:latest` in
 `linkwatch-web.container`. Deploys then lag a push by up to the timer's
 interval, and you lose the automatic health check and rollback in `deploy.sh`.

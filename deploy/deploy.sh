@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Runs on the VPS as the deploy user (aperrego). Called by GitHub Actions:
+# Runs on the VPS as the deploy user (aperrego). Called by update.sh (image
+# built locally) or by the manual GitHub Actions deploy:
 #   deploy.sh <image-tag>
-# Pulls ghcr.io/insecurityfyi/linkwatch:<tag>, makes it :current, restarts the
-# service, and rolls back to :previous if the health check fails.
+# Uses ghcr.io/insecurityfyi/linkwatch:<tag> (pulled only if it isn't already
+# local), makes it :current, restarts the service, and rolls back to :previous
+# if the health check fails.
 set -euo pipefail
 TAG="${1:?usage: deploy.sh <image-tag>}"
 IMAGE="ghcr.io/insecurityfyi/linkwatch"
@@ -22,8 +24,12 @@ mkdir -p "$QUADLET_DIR"
 cp "$HOME/linkwatch/quadlet/"* "$QUADLET_DIR/"
 systemctl --user daemon-reload
 
-echo "==> Pulling $IMAGE:$TAG"
-podman pull "$IMAGE:$TAG"
+if podman image exists "$IMAGE:$TAG"; then
+  echo "==> Using local image $IMAGE:$TAG"
+else
+  echo "==> Pulling $IMAGE:$TAG"
+  podman pull "$IMAGE:$TAG"
+fi
 if podman image exists "$IMAGE:current"; then
   podman tag "$IMAGE:current" "$IMAGE:previous"
 fi
