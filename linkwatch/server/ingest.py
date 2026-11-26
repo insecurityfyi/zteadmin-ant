@@ -1,0 +1,233 @@
+"""Turn poller and integration results into device state, metrics and alerts."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .alerts import Alerter
+from .models import Device, DeviceMetric, Integration, Port, PortMetric, ProcessedBatch, Site, utcnow
+
+COUNTER32 = 2**32
+
+
+def from_epoch(ts: float | None) -> datetime:
+    if not ts:
+        return utcnow()
+    return datetime.fromtimestamp(float(ts), timezone.utc).replace(tzinfo=None)
+
+
+def site_by_name(s: Session, name: str | None) -> Site | None:
+    name = (name or "").strip()
+    if not name:
+        return None
+    site = s.scalar(select(Site).where(Site.name == name))
+    if site is None:
+        site = Site(name=name)
+        s.add(site)
+        s.flush()
+    return site
+
+
+def set_status(dev: Device, status: str, reason: str | None = None) -> None:
+    if dev.status != status:
+        dev.status = status
+        dev.status_since = utcnow()
+    dev.status_reason = reason[:255] if reason else None
+
+
+def counter_delta(new: float | None, old: float | None, bits: int = 64) -> float | None:
+    """Difference between two counter readings, handling a 32-bit wrap. A 64-bit decrease is a reset."""
+    if new is None or old is None:
+        return None
+    if new >= old:
+        return new - old
+    if bits == 32 and old < COUNTER32:
+        return new + COUNTER32 - old
+    return None
+
+
+# ---------------------------------------------------------------- devices
+def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, Any]) -> Device | None:
+    dev = s.get(Device, int(item.get("device_id") or 0))
+    if dev is None or dev.poller_id != poller_id:
+        return None
+    ts = from_epoch(item.get("ts"))
+    dev.last_polled = ts
+    has_snmp = dev.snmp_profile_id is not None
+    ping = item.get("ping") or None
+    ping_ok = bool(ping and ping.get("loss_pct", 100) < 100)
+    if ping:
+        dev.ping_ms, dev.loss_pct = ping.get("rtt_ms"), ping.get("loss_pct")
+
+    snmp_ok = bool(item.get("ok")) and has_snmp
+    if snmp_ok:
+        sysinfo = item.get("system") or {}
+        for field in ("sys_descr", "sys_object_id", "sys_name", "sys_location", "uptime_s"):
+            if sysinfo.get(field) is not None:
+                setattr(dev, field, sysinfo[field])
+        if not dev.platform and dev.sys_descr:
+            dev.platform = dev.sys_descr.splitlines()[0][:255]
+        dev.cpu, dev.mem = item.get("cpu"), item.get("mem")
+        dev.poll_ms = item.get("poll_ms")
+        _update_ports(s, dev, item.get("ports") or [], float(item.get("ts") or ts.timestamp()), ts)
+
+    if (has_snmp and snmp_ok) or (not has_snmp and ping_ok):
+        dev.fail_count = 0
+        set_status(dev, "up")
+    elif has_snmp and ping_ok:
+        dev.fail_count = 0
+        set_status(dev, "warn", item.get("error") or "SNMP is not answering")
+    else:
+        dev.fail_count += 1
+        rule = alerter.rules.get("device_down")
+        if dev.fail_count >= (rule.polls if rule else 2) or dev.status == "unknown":
+            set_status(dev, "down", item.get("error") or ("No ping reply" if ping else "No answer"))
+
+    if dev.cpu is not None or dev.mem is not None or ping:
+        s.add(DeviceMetric(device_id=dev.id, ts=ts, cpu=dev.cpu if snmp_ok else None, mem=dev.mem if snmp_ok else None,
+                           ping_ms=dev.ping_ms if ping else None, loss_pct=dev.loss_pct if ping else None))
+    s.flush()
+    alerter.evaluate_device(dev)
+    return dev
+
+
+def _update_ports(s: Session, dev: Device, ports: list[dict], ts_epoch: float, ts: datetime) -> None:
+    existing = {p.ifindex: p for p in dev.ports}
+    seen: set[int] = set()
+    for data in ports:
+        try:
+            idx = int(data["ifindex"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        seen.add(idx)
+        p = existing.get(idx)
+        if p is None:
+            p = Port(device_id=dev.id, ifindex=idx, name=str(data.get("name") or idx)[:255])
+            dev.ports.append(p)
+            existing[idx] = p
+        p.name = str(data.get("name") or p.name)[:255]
+        p.alias = (data.get("alias") or "")[:255]
+        p.speed_mbps = data.get("speed_mbps") or None
+        p.admin, p.oper = data.get("admin"), data.get("oper")
+        bits = int(data.get("counter_bits") or 64)
+        dt = ts_epoch - p.last_ts if p.last_ts else None
+        if dt and dt > 0:
+            d_in = counter_delta(data.get("in_octets"), p.last_in_octets, bits)
+            d_out = counter_delta(data.get("out_octets"), p.last_out_octets, bits)
+            e_in = counter_delta(data.get("in_errors"), p.last_in_errors, 32)
+            e_out = counter_delta(data.get("out_errors"), p.last_out_errors, 32)
+            p.in_bps = d_in * 8 / dt if d_in is not None else None
+            p.out_bps = d_out * 8 / dt if d_out is not None else None
+            p.in_err_rate, p.out_err_rate = e_in, e_out
+            p.util_pct = (max(p.in_bps or 0, p.out_bps or 0) / (p.speed_mbps * 1e6) * 100) if p.speed_mbps else None
+            if p.id is None:
+                s.flush()
+            if p.in_bps is not None or p.out_bps is not None:
+                s.add(PortMetric(port_id=p.id, ts=ts, in_bps=p.in_bps, out_bps=p.out_bps, in_err=e_in, out_err=e_out))
+        p.last_in_octets, p.last_out_octets = data.get("in_octets"), data.get("out_octets")
+        p.last_in_errors, p.last_out_errors = data.get("in_errors"), data.get("out_errors")
+        p.last_ts = ts_epoch
+    if ports:
+        for idx, p in existing.items():
+            if idx not in seen:
+                dev.ports.remove(p)
+
+
+# ---------------------------------------------------------------- integrations
+def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: dict[str, Any]) -> None:
+    ts = from_epoch(item.get("ts"))
+    integ.last_sync = ts
+    ref = f"integration:{integ.id}"
+    if not item.get("ok"):
+        integ.status, integ.last_error = "error", (item.get("error") or "Unknown error")[:2000]
+        alerter.set("integration_failed", ref, True, f"Integration failing: {integ.name}", integ.last_error)
+        return
+    records = item.get("records") or []
+    warnings = item.get("warnings") or []
+    integ.status = "partial" if warnings else "ok"
+    integ.last_error = "; ".join(warnings)[:2000] or None
+    integ.object_count = len(records)
+    alerter.set("integration_failed", ref, False)
+
+    current = {d.external_id: d for d in s.scalars(select(Device).where(Device.integration_id == integ.id))}
+    seen: set[str] = set()
+    for rec in records:
+        ext = str(rec.get("external_id") or "")
+        if not ext:
+            continue
+        seen.add(ext)
+        dev = current.get(ext)
+        if dev is None and rec.get("ip"):
+            # same box already polled over SNMP: attach the API data to it instead of duplicating
+            dev = s.scalar(select(Device).where(Device.ip == rec["ip"], Device.integration_id.is_(None),
+                                                Device.source.in_(("snmp", "ping"))).limit(1))
+            if dev is not None:
+                dev.integration_id, dev.external_id = integ.id, ext
+        if dev is None:
+            dev = Device(hostname=str(rec.get("hostname") or ext)[:255], source=integ.kind, integration_id=integ.id,
+                         external_id=ext, ping=False, extra={})
+            s.add(dev)
+        _apply_record(s, dev, integ, rec, ts)
+        s.flush()
+        if dev.cpu is not None or dev.mem is not None:
+            s.add(DeviceMetric(device_id=dev.id, ts=ts, cpu=dev.cpu, mem=dev.mem))
+        alerter.evaluate_device(dev)
+
+    for ext, dev in current.items():
+        if ext not in seen and dev.source == integ.kind and dev.status != "unknown":
+            set_status(dev, "unknown", f"No longer reported by {integ.name}")
+            alerter.evaluate_device(dev)
+
+
+def _apply_record(s: Session, dev: Device, integ: Integration, rec: dict, ts: datetime) -> None:
+    merged = dev.source != integ.kind      # an SNMP device enriched by API data
+    extra = dict(dev.extra or {})
+    if merged:
+        extra["api"] = {"integration": integ.name, "detail": rec.get("detail"), "status": rec.get("status"),
+                        **(rec.get("extra") or {})}
+        if rec.get("cpu") is not None and dev.cpu is None:
+            dev.cpu = rec.get("cpu")
+        if rec.get("mem") is not None and dev.mem is None:
+            dev.mem = rec.get("mem")
+        descr_line = (dev.sys_descr or "").splitlines()[0][:255] if dev.sys_descr else None
+        if rec.get("platform") and (not dev.platform or dev.platform == descr_line):
+            dev.platform = rec["platform"][:255]   # "Proxmox VE" reads better than a raw sysDescr
+        dev.serial = dev.serial or rec.get("serial")
+        dev.detail = rec.get("detail") or dev.detail
+    else:
+        dev.hostname = str(rec.get("hostname") or dev.hostname)[:255]
+        dev.ip = rec.get("ip")
+        dev.type = rec.get("type") or dev.type
+        dev.platform = (rec.get("platform") or "")[:255] or None
+        dev.cpu, dev.mem = rec.get("cpu"), rec.get("mem")
+        dev.uptime_s = rec.get("uptime_s")
+        dev.serial = rec.get("serial")
+        dev.detail = (rec.get("detail") or "")[:500] or None
+        extra = dict(rec.get("extra") or {})
+        status = rec.get("status") if rec.get("status") in ("up", "down", "warn", "unknown", "off") else "unknown"
+        set_status(dev, status, rec.get("detail") if status in ("down", "warn") else None)
+        dev.last_polled = ts
+        site = site_by_name(s, rec.get("site"))
+        dev.site_id = site.id if site else (integ.site_id or dev.site_id)
+    dev.extra = extra
+
+
+# ---------------------------------------------------------------- batches
+def ingest_batch(s: Session, poller_id: int, batch: dict[str, Any]) -> Alerter | None:
+    """Apply one poller batch. Returns the alerter (for notifications) or None if it was a duplicate."""
+    batch_id = str(batch.get("batch_id") or "")[:64]
+    if not batch_id or s.get(ProcessedBatch, batch_id):
+        return None
+    s.add(ProcessedBatch(batch_id=batch_id, poller_id=poller_id))
+    alerter = Alerter(s)
+    for item in batch.get("items") or []:
+        if item.get("kind") == "device":
+            ingest_device(s, alerter, poller_id, item)
+        elif item.get("kind") == "integration":
+            integ = s.get(Integration, int(item.get("integration_id") or 0))
+            if integ is not None and integ.poller_id == poller_id:
+                ingest_integration(s, alerter, integ, item)
+    return alerter

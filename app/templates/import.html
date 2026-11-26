@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Log import{% endblock %}
+{% block body %}
+<div class="wrap">
+  <div class="head"><div><h1>Import ZIA log exports</h1>
+    <p>Without Cloud NSS, logs reach the toolbox as exports from the ZIA portal. In Analytics, open Web Insights, Firewall Insights or DNS Insights, switch to the Logs view, add the rule name columns, and export to CSV. Upload the file here.</p></div></div>
+  {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+  <div class="grid2" style="margin-top:0">
+    <div class="panel">
+      <div class="ph"><h2>Upload</h2><span class="src">CSV or JSON lines, up to 200 MB</span></div>
+      <form class="form" method="post" action="/import" enctype="multipart/form-data">
+        <label>Which log type is this?<select name="feed" id="feed">{% for k, v in feeds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+        <label>Export file<input type="file" name="file" id="file" accept=".csv,.json,.jsonl,.txt" required></label>
+        <div><button class="btn" type="submit">Import</button></div>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Columns the importer looks for</h2></div>
+      <ul class="plain small">
+        <li><b>Time</b> (required): Time, Date Time, Timestamp</li>
+        <li><b>Rule name</b>: URL Filter Rule, Cloud App Rule, DLP Rule, Firewall Rule, DNS Request Rule, Rule Name, Rule Label</li>
+        <li><b>User</b>: User, Login, User Name</li>
+        <li><b>Action</b>: Action, Policy Action</li>
+        <li><b>Destination</b>: URL, Host, Destination IP, DNS Request</li>
+        <li><b>Traffic</b>: Sent Bytes, Received Bytes, Total Bytes</li>
+      </ul>
+      <p class="small muted">Times without a zone are read as UTC. Set the portal's export to UTC, or check the times after import.</p>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <div class="ph"><h2>Imports</h2></div>
+    {% if imports %}
+    <div class="scroll"><table><thead><tr><th>File</th><th>Type</th><th class="num">Rows</th><th class="num">Skipped</th><th>Columns not used</th><th>Imported</th></tr></thead><tbody>
+    {% for i in imports %}<tr><td>{{ i.filename }}{% if i.demo %} <span class="small muted">(sample)</span>{% endif %}</td><td>{{ feeds.get(i.feed, i.feed) }}</td><td class="num">{{ i.rows|num }}</td><td class="num">{{ i.skipped|num }}</td><td class="small muted">{{ i.unmapped[:8]|join(', ') }}{% if i.unmapped|length > 8 %} and {{ i.unmapped|length - 8 }} more{% endif %}</td><td class="num">{{ i.imported_at|ago }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty">Nothing imported yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

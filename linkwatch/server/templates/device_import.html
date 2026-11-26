@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Import devices{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/devices">Devices</a></div><h1>Import devices from CSV</h1>
+  <p>Columns: <code>hostname</code>, <code>ip</code> (required), and optionally <code>site</code>, <code>type</code> and <code>snmp_profile</code> (the name of a saved SNMP credential set). Rows whose IP already exists are skipped.</p></div></div>
+<div class="p">
+<pre class="cmd">hostname,ip,site,type,snmp_profile
+core-sw01,10.10.0.2,HQ,Switch,campus-v3
+edge-fw01,10.10.0.1,HQ,Firewall,campus-v3
+ups-a2,10.10.5.40,HQ,Power,ups-v2c</pre>
+<form method="post" enctype="multipart/form-data" class="stack" style="margin-top:16px">
+  <label class="f">CSV file<input type="file" name="file" id="file" accept=".csv,text/csv" required></label>
+  <div class="row2">
+    <label class="f">Poller for these devices<select name="poller_id" id="poller_id" required>{% for p in pollers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="f">Default SNMP credentials<select name="snmp_profile_id" id="snmp_profile_id"><option value="">None (ping only)</option>{% for p in profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select><small>Used when a row has no snmp_profile.</small></label>
+  </div>
+  <div class="actions"><button class="btn pri" type="submit" {% if not pollers %}disabled{% endif %}>Import</button>{% if not pollers %}<span class="dim">Install a poller first.</span>{% endif %}</div>
+</form></div>
+{% endblock %}

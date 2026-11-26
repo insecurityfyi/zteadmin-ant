@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Data sources{% endblock %}
+{% block body %}
+<div class="wrap">
+  <div class="head"><div><h1>Where each ZIA number comes from</h1><p>What ZIA exposes decides what the toolbox can show. This tenant has no Cloud NSS, so per-transaction data comes from portal exports.</p></div></div>
+  <div class="panel"><div class="scroll"><table><thead><tr><th>Feature</th><th>Source</th><th>Freshness</th><th>Limit to know</th></tr></thead><tbody>
+  {% for r in [
+    ("Policy inventory", "ZIA API: URL filtering, cloud app control, cloud firewall, DNS control, IPS, SSL inspection, file type, sandbox, DLP rules", "Every sync", "Read-only. Policy types you are not licensed for show as sync errors."),
+    ("Users in directory", "ZIA API /users, /groups, /departments", "Every sync", "Shows who exists, not who was online."),
+    ("Users seen, 48 h or 7 d", "Imported log exports, matched to the directory", "When you import", "No active-users API exists in ZIA."),
+    ("Log line to rule", "Imported log exports joined to synced rules by rule name", "When you import", "The export must include the rule name columns. A renamed rule will not match older logs."),
+    ("Allow, block, isolate, caution", "Action column in the export", "When you import", "Isolation detail beyond the action lives in Cloud Browser Isolation."),
+    ("Bandwidth, 7 days", "Z-Insights over OneAPI, otherwise summed from imported logs", "Every sync", "Z-Insights query is experimental until checked on a live tenant."),
+    ("Locations and tunnels", "ZIA API /locations, /greTunnels", "Every sync", "Live tunnel up or down state is not in the config API."),
+    ("Activation status", "ZIA API /status", "Every sync", "Shows whether saved changes are waiting to be activated."),
+  ] %}<tr><td><b>{{ r[0] }}</b></td><td>{{ r[1] }}</td><td class="num">{{ r[2] }}</td><td class="muted">{{ r[3] }}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</div>
+{% endblock %}

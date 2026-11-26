@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block body %}
+<div class="wrap">
+  <div class="head">
+    <div><h1>Users seen through ZIA</h1>
+      <p>Built from imported log lines and matched to the ZIA user directory for department. ZIA has no "active users" API, so this is as complete as the logs you import. The window ends at the newest imported event ({{ u.end|time }}).</p></div>
+    <form class="controls" method="get">
+      <div class="seg"><a href="?window=48&q={{ q|urlencode }}" class="{{ 'on' if u.hours == 48 }}">48 hours</a><a href="?window=168&q={{ q|urlencode }}" class="{{ 'on' if u.hours == 168 }}">7 days</a></div>
+      <input type="hidden" name="window" value="{{ u.hours }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search user or department" aria-label="Search users">
+    </form>
+  </div>
+  <div class="panel">
+    <div class="ph"><h2>{{ u.rows|length }} users seen in the last {{ '48 hours' if u.hours == 48 else '7 days' }}</h2><span class="src">{{ u.directory_count|num }} in ZIA directory</span></div>
+    {% if u.rows %}
+    <div class="scroll"><table><thead><tr><th>User</th><th>Department</th><th>Location</th><th>Last seen</th><th class="num">Transactions</th><th class="num">Traffic</th><th class="num">Blocked</th><th class="num">Isolated</th></tr></thead><tbody>
+    {% for r in u.rows %}<tr class="link-row"><td><a class="cell" href="/logs?q={{ r.user|urlencode }}">{{ r.user }}</a></td><td>{{ r.department or '' }}</td><td class="muted">{{ r.location or '' }}</td><td class="num">{{ r.last_seen|ago(u.end) }}</td><td class="num">{{ r.tx|num }}</td><td class="num">{{ r.bytes|bytes }}</td><td class="num">{{ r.Blocked|num }}</td><td class="num">{{ r.Isolated|num }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty">No users in this window. <a href="/import">Import a log export</a>.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

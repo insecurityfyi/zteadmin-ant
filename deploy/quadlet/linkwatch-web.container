@@ -1,0 +1,20 @@
+# Linkwatch web app. Listens on 127.0.0.1:8080 only; nginx on the host terminates TLS.
+[Unit]
+Description=Linkwatch web app
+Requires=linkwatch-db.service
+After=linkwatch-db.service
+
+[Container]
+ContainerName=linkwatch-web
+# deploy.sh tags each release it pulls as :current, keeping the one before as :previous
+Image=ghcr.io/insecurityfyi/linkwatch:current
+Network=linkwatch.network
+PublishPort=127.0.0.1:8080:8080
+EnvironmentFile=%h/.config/linkwatch/linkwatch.env
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

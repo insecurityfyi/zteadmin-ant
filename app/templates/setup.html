@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}API setup{% endblock %}
+{% block body %}
+{% set s = settings %}
+<div class="wrap">
+  <div class="head"><div><h1>Connect the toolbox to ZIA</h1>
+    <p>Secrets are encrypted in the toolbox's data volume and never sent back to the browser. Leave a secret field blank to keep the stored value. The toolbox only reads; it never changes policy.</p></div></div>
+  {% if msg %}<div class="msg {{ '' if ok else 'err' }}">{{ msg }}</div>{% endif %}
+  <form method="post" action="/setup">
+  <div class="grid2" style="margin-top:0">
+    <div class="panel">
+      <div class="ph"><h2>OneAPI through ZIdentity</h2><span class="src">recommended</span></div>
+      <div class="form">
+        <label class="check"><input type="radio" name="mode" value="oneapi" {{ 'checked' if s.mode != 'legacy' }}> Use OneAPI</label>
+        <label>ZIdentity vanity domain<small>The part before .zslogin.net, e.g. "acme" for acme.zslogin.net</small><input name="vanity_domain" id="vanity_domain" value="{{ s.vanity_domain }}" autocomplete="off"></label>
+        <label>Client ID<input name="client_id" id="client_id" value="{{ s.client_id }}" autocomplete="off"></label>
+        <label>Client secret<small>{{ 'Stored. Leave blank to keep it.' if s.client_secret else 'Not set' }}</small><input name="client_secret" id="client_secret" type="password" autocomplete="new-password"></label>
+        <label>OneAPI base URL<small>Change only for a non-production Zscaler cloud</small><input name="oneapi_base" id="oneapi_base" value="{{ s.oneapi_base }}"></label>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Legacy ZIA API key</h2><span class="src">tenants not yet on ZIdentity</span></div>
+      <div class="form">
+        <label class="check"><input type="radio" name="mode" value="legacy" {{ 'checked' if s.mode == 'legacy' }}> Use legacy API key</label>
+        <label>ZIA cloud<select name="cloud" id="cloud">{% for c in clouds %}<option {{ 'selected' if s.cloud == c }}>{{ c }}</option>{% endfor %}</select></label>
+        <label>Admin username<input name="username" id="username" value="{{ s.username }}" autocomplete="off"></label>
+        <label>Password<small>{{ 'Stored. Leave blank to keep it.' if s.password else 'Not set' }}</small><input name="password" id="password" type="password" autocomplete="new-password"></label>
+        <label>API key<small>{{ 'Stored. Leave blank to keep it.' if s.api_key else 'Administration, API Key Management' }}</small><input name="api_key" id="api_key" type="password" autocomplete="new-password"></label>
+      </div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <div class="ph"><h2>Traffic trends (Z-Insights)</h2><span class="src">experimental</span></div>
+      <div class="form">
+        <label class="check"><input type="checkbox" name="insights_enabled" value="1" {{ 'checked' if s.insights_enabled == '1' }}> Pull 7-day bandwidth from Z-Insights (OneAPI only)</label>
+        <label>GraphQL query<small>Leave blank to use the built-in query below. It has not yet been checked against a live tenant.</small><textarea name="insights_query" id="insights_query" placeholder="{{ default_query }}">{{ s.insights_query }}</textarea></label>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Storage</h2></div>
+      <div class="form">
+        <label>Keep imported log lines for<small>Days. Older lines are deleted on each background sync.</small><input name="log_retention_days" id="log_retention_days" type="number" min="7" max="365" value="{{ s.log_retention_days }}"></label>
+      </div>
+      <h3 style="margin-top:18px">Permissions the API client needs</h3>
+      <ul class="plain small">
+        <li>A read-only ZIA admin role covering policy, users, locations and dashboards</li>
+        <li>For OneAPI: a ZIdentity API client with the ZIA resource assigned</li>
+        <li>No write permissions: the module never changes policy</li>
+      </ul>
+    </div>
+  </div>
+  <div class="controls" style="margin-top:16px">
+    <button class="btn" type="submit" name="action" value="test">Save and test connection</button>
+    <button class="btn ghost" type="submit" name="action" value="save">Save</button>
+  </div>
+  </form>
+  <div class="panel" style="margin-top:16px" id="sync">
+    <div class="ph"><h2>Last sync</h2>{% if connected %}<form method="post" action="/sync"><button class="btn ghost" type="submit">Sync now</button></form>{% endif %}</div>
+    {% if sync_status %}
+    <p class="small">Finished {{ sync_status.finished_at|ago }}. {% for k, v in sync_status.counts.items() %}{{ k|replace('_',' ') }}: {{ v }}{{ ', ' if not loop.last }}{% endfor %}</p>
+    {% if sync_status.errors %}<ul class="plain small">{% for k, v in sync_status.errors.items() %}<li><b>{{ k }}</b>: {{ v }}</li>{% endfor %}</ul>
+    <p class="small muted">HTTP 401 or 403 on a policy type usually means the admin role lacks it or the feature is not licensed.</p>{% endif %}
+    {% else %}<p class="small muted">Not synced yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

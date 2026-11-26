@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+{% set label = {'crit':'Critical','warn':'Warning','info':'Info'} %}
+<div class="head"><div><h1>Alerts</h1><p>Rules run on every poll result and close on their own when the condition clears. Notifications go to the targets under <a href="/settings#transports">Settings</a>.</p></div></div>
+<div class="p">
+  <div class="ph"><h2>{{ {'open':'Open','ack':'Acknowledged','resolved':'Resolved in the last 7 days'}[state] }}</h2>
+    <div class="filters">
+      <a class="fbtn" href="?state=open" aria-pressed="{{ 'true' if state == 'open' else 'false' }}">Open ({{ counts.open }})</a>
+      <a class="fbtn" href="?state=ack" aria-pressed="{{ 'true' if state == 'ack' else 'false' }}">Acknowledged ({{ counts.ack }})</a>
+      <a class="fbtn" href="?state=resolved" aria-pressed="{{ 'true' if state == 'resolved' else 'false' }}">Resolved, 7 days ({{ counts.resolved }})</a>
+    </div></div>
+  {% if alerts %}
+  <div class="scroll"><table><thead><tr><th>Severity</th><th>Alert</th><th>Detail</th><th>Opened</th>{% if state == 'resolved' %}<th>Resolved</th>{% endif %}<th></th></tr></thead><tbody>
+  {% for a in alerts %}
+    <tr><td><span class="sev {{ a.severity }}">{{ label[a.severity] }}</span></td>
+      <td>{% if a.device %}<a href="/devices/{{ a.device_id }}">{{ a.title }}</a>{% else %}{{ a.title }}{% endif %}</td>
+      <td class="dim">{{ a.detail or '' }}</td><td class="nw">{{ a.opened_at|ago }}</td>
+      {% if state == 'resolved' %}<td class="nw">{{ a.resolved_at|ago }}</td>{% endif %}
+      <td>{% if a.state == 'open' %}<form class="inline" method="post" action="/alerts/{{ a.id }}/ack"><button class="btn sm" type="submit">Acknowledge</button></form>{% elif a.state == 'ack' %}<span class="dim">Acknowledged {{ a.acked_at|ago }}</span>{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
+  {% else %}<p class="dim" style="margin:0">Nothing here.</p>{% endif %}
+</div>
+<div class="grid">
+  <div class="p c8" id="rules"><div class="ph"><h2>Alert rules</h2><span class="sub">Polls = how many polls in a row before it fires</span></div>
+    <div class="scroll"><table><thead><tr><th>Rule</th><th>When</th><th>Severity</th><th class="n">Threshold</th><th class="n">Polls</th><th>On</th><th></th></tr></thead><tbody>
+    {% for r in rules %}{% set fid = 'rule-' ~ r.id %}<tr>
+      <td class="nw"><b>{{ r.name }}</b></td><td class="dim" style="min-width:220px">{{ r.description }}</td>
+      <td><select name="severity" form="{{ fid }}" aria-label="Severity" style="width:auto">{% for k in ['crit','warn','info'] %}<option value="{{ k }}" {% if k == r.severity %}selected{% endif %}>{{ label[k] }}</option>{% endfor %}</select></td>
+      <td class="n">{% if r.threshold is not none %}<input type="number" step="any" name="threshold" form="{{ fid }}" value="{{ r.threshold|round(1) }}" aria-label="Threshold" style="width:80px">{% else %}<span class="dim">–</span>{% endif %}</td>
+      <td class="n"><input type="number" min="1" max="20" name="polls" form="{{ fid }}" value="{{ r.polls }}" aria-label="Polls" style="width:64px"></td>
+      <td><input type="checkbox" name="enabled" form="{{ fid }}" aria-label="Enabled" {% if r.enabled %}checked{% endif %}></td>
+      <td><form id="{{ fid }}" method="post" action="/alerts/rules/{{ r.id }}"><button class="btn sm" type="submit">Save</button></form></td></tr>{% endfor %}
+    </tbody></table></div></div>
+  <div class="p c4"><div class="ph"><h2>Alerts per day</h2><span class="sub">Last 14 days</span></div>
+    {% set mx = [days|map(attribute='crit')|max + days|map(attribute='warn')|max, 1]|max %}
+    <svg viewBox="0 0 280 150" role="img" aria-label="Alerts opened per day" style="width:100%;height:auto">
+      {% for i in range(5) %}{% set yy = 10 + 110 * i / 4 %}<line x1="24" x2="280" y1="{{ yy }}" y2="{{ yy }}" class="gl"/><text x="20" y="{{ yy + 3.5 }}" text-anchor="end" class="ax">{{ (mx * (4 - i) / 4)|round|int }}</text>{% endfor %}
+      {% for d in days %}{% set x = 26 + loop.index0 * 18 %}{% set hc = 110 * d.crit / mx %}{% set hw = 110 * d.warn / mx %}
+        {% if d.crit %}<rect x="{{ x }}" y="{{ 120 - hc }}" width="12" height="{{ hc }}" fill="var(--down)" rx="2"/>{% endif %}
+        {% if d.warn %}<rect x="{{ x }}" y="{{ 120 - hc - hw }}" width="12" height="{{ hw }}" fill="var(--warn)" rx="2"/>{% endif %}
+        {% if loop.index0 % 4 == 0 or loop.last %}<text x="{{ x + 6 }}" y="140" text-anchor="middle" class="ax">{{ 'today' if loop.last else d.label }}</text>{% endif %}
+      {% endfor %}
+    </svg>
+    <div class="legend"><span><i style="background:var(--down)"></i>Critical</span><span><i style="background:var(--warn)"></i>Warning and info</span></div></div>
+</div>
+{% endblock %}

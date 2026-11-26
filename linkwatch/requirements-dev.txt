@@ -1,0 +1,4 @@
+-r requirements-server.txt
+-r requirements-poller.txt
+pytest==9.2.0
+respx==0.23.1

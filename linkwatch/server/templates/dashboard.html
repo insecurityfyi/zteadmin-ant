@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="head"><div><h1>{{ headline }}</h1>
+  <p>{{ devices|length }} devices across {{ sites|length }} site{{ '' if sites|length == 1 else 's' }}, polled every {{ (interval / 60)|round|int }} minutes by {{ pollers|length }} poller{{ '' if pollers|length == 1 else 's' }}.</p></div></div>
+
+{% if not devices %}
+<div class="p empty-state">
+  <h2>Start by installing a poller</h2>
+  <p>A poller runs on your local network and polls devices over SNMP, ping and local APIs. It only connects out to this server.</p>
+  <p class="actions" style="justify-content:center"><a class="btn pri" href="/pollers">Install a poller</a><a class="btn" href="/integrations">Connect a cloud platform</a></p>
+</div>
+{% else %}
+<div class="kpis">
+  <div class="kpi"><span>Devices up</span><b>{{ counts.up }} / {{ devices|length }}</b>{% if counts.down %}<em class="bad">{{ counts.down }} down</em>{% elif counts.warn %}<em class="wa">{{ counts.warn }} need attention</em>{% else %}<em class="okc">all reachable</em>{% endif %}</div>
+  <div class="kpi"><span>Open alerts</span><b>{{ alerts|selectattr('state','equalto','open')|list|length }}</b><em class="{{ 'bad' if alerts|selectattr('severity','equalto','crit')|list else '' }}">{{ alerts|selectattr('severity','equalto','crit')|list|length }} critical</em></div>
+  <div class="kpi"><span>Ports monitored</span><b>{{ ports_total|num }}</b><em>{{ ports_up|num }} up</em></div>
+  <div class="kpi"><span>Busiest port now</span><b>{{ top_port.util_pct|pct if top_port else '–' }}</b><em>{{ (top_port_host ~ ' ' ~ top_port.name) if top_port else 'No traffic data yet' }}</em></div>
+  <div class="kpi"><span>Slowest poll cycle</span><b>{{ ((worst_cycle or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if worst_cycle > interval * 1000 else 'okc' }}">of {{ interval }} s budget</em></div>
+</div>
+<div class="grid">
+  <div class="p c8">
+    <div class="ph"><h2>{% if top_port %}Traffic on {{ top_port_host }} {{ top_port.name }}{% else %}Traffic{% endif %}</h2>
+      <div class="ranges">{% for r in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div></div>
+    {% if top_port %}
+    <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Inbound</span><span><i style="background:var(--s2)"></i>Outbound</span></div>
+    <div class="fig" data-src="/ui/metrics/port/{{ top_port.id }}" data-unit="bps" data-h="220" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]' data-label="Port traffic"></div>
+    {% else %}<div class="fig"><div class="empty">Interface traffic appears here once SNMP devices have been polled twice.</div></div>{% endif %}
+  </div>
+  <div class="p c4"><div class="ph"><h2>Open alerts</h2><a href="/alerts" class="sub">View all</a></div>
+    <div class="bars">
+    {% for a in alerts %}
+      <div style="display:flex;gap:10px;align-items:flex-start"><span class="sev {{ a.severity }}">{{ {'crit':'Critical','warn':'Warning','info':'Info'}[a.severity] }}</span>
+        <div style="min-width:0"><div><b>{{ a.device.hostname if a.device else a.title }}</b>{% if a.device %} <span class="dim">· {{ a.title.split(':')[0] }}</span>{% endif %}</div><div class="dim" style="font-size:12.5px">{{ a.detail or '' }}</div></div>
+        <span class="dim mono" style="margin-left:auto;white-space:nowrap">{{ a.opened_at|ago }}</span></div>
+    {% else %}<p class="dim" style="margin:0">Nothing open.</p>{% endfor %}
+    </div></div>
+  <div class="p c4"><div class="ph"><h2>Devices by site</h2></div>
+    <div class="sites">{% for name, devs in sites %}
+      <div class="site"><h3>{{ name }}<span class="dim mono" style="font-weight:400">{{ devs|selectattr('status','equalto','up')|list|length }}/{{ devs|length }}</span></h3>
+        <div class="tiles">{% for d in devs|sort(attribute='status') %}<a href="/devices/{{ d.id }}" class="d-{{ d.status }}" title="{{ d.hostname }}: {{ d.status }}" aria-label="{{ d.hostname }} {{ d.status }}"></a>{% endfor %}</div></div>
+    {% endfor %}</div></div>
+  <div class="p c4"><div class="ph"><h2>Busiest ports</h2><span class="sub">Utilization, last poll</span></div>
+    <div class="bars">{% for p, host in busiest %}
+      {% set u = p.util_pct or 0 %}
+      <div class="bar"><span><b>{{ host }} {{ p.name }}</b> <span class="dim">{{ p.alias or '' }}</span></span><span class="v">{{ u|round|int }}%</span><div class="tr"><b style="width:{{ [u,100]|min }}%;background:{{ 'var(--down)' if u >= 85 else 'var(--warn)' if u >= 70 else 'var(--s1)' }}"></b></div></div>
+    {% else %}<p class="dim" style="margin:0">No interface data yet.</p>{% endfor %}</div></div>
+  <div class="p c4"><div class="ph"><h2>Highest CPU</h2><span class="sub">Last poll</span></div>
+    <div class="bars">{% for d in top_cpu %}
+      <div class="bar"><span><a class="row" style="color:inherit" href="/devices/{{ d.id }}"><b>{{ d.hostname }}</b></a></span><span class="v">{{ d.cpu|round|int }}%</span><div class="tr"><b style="width:{{ [d.cpu,100]|min }}%;background:{{ 'var(--down)' if d.cpu >= 85 else 'var(--warn)' if d.cpu >= 70 else 'var(--s1)' }}"></b></div></div>
+    {% else %}<p class="dim" style="margin:0">No CPU data yet.</p>{% endfor %}</div></div>
+</div>
+{% endif %}
+{% endblock %}

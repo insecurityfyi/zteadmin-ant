@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ d.hostname }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/devices">Devices</a>{% if d.site %} / {{ d.site.name }}{% endif %}</div>
+  <h1 style="display:flex;align-items:center;gap:10px"><span class="dot d-{{ d.status }}"></span>{{ d.hostname }}</h1>
+  <p>{{ d.platform or d.type }}{% if d.status_reason %} · <span class="{{ 'bad' if d.status == 'down' else 'wa' }}">{{ d.status_reason }}</span>{% endif %}</p></div>
+  <div class="actions">
+    {% if d.poller_id %}<form class="inline" method="post" action="/devices/{{ d.id }}/poll"><button class="btn" type="submit" {% if not connected %}disabled title="Poller not connected"{% endif %}>Poll now</button></form>{% endif %}
+    <a class="btn" href="/devices/{{ d.id }}/edit">Edit</a>
+  </div></div>
+<div class="grid">
+  <div class="p c4"><h2 style="margin-bottom:12px">Overview</h2>
+    <dl class="kv">
+      <dt>Status</dt><dd>{{ d.status }} for {{ d.status_since|ago|replace(' ago','') }}</dd>
+      {% if d.ip %}<dt>Address</dt><dd class="mono">{{ d.ip }}</dd>{% endif %}
+      {% if d.sys_name %}<dt>sysName</dt><dd>{{ d.sys_name }}</dd>{% endif %}
+      {% if d.sys_object_id %}<dt>sysObjectID</dt><dd class="mono">{{ d.sys_object_id }}</dd>{% endif %}
+      {% if d.sys_location %}<dt>Location</dt><dd>{{ d.sys_location }}</dd>{% endif %}
+      {% if d.serial %}<dt>Serial</dt><dd class="mono">{{ d.serial }}</dd>{% endif %}
+      <dt>Uptime</dt><dd>{{ d.uptime_s|duration }}</dd>
+      <dt>Collected by</dt><dd>{% if d.poller %}{{ d.poller.name }}{% if d.snmp_profile %} over SNMPv{{ d.snmp_profile.version }} ({{ d.snmp_profile.name }}){% else %} with ping only{% endif %}{% endif %}
+        {% if d.integration %}{{ ' and ' if d.poller else '' }}<a href="/integrations/{{ d.integration.id }}">{{ d.integration.name }}</a> API{% endif %}</dd>
+      <dt>Last polled</dt><dd>{{ d.last_polled|ago }}{% if d.poll_ms %}, took {{ (d.poll_ms / 1000)|round(1) }} s{% endif %}</dd>
+      {% if d.ping_ms is not none %}<dt>Ping</dt><dd>{{ d.ping_ms|round(1) }} ms, {{ d.loss_pct|round|int }}% loss</dd>{% endif %}
+      {% if d.detail %}<dt>Details</dt><dd>{{ d.detail }}</dd>{% endif %}
+    </dl>
+    {% if d.sys_descr %}<p class="dim mono" style="font-size:11.5px;margin:12px 0 0;overflow-wrap:anywhere">{{ d.sys_descr }}</p>{% endif %}
+    {% set api = d.extra.get('api') if d.extra else None %}
+    {% set info = api or d.extra %}
+    {% if info %}<h3 style="margin:16px 0 8px">{{ 'From ' ~ api.integration if api else 'Platform data' }}</h3>
+      <dl class="kv">{% for k, v in info.items() if v is not none and v != '' and k != 'integration' %}<dt>{{ k|replace('_',' ') }}</dt><dd>{% if v is mapping %}{% for kk, vv in v.items() %}{{ kk }}: {{ vv }}{{ ', ' if not loop.last }}{% endfor %}{% else %}{{ v }}{% endif %}</dd>{% endfor %}</dl>{% endif %}
+  </div>
+  <div class="p c8">
+    <div class="ph"><h2>Graphs</h2><div class="ranges">{% for r in ['6h','24h','7d','30d','1y'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div></div>
+    <div class="grid" style="gap:18px">
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>CPU</h3><span class="sub">%</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="pct" data-max="100" data-h="150" data-series='[{"key":"cpu","color":"var(--s1)"}]'></div></div>
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Memory used</h3><span class="sub">%</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="pct" data-max="100" data-h="150" data-series='[{"key":"mem","color":"var(--s2)"}]'></div></div>
+      {% if d.poller_id %}
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Ping from poller</h3><span class="sub">ms</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="ms" data-h="150" data-series='[{"key":"ping","color":"var(--s1)","area":false}]'></div></div>
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Packet loss</h3><span class="sub">%</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="pct" data-max="100" data-h="150" data-series='[{"key":"loss","color":"var(--down)"}]'></div></div>
+      {% endif %}
+      {% if ports %}{% set up = ports[0] %}
+      <div style="grid-column:span 12"><div class="ph" style="margin-bottom:4px"><h3>{{ up.name }} {{ up.alias or '' }}</h3><span class="sub">busiest port, b/s in and out</span></div>
+        <div class="fig" data-src="/ui/metrics/port/{{ up.id }}" data-unit="bps" data-h="170" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]'></div></div>
+      {% endif %}
+    </div>
+  </div>
+  {% if ports %}
+  <div class="p" id="ports"><div class="ph"><h2>Ports</h2><span class="sub">{{ ports|length }} ports, {{ ports|selectattr('oper','equalto','up')|list|length }} up, sorted by traffic</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Port</th><th>Description</th><th class="n">Speed</th><th class="n">In</th><th class="n">Out</th><th class="n">Util</th><th class="n">Errors / poll</th><th>Alert if down</th></tr></thead>
+    <tbody>{% for p in ports %}
+      <tr><td><span class="dot d-{{ 'up' if p.oper == 'up' else ('off' if p.admin != 'up' else 'down') }}" title="admin {{ p.admin }}, oper {{ p.oper }}"></span></td>
+        <td class="mono nw">{{ p.name }}</td><td>{{ p.alias or '' }}</td><td class="n">{{ p.speed_mbps|speed }}</td>
+        <td class="n mono">{{ p.in_bps|bps }}</td><td class="n mono">{{ p.out_bps|bps }}</td><td class="n">{{ p.util_pct|pct }}</td>
+        <td class="n {{ 'wa' if (p.in_err_rate or 0) + (p.out_err_rate or 0) > 0 else '' }}">{{ ((p.in_err_rate or 0) + (p.out_err_rate or 0))|int }}</td>
+        <td><form class="inline" method="post" action="/ports/{{ p.id }}/alert"><button class="btn sm" type="submit" aria-pressed="{{ 'true' if p.alert_on_down else 'false' }}">{{ 'On' if p.alert_on_down else 'Off' }}</button></form></td></tr>
+    {% endfor %}</tbody></table></div></div>
+  {% endif %}
+  <div class="p"><div class="ph"><h2>Recent alerts</h2></div>
+    {% if alerts %}<div class="scroll"><table><thead><tr><th>Severity</th><th>Alert</th><th>Detail</th><th>Opened</th><th>State</th></tr></thead><tbody>
+    {% for a in alerts %}<tr><td><span class="sev {{ a.severity if a.state != 'resolved' else 'ok' }}">{{ 'Resolved' if a.state == 'resolved' else {'crit':'Critical','warn':'Warning','info':'Info'}[a.severity] }}</span></td><td>{{ a.title }}</td><td class="dim">{{ a.detail or '' }}</td><td class="nw">{{ a.opened_at|ago }}</td><td>{{ a.state }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="margin:0">No alerts for this device.</p>{% endif %}</div>
+</div>
+{% endblock %}
