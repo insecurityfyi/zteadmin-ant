@@ -6,6 +6,7 @@
 # Safe to run again: every step checks what is already there.
 # docs/install-centos9.md walks through the same steps by hand, with explanations.
 set -euo pipefail
+trap 'echo "!! Stopped at line $LINENO: $BASH_COMMAND  (fix the error above, then run the script again; it is safe to re-run)" >&2' ERR
 
 DEPLOY_USER="${1:-aperrego}"
 DOMAIN="${2:-utilz.perrego.net}"
@@ -15,18 +16,35 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 [[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 1; }
 id "$DEPLOY_USER" >/dev/null 2>&1 || { echo "User $DEPLOY_USER does not exist." >&2; exit 1; }
 
-echo "==> 1/7 System updates and repositories"
+echo "==> 1/7 System updates"
 dnf -y upgrade --refresh
-dnf -y install dnf-plugins-core
-dnf config-manager --set-enabled crb
-dnf -y install epel-release epel-next-release
 
 echo "==> 2/7 Packages"
-dnf -y install podman nginx firewalld policycoreutils-python-utils curl git tar \
-  certbot python3-certbot-nginx fail2ban
+# Core packages come from the base CentOS repos, so install them first: a problem
+# with EPEL below must never leave the box without a firewall.
+dnf -y install podman nginx firewalld policycoreutils-python-utils curl git tar openssl
+
+# certbot and fail2ban live in EPEL, which needs the CRB repo turned on.
+dnf -y install dnf-plugins-core
+dnf config-manager --set-enabled crb 2>/dev/null \
+  || dnf config-manager --set-enabled powertools 2>/dev/null \
+  || echo "    (could not enable CRB; trying EPEL anyway)"
+dnf -y install epel-release || dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+dnf -y install epel-next-release >/dev/null 2>&1 || true   # optional on Stream; fine if missing
+dnf -y install certbot python3-certbot-nginx fail2ban
+
+for bin in firewall-cmd podman nginx certbot fail2ban-client semanage; do
+  command -v "$bin" >/dev/null || { echo "!! $bin is still missing after install; stopping." >&2; exit 1; }
+done
 
 echo "==> 3/7 Firewall: SSH, HTTP and HTTPS in; everything else closed"
+systemctl unmask firewalld >/dev/null 2>&1 || true   # some VPS images ship it masked
+if systemctl is-active --quiet iptables 2>/dev/null; then
+  echo "    Stopping the legacy iptables service so firewalld can manage the firewall"
+  systemctl disable --now iptables
+fi
 systemctl enable --now firewalld
+firewall-cmd --state
 ZONE="$(firewall-cmd --get-default-zone)"
 for svc in cockpit dhcpv6-client; do
   firewall-cmd --permanent --zone="$ZONE" --remove-service="$svc" >/dev/null 2>&1 || true
