@@ -15,14 +15,19 @@ UCG, Cloud Key Gen2+, UniFi OS Server) or a self-hosted controller. It collects:
   - it is a Wi-Fi client associated to a UniFi AP, or
   - it is a wired client that is the only MAC on a UniFi switch port, and that port
     is not an uplink, not a port another UniFi device hangs off, and has no LLDP
-    neighbour other than the client itself.
+    neighbour other than the client itself, or
+  - it is a desk phone sharing its port with the PC plugged into it. The phone is
+    recognised by speaking LLDP on that port, or by its vendor (Polycom, Yealink,
+    Avaya, Mitel, Grandstream, Snom and others) or a name like "phone" or "sip".
+    The PC behind it is tagged "behind a desk phone".
 
   Anything else is still listed under All MACs, with a tag saying why it isn't
   direct:
   - behind an uplink;
   - behind a UniFi device;
-  - shared port: several MACs on one port, which means an unmanaged switch, a hub,
-    or a PC plugged into a desk phone (the phone counts as not direct too);
+  - behind a desk phone;
+  - shared port: several MACs on one port that aren't a phone and PC, which means
+    an unmanaged switch or a hub;
   - behind a neighbour;
   - learned by the gateway: the client isn't on any UniFi switch port.
 - **Switch ports:** every port on each UniFi switch and gateway, showing what's

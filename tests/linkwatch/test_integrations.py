@@ -457,7 +457,9 @@ def test_unifi_direct_attachment():
                         {"port_idx": 4, "up": True, "speed": 1000},                           # to sw-floor2
                         {"port_idx": 5, "up": True, "speed": 1000},                           # unmanaged switch with LLDP
                         {"port_idx": 6, "up": True, "speed": 1000},                           # an LLDP-speaking printer
-                        {"port_idx": 7, "up": False}],
+                        {"port_idx": 7, "up": False},
+                        {"port_idx": 8, "up": True, "speed": 100},                            # a hub with two PCs
+                        {"port_idx": 9, "up": True, "speed": 1000}],                          # Yealink by vendor
          "lldp_table": [{"local_port_idx": 5, "chassis_id": "dd:00:00:00:00:99", "system_name": "netgear-closet"},
                         {"local_port_idx": 6, "chassis_id": "CC:00:00:00:00:06", "system_name": "printer"}]},
         {"mac": sw2, "name": "sw-floor2", "type": "usw", "uplink": {"uplink_mac": sw, "uplink_remote_port": 4},
@@ -465,7 +467,7 @@ def test_unifi_direct_attachment():
     ]
     names = {d["mac"]: d["name"] for d in devices}
     raw = [{"mac": "cc:00:00:00:00:01", "hostname": "desk-pc", "is_wired": True, "sw_mac": sw, "sw_port": 1, "ip": "10.0.0.11"},
-           {"mac": "cc:00:00:00:00:02", "hostname": "phone", "is_wired": True, "sw_mac": sw, "sw_port": 2},
+           {"mac": "cc:00:00:00:00:02", "hostname": "phone", "oui": "Polycom", "is_wired": True, "sw_mac": sw, "sw_port": 2},
            {"mac": "cc:00:00:00:00:03", "hostname": "pc-behind-phone", "is_wired": True, "sw_mac": sw, "sw_port": 2},
            {"mac": "cc:00:00:00:00:04", "hostname": "via-uplink", "is_wired": True, "sw_mac": sw, "sw_port": 3},
            {"mac": "cc:00:00:00:00:05", "hostname": "via-floor2-port", "is_wired": True, "sw_mac": sw, "sw_port": 4},
@@ -473,17 +475,30 @@ def test_unifi_direct_attachment():
            {"mac": "cc:00:00:00:00:07", "hostname": "behind-netgear", "is_wired": True, "sw_mac": sw, "sw_port": 5},
            {"mac": "cc:00:00:00:00:08", "hostname": "floor2-pc", "is_wired": True, "sw_mac": sw2, "sw_port": 1},
            {"mac": "cc:00:00:00:00:09", "hostname": "gw-only", "is_wired": True},
+           {"mac": "cc:00:00:00:00:0b", "hostname": "lab-pc-1", "is_wired": True, "sw_mac": sw, "sw_port": 8},
+           {"mac": "cc:00:00:00:00:0c", "hostname": "lab-pc-2", "is_wired": True, "sw_mac": sw, "sw_port": 8},
+           {"mac": "cc:00:00:00:00:0d", "hostname": "pc-reception", "is_wired": True, "sw_mac": sw, "sw_port": 9},
+           {"mac": "cc:00:00:00:00:0e", "oui": "Yealink(Xiamen) Network", "is_wired": True, "sw_mac": sw, "sw_port": 9},
            {"mac": "cc:00:00:00:00:0a", "hostname": "laptop", "essid": "Office", "ap_mac": "aa:aa:aa:00:00:01"}]
     clients = [UniFi._client(c, "HQ", names) for c in raw]
     rows = attachment(devices, clients, "HQ", names)
     by = {c["name"]: (c["direct"], c["attach"]) for c in clients}
-    assert by == {"desk-pc": (True, "port"), "phone": (False, "shared"), "pc-behind-phone": (False, "shared"),
+    assert by == {"desk-pc": (True, "port"), "phone": (True, "phone"), "pc-behind-phone": (False, "behind_phone"),
+                  "lab-pc-1": (False, "shared"), "lab-pc-2": (False, "shared"),
+                  "pc-reception": (False, "behind_phone"), "cc:00:00:00:00:0e": (True, "phone"),
                   "via-uplink": (False, "uplink"), "via-floor2-port": (False, "unifi"), "printer": (True, "port"),
                   "behind-netgear": (False, "neighbour"), "floor2-pc": (True, "port"), "gw-only": (False, "gateway"),
                   "laptop": (True, "wifi")}
     note = {c["name"]: c["attach_note"] for c in clients}
+    assert note["pc-behind-phone"] == "Plugged into desk phone phone" and note["phone"] == "Desk phone"
     assert note["via-floor2-port"] == "Port to sw-floor2" and note["behind-netgear"] == "LLDP neighbour netgear-closet"
     ports = {(r["switch"], r["port"]): r for r in rows}
     assert ports[("sw-core", 1)]["role"] == "client" and ports[("sw-core", 1)]["clients"] == [{"mac": "cc:00:00:00:00:01", "name": "desk-pc", "ip": "10.0.0.11"}]
     assert ports[("sw-core", 1)]["poe_w"] == 5.1 and ports[("sw-core", 2)]["client_count"] == 2
-    assert [ports[("sw-core", i)]["role"] for i in range(1, 8)] == ["client", "shared", "uplink", "unifi", "neighbour", "client", "down"]
+    assert [c["name"] for c in ports[("sw-core", 9)]["clients"]] == ["cc:00:00:00:00:0e", "pc-reception"]     # phone first
+    assert [ports[("sw-core", i)]["role"] for i in range(1, 10)] == ["client", "phone", "uplink", "unifi", "neighbour", "client", "down", "shared", "phone"]
+
+    from linkwatch.integrations.unifi import _is_phone
+    assert _is_phone({"hostname": "SEP0011223344AA"}, set()) and _is_phone({"name": "lobby-voip"}, set())
+    assert _is_phone({"mac": "AA:BB:00:00:00:01"}, {"aa:bb:00:00:00:01"})                                    # speaks LLDP-MED
+    assert not _is_phone({"hostname": "sipho-laptop"}, set()) and not _is_phone({"name": "adams-iphone"}, set())
