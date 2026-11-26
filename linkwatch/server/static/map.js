@@ -119,8 +119,8 @@
       const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); svg.style.cursor = "grab"; };
       window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     });
-    document.getElementById("map-fit").addEventListener("click", fit);
-    document.getElementById("map-relayout").addEventListener("click", () => { data.nodes.forEach(n => { n.fixed = false; }); try { localStorage.removeItem(KEY); } catch (e) { /* */ } draw(false); fit(); });
+    document.getElementById("map-fit")?.addEventListener("click", fit);
+    document.getElementById("map-relayout")?.addEventListener("click", () => { data.nodes.forEach(n => { n.fixed = false; }); try { localStorage.removeItem(KEY); } catch (e) { /* */ } draw(false); fit(); });
   }
   document.addEventListener("DOMContentLoaded", init);
 })();

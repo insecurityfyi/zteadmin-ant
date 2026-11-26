@@ -21,8 +21,18 @@
   {% endfor %}</tbody></table></div>
   {% else %}<p class="dim" style="margin:0">Nothing here.</p>{% endif %}
 </div>
+<div class="p" id="custom" style="margin-bottom:16px"><div class="ph"><h2>Your rules</h2><span class="sub">Built with the rule builder: any metric, any scope</span>
+  {% if me and me.role == 'admin' %}<a class="btn sm pri" href="/alerts/rules/new" style="margin-left:auto">New rule</a>{% endif %}</div>
+  {% if custom %}<div class="scroll"><table><thead><tr><th></th><th>Rule</th><th>Condition</th><th>Severity</th><th class="n">Open now</th><th></th></tr></thead><tbody>
+  {% for r in custom %}<tr><td><span class="dot d-{{ 'up' if r.enabled else 'off' }}" title="{{ 'Enabled' if r.enabled else 'Disabled' }}"></span></td>
+    <td class="nw"><b>{{ r.name }}</b>{% if not r.enabled %} <span class="tag">off</span>{% endif %}</td><td class="dim" style="min-width:260px">{{ describe(r) }}</td>
+    <td>{{ label[r.severity] }}</td><td class="n">{% if rule_open.get(r.key) %}<a href="/alerts" class="{{ 'bad' if r.severity == 'crit' else 'wa' }}">{{ rule_open[r.key] }}</a>{% else %}<span class="dim">0</span>{% endif %}</td>
+    <td>{% if me and me.role == 'admin' %}<a class="btn sm" href="/alerts/rules/{{ r.id }}/edit">Edit</a>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="dim" style="margin:0">No custom rules yet. Use them for anything the built-in rules don't cover, for example "uplink ports above 70% for 3 polls", "any firewall rebooted (uptime under 10 minutes)", "temperature sensors named inlet above 35", or "core switches with more than 2 ports down".</p>{% endif %}
+</div>
 <div class="grid">
-  <div class="p c8" id="rules"><div class="ph"><h2>Alert rules</h2><span class="sub">Polls = how many polls in a row before it fires</span></div>
+  <div class="p c8" id="rules"><div class="ph"><h2>Built-in rules</h2><span class="sub">Polls = how many polls in a row before it fires</span></div>
     <div class="scroll"><table><thead><tr><th>Rule</th><th>When</th><th>Severity</th><th class="n">Threshold</th><th class="n">Polls</th><th>On</th><th></th></tr></thead><tbody>
     {% for r in rules %}{% set fid = 'rule-' ~ r.id %}<tr>
       <td class="nw"><b>{{ r.name }}</b></td><td class="dim" style="min-width:220px">{{ r.description }}</td>

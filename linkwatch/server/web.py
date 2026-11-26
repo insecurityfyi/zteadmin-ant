@@ -88,47 +88,6 @@ def push_poller(request: Request, poller_id: int | None) -> None:
     st(request).hub.push_config_soon(poller_id)
 
 
-# ------------------------------------------------------------------ dashboard
-@router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    with st(request).db.session() as s:
-        devices = s.scalars(select(Device).options(selectinload(Device.site)).where(Device.disabled.is_(False))).all()
-        counts = {k: sum(1 for d in devices if d.status == k) for k in ("up", "down", "warn", "unknown", "off")}
-        sites: dict[str, list[Device]] = {}
-        for d in devices:
-            sites.setdefault(d.site.name if d.site else "No site", []).append(d)
-        alerts = s.scalars(select(Alert).options(selectinload(Alert.device)).where(Alert.state.in_(("open", "ack")))
-                           .order_by(Alert.severity.asc(), Alert.opened_at.desc()).limit(8)).all()
-        busiest = s.execute(select(Port, Device.hostname).join(Device).where(Port.util_pct.is_not(None))
-                            .order_by(Port.util_pct.desc()).limit(6)).all()
-        top_cpu = sorted([d for d in devices if d.cpu is not None and d.status != "off"], key=lambda d: -d.cpu)[:6]
-        ports_total = s.scalar(select(func.count(Port.id))) or 0
-        ports_up = s.scalar(select(func.count(Port.id)).where(Port.oper == "up")) or 0
-        pollers = s.scalars(select(Poller).where(Poller.revoked.is_(False))).all()
-        interval = st(request).hub.interval(s)
-        top_port = busiest[0][0] if busiest else None
-        top_port_host = busiest[0][1] if busiest else None
-    worst_cycle = max((p.last_cycle_ms or 0 for p in pollers), default=0)
-    down = [d for d in devices if d.status == "down"]
-    if not devices:
-        headline = "No devices yet"
-    elif down:
-        by_site: dict[str, int] = {}
-        for d in down:
-            by_site[d.site.name if d.site else "no site"] = by_site.get(d.site.name if d.site else "no site", 0) + 1
-        where = ", ".join(f"{n} at {k}" for k, n in sorted(by_site.items(), key=lambda kv: -kv[1])[:2])
-        headline = f"{len(down)} device{'s' if len(down) != 1 else ''} down ({where})"
-    elif counts["warn"]:
-        headline = f"All devices reachable, {counts['warn']} need attention"
-    else:
-        headline = "Everything is up"
-    return render(request, "dashboard.html", {
-        "devices": devices, "counts": counts, "sites": sorted(sites.items()), "alerts": alerts, "busiest": busiest,
-        "top_cpu": top_cpu, "ports_total": ports_total, "ports_up": ports_up, "pollers": pollers, "interval": interval,
-        "worst_cycle": worst_cycle, "headline": headline, "top_port": top_port, "top_port_host": top_port_host,
-    })
-
-
 # ------------------------------------------------------------------ devices
 @router.get("/devices", response_class=HTMLResponse)
 def devices(request: Request, q: str = "", status: str = "", type: str = "", site: str = "", source: str = ""):
@@ -615,7 +574,14 @@ def alerts(request: Request, state: str = "open"):
         days.append({"label": day.strftime("%d %b"),
                      "crit": sum(n for d0, sev, n in daily if str(d0) == str(day) and sev == "crit"),
                      "warn": sum(n for d0, sev, n in daily if str(d0) == str(day) and sev != "crit")})
-    return render(request, "alerts.html", {"alerts": rows, "state": state, "counts": counts, "rules": rules, "days": days})
+    from . import custom_rules
+    with st(request).db.session() as s:
+        rule_open = dict(s.execute(select(Alert.rule_key, func.count(Alert.id)).where(Alert.state.in_(("open", "ack")))
+                                   .group_by(Alert.rule_key)).all())
+    custom = [r for r in rules if r.entity]
+    return render(request, "alerts.html", {"alerts": rows, "state": state, "counts": counts, "days": days,
+                                           "rules": [r for r in rules if not r.entity], "custom": custom,
+                                           "rule_open": rule_open, "describe": custom_rules.describe})
 
 
 @router.post("/alerts/{alert_id}/ack")

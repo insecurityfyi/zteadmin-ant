@@ -106,6 +106,7 @@ class User(Base):
     auth_source: Mapped[str | None] = mapped_column(String(16))      # None/local | saml (no usable password)
     external_id: Mapped[str | None] = mapped_column(String(255))     # Entra object ID for SSO users
     theme: Mapped[str | None] = mapped_column(String(16))           # None = the site default
+    dashboard: Mapped[list | None] = mapped_column(JSON)            # widget layout; None = the site default
 
 
 class AuditEvent(Base):
@@ -342,6 +343,21 @@ class AlertRule(Base):
     threshold: Mapped[float | None] = mapped_column(Float)
     polls: Mapped[int] = mapped_column(Integer, default=1)  # consecutive polls before it fires
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # custom rules (built with the rule builder) set these; built-in rules leave them empty
+    entity: Mapped[str | None] = mapped_column(String(16))      # device | port | sensor
+    metric: Mapped[str | None] = mapped_column(String(32))
+    op: Mapped[str | None] = mapped_column(String(4))           # > >= < <= == !=
+    value_text: Mapped[str | None] = mapped_column(String(64))  # for state metrics (status, link state)
+    scope: Mapped[dict | None] = mapped_column(JSON)            # type, site, name, source, port, sensor_kind, sensor_name
+    created_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class AlertPending(Base):
+    """Consecutive polls a custom rule has matched for one object, until it reaches the rule's poll count."""
+    __tablename__ = "alert_pending"
+    rule_key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    ref: Mapped[str] = mapped_column(String(80), primary_key=True)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Alert(Base):

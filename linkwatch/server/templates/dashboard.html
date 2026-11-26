@@ -1,54 +1,132 @@
 {% extends "base.html" %}
+{% from "_g.html" import sevtag, sensor_value %}
 {% block title %}Dashboard{% endblock %}
+{% macro ranges() %}<div class="ranges">{% for r in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div>{% endmacro %}
+
+{% macro body(w) %}{% set c = w.ctx %}{% set o = w.opts %}
+{% if c.error %}<p class="bad" style="margin:0">This widget couldn't load: {{ c.error }}</p>
+{% elif w.type == 'summary' %}
+  <div class="kpis" style="margin:0">
+    <div class="kpi"><span>Devices up</span><b>{{ c.counts.up }} / {{ c.devices }}</b>{% if c.counts.down %}<em class="bad">{{ c.counts.down }} down</em>{% elif c.counts.warn %}<em class="wa">{{ c.counts.warn }} need attention</em>{% else %}<em class="okc">all reachable</em>{% endif %}</div>
+    <div class="kpi"><span>Open alerts</span><b>{{ c.open }}</b><em class="{{ 'bad' if c.crit else '' }}">{{ c.crit }} critical</em></div>
+    <div class="kpi"><span>Ports monitored</span><b>{{ c.ports_total|num }}</b><em>{{ c.ports_up|num }} up</em></div>
+    <div class="kpi"><span>Busiest port now</span><b>{{ c.top_port.util_pct|pct if c.top_port else '–' }}</b><em>{{ (c.top_host ~ ' ' ~ c.top_port.name) if c.top_port else 'No traffic data yet' }}</em></div>
+    <div class="kpi"><span>Slowest poll cycle</span><b>{{ ((c.worst_cycle or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if c.worst_cycle > interval * 1000 else 'okc' }}">of {{ interval }} s budget</em></div>
+  </div>
+{% elif w.type == 'traffic' %}
+  {% if c.port %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Inbound</span><span><i style="background:var(--s2)"></i>Outbound</span></div>
+  <div class="fig" data-src="/ui/metrics/port/{{ c.port.id }}" data-unit="bps" data-h="220" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]' data-label="Port traffic"></div>
+  {% else %}<div class="fig"><div class="empty">Interface traffic appears here once SNMP devices have been polled twice.</div></div>{% endif %}
+{% elif w.type == 'alerts' %}
+  <div class="bars">{% for a in c.alerts %}
+    <div style="display:flex;gap:10px;align-items:flex-start">{{ sevtag(a.severity) }}
+      <div style="min-width:0"><div><b>{{ a.device.hostname if a.device else a.title }}</b>{% if a.device %} <span class="dim">· {{ a.title.split(':')[0] }}</span>{% endif %}{% if a.state == 'ack' %} <span class="tag">ack</span>{% endif %}</div><div class="dim" style="font-size:12.5px">{{ a.detail or '' }}</div></div>
+      <span class="dim mono" style="margin-left:auto;white-space:nowrap">{{ a.opened_at|ago }}</span></div>
+  {% else %}<p class="dim" style="margin:0">Nothing open.</p>{% endfor %}</div>
+{% elif w.type == 'sites' %}
+  <div class="sites">{% for name, devs in c.sites %}
+    <div class="site"><h3>{{ name }}<span class="dim mono" style="font-weight:400">{{ devs|selectattr('status','equalto','up')|list|length }}/{{ devs|length }}</span></h3>
+      <div class="tiles">{% for d in devs|sort(attribute='status') %}<a href="/devices/{{ d.id }}" class="d-{{ d.status }}" title="{{ d.hostname }}: {{ d.status }}" aria-label="{{ d.hostname }} {{ d.status }}"></a>{% endfor %}</div></div>
+  {% else %}<p class="dim" style="margin:0">No devices yet.</p>{% endfor %}</div>
+{% elif w.type == 'busiest' %}
+  <div class="bars">{% for p, host in c.ports %}{% set u = p.util_pct or 0 %}
+    <div class="bar"><span><a href="/ports/{{ p.id }}" style="color:inherit"><b>{{ host }} {{ p.name }}</b></a> <span class="dim">{{ p.alias or '' }}</span></span><span class="v">{{ u|round|int }}%</span><div class="tr"><b style="width:{{ [u,100]|min }}%;background:{{ 'var(--down)' if u >= 85 else 'var(--warn)' if u >= 70 else 'var(--s1)' }}"></b></div></div>
+  {% else %}<p class="dim" style="margin:0">No interface data yet.</p>{% endfor %}</div>
+{% elif w.type == 'top' %}
+  <div class="bars">{% for d, v in c.rows %}{% set pctv = (v / c.scale * 100) if c.scale else 0 %}
+    <div class="bar"><span><a style="color:inherit" href="/devices/{{ d.id }}"><b>{{ d.hostname }}</b></a></span><span class="v">{{ v|round(1) if not c.pct else v|round|int }}{{ c.unit }}</span><div class="tr"><b style="width:{{ [pctv,100]|min }}%;background:{{ ('var(--down)' if v >= 85 else 'var(--warn)' if v >= 70 else 'var(--s1)') if c.pct else 'var(--s1)' }}"></b></div></div>
+  {% else %}<p class="dim" style="margin:0">No {{ c.label|lower }} data yet.</p>{% endfor %}</div>
+{% elif w.type == 'device_graph' %}
+  {% if not c.device %}<p class="dim" style="margin:0">Choose a device in this widget's settings.</p>
+  {% elif c.metric == 'cpu' %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>CPU</span><span><i style="background:var(--s3)"></i>Memory</span></div>
+    <div class="fig" data-src="/ui/metrics/device/{{ c.device.id }}" data-unit="pct" data-max="100" data-h="200" data-series='[{"key":"cpu","color":"var(--s1)"},{"key":"mem","color":"var(--s3)"}]' data-label="CPU and memory"></div>
+  {% elif c.metric == 'ping' %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Latency (ms)</span><span><i style="background:var(--down)"></i>Loss (%)</span></div>
+    <div class="fig" data-src="/ui/metrics/device/{{ c.device.id }}" data-unit="ms" data-h="200" data-series='[{"key":"ping","color":"var(--s1)"},{"key":"loss","color":"var(--down)"}]' data-label="Latency"></div>
+  {% else %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>In</span><span><i style="background:var(--s2)"></i>Out</span></div>
+    <div class="fig" data-src="/ui/metrics/device/{{ c.device.id }}/traffic" data-unit="bps" data-h="200" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]' data-label="Traffic"></div>{% endif %}
+{% elif w.type == 'down' %}
+  {% if c.devices %}<div class="scroll"><table><tbody>{% for d in c.devices %}<tr><td><span class="dot d-{{ d.status }}"></span></td><td><a href="/devices/{{ d.id }}"><b>{{ d.hostname }}</b></a><div class="dim" style="font-size:12.5px">{{ d.status_reason or d.detail or d.status }}</div></td><td class="dim mono" style="white-space:nowrap">{{ d.status_since|ago }}</td></tr>{% endfor %}</tbody></table></div>
+    {% if c.total > c.devices|length %}<p class="help" style="margin:8px 0 0"><a href="/devices?status=down">{{ c.total - c.devices|length }} more</a></p>{% endif %}
+  {% else %}<p class="okc" style="margin:0">Every device is up.</p>{% endif %}
+{% elif w.type == 'events' %}
+  {% if c.events %}<div class="scroll"><table><tbody>{% for e in c.events %}<tr><td style="width:1%">{{ sevtag(e.severity) }}</td><td>{% if e.device %}<a href="/devices/{{ e.device.id }}?tab=events"><b>{{ e.device.hostname }}</b></a> {% endif %}{{ e.message }}</td><td class="dim mono" style="white-space:nowrap">{{ e.at|ago }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="dim" style="margin:0">No events yet.</p>{% endif %}
+{% elif w.type == 'integrations' %}
+  {% if c.integrations %}<div class="scroll"><table><tbody>{% for i in c.integrations %}<tr><td><span class="dot d-{{ 'off' if not i.enabled else {'ok':'up','partial':'warn','error':'down'}.get(i.status, 'off') }}"></span></td><td><a href="/integrations/{{ i.id }}/overview"><b>{{ i.name }}</b></a><div class="dim" style="font-size:12.5px">{{ i.kind }}{% if i.last_error and i.status == 'error' %} · {{ i.last_error[:80] }}{% endif %}</div></td><td class="n dim">{{ c.counts.get(i.id, 0) }} objects</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<p class="dim" style="margin:0">No integrations. <a href="/integrations">Connect one</a>.</p>{% endif %}
+{% elif w.type == 'sensors' %}
+  {% if c.rows %}<div class="scroll"><table><tbody>{% for x, d in c.rows %}<tr><td><a href="/devices/{{ d.id }}?tab=health"><b>{{ d.hostname }}</b></a> <span class="dim">{{ x.name }}</span></td><td class="n">{{ sensor_value(x) }}</td></tr>{% endfor %}</tbody></table></div>
+    <p class="help" style="margin:8px 0 0">{{ c.total }} sensors{% if c.bad %}, <span class="bad">{{ c.bad }} in alarm</span>{% endif %} · <a href="/health?metric={{ c.kind }}">all</a></p>
+  {% else %}<p class="dim" style="margin:0">No {{ c.kind }} sensors reported yet.</p>{% endif %}
+{% elif w.type == 'map' %}
+  <svg id="netmap" data-src="/ui/map?site={{ c.site|urlencode }}" data-focus="" style="display:block;width:100%;height:{{ c.height }}px;cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
+  <div id="map-empty" class="empty-state" hidden><p>No LLDP or CDP links yet. <a href="/map">Open the map</a> for details.</p></div>
+{% elif w.type == 'note' %}
+  {% if c.text %}<div class="note" style="white-space:pre-wrap;overflow-wrap:anywhere">{{ c.text|urlize(40, true) }}</div>{% else %}<p class="dim" style="margin:0">Add some text in this widget's settings.</p>{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% macro title(w) %}{% set c = w.ctx %}{% if w.type == 'traffic' and c.port %}Traffic on {{ c.host }} {{ c.port.name }}{% elif w.type == 'top' %}{{ {'cpu':'Highest CPU','mem':'Highest memory','ping_ms':'Highest latency','loss_pct':'Highest packet loss'}.get(c.metric, 'Top devices') }}{% if w.opts.site %} at {{ w.opts.site }}{% endif %}{% elif w.type == 'device_graph' and c.device %}{{ c.device.hostname }}{% elif w.type == 'map' and w.opts.site %}Network map: {{ w.opts.site }}{% else %}{{ w.spec.title }}{% endif %}{% endmacro %}
+
+{% macro options(w) %}
+<form class="w-opts stack" hidden data-for="{{ w.id }}">
+  {% for opt in w.spec.options %}{% set v = w.opts.get(opt.name, opt.default) %}
+  <label class="f">{{ opt.label }}
+    {% if opt.kind == 'select' %}<select name="{{ opt.name }}">{% for k, label in opt.choices %}<option value="{{ k }}" {% if k|string == v|string %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    {% elif opt.kind == 'site' %}<select name="{{ opt.name }}"><option value="">All sites</option>{% for n in site_names %}<option {% if n == v %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    {% elif opt.kind == 'device' %}<select name="{{ opt.name }}"><option value="">Choose a device</option>{% for id, name in pick_devices %}<option value="{{ id }}" {% if id|string == v|string %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+    {% elif opt.kind == 'port' %}<input type="search" name="{{ opt.name }}_q" placeholder="Search device or port" data-port-search autocomplete="off" value="{{ (w.ctx.host ~ ' ' ~ w.ctx.port.name) if w.ctx.fixed and w.ctx.port else '' }}">
+      <input type="hidden" name="{{ opt.name }}" value="{{ v }}"><span class="port-hits" style="display:flex;flex-direction:column;gap:2px;margin-top:4px"></span>
+    {% elif opt.kind == 'number' %}<input type="number" name="{{ opt.name }}" value="{{ v }}" min="1" max="{{ 1000 if opt.name == 'height' else 50 }}">
+    {% else %}<textarea name="{{ opt.name }}" rows="4" maxlength="2000">{{ v }}</textarea>{% endif %}
+  </label>{% endfor %}
+  <div class="actions"><button class="btn sm pri" type="submit">Apply</button><button class="btn sm" type="button" data-opts-cancel>Cancel</button></div>
+</form>
+{% endmacro %}
+
 {% block content %}
 <div class="head"><div><h1>{{ headline }}</h1>
-  <p>{{ devices|length }} devices across {{ sites|length }} site{{ '' if sites|length == 1 else 's' }}, polled every {{ (interval / 60)|round|int }} minutes by {{ pollers|length }} poller{{ '' if pollers|length == 1 else 's' }}.</p></div></div>
+  <p>{{ n_devices }} devices across {{ n_sites }} site{{ '' if n_sites == 1 else 's' }}, polled every {{ (interval / 60)|round|int }} minutes by {{ pollers }} poller{{ '' if pollers == 1 else 's' }}.</p></div>
+  <div class="actions">
+  {% if edit %}
+    <select id="w-add" aria-label="Widget to add" style="width:auto"><option value="">Add a widget…</option>{% for k, spec in catalog.items() %}<option value="{{ k }}" title="{{ spec.help }}">{{ spec.title }}</option>{% endfor %}</select>
+    <form method="post" action="/account/dashboard/reset" onsubmit="return confirm('Throw away your layout and use the default?')"><button class="btn" type="submit">Reset</button></form>
+    {% if me and me.role == 'admin' %}<form method="post" action="/admin/dashboard/default" title="Everyone who hasn't customised their own dashboard sees this layout"><button class="btn" type="submit">Make default for everyone</button></form>{% endif %}
+    <a class="btn pri" href="/" id="w-done">Done</a>
+  {% else %}<a class="btn" href="/?edit=1">Customise</a>{% endif %}
+  </div></div>
 
-{% if not devices %}
-<div class="p empty-state">
+{% if n_devices == 0 and not edit and layout_source != 'user' %}
+<div class="p empty-state" style="margin-bottom:16px">
   <h2>Start by installing a poller</h2>
   <p>A poller runs on your local network and polls devices over SNMP, ping and local APIs. It only connects out to this server.</p>
   <p class="actions" style="justify-content:center"><a class="btn pri" href="/pollers">Install a poller</a><a class="btn" href="/integrations">Connect a cloud platform</a></p>
 </div>
-{% else %}
-<div class="kpis">
-  <div class="kpi"><span>Devices up</span><b>{{ counts.up }} / {{ devices|length }}</b>{% if counts.down %}<em class="bad">{{ counts.down }} down</em>{% elif counts.warn %}<em class="wa">{{ counts.warn }} need attention</em>{% else %}<em class="okc">all reachable</em>{% endif %}</div>
-  <div class="kpi"><span>Open alerts</span><b>{{ alerts|selectattr('state','equalto','open')|list|length }}</b><em class="{{ 'bad' if alerts|selectattr('severity','equalto','crit')|list else '' }}">{{ alerts|selectattr('severity','equalto','crit')|list|length }} critical</em></div>
-  <div class="kpi"><span>Ports monitored</span><b>{{ ports_total|num }}</b><em>{{ ports_up|num }} up</em></div>
-  <div class="kpi"><span>Busiest port now</span><b>{{ top_port.util_pct|pct if top_port else '–' }}</b><em>{{ (top_port_host ~ ' ' ~ top_port.name) if top_port else 'No traffic data yet' }}</em></div>
-  <div class="kpi"><span>Slowest poll cycle</span><b>{{ ((worst_cycle or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if worst_cycle > interval * 1000 else 'okc' }}">of {{ interval }} s budget</em></div>
-</div>
-<div class="grid">
-  <div class="p c8">
-    <div class="ph"><h2>{% if top_port %}Traffic on {{ top_port_host }} {{ top_port.name }}{% else %}Traffic{% endif %}</h2>
-      <div class="ranges">{% for r in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div></div>
-    {% if top_port %}
-    <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Inbound</span><span><i style="background:var(--s2)"></i>Outbound</span></div>
-    <div class="fig" data-src="/ui/metrics/port/{{ top_port.id }}" data-unit="bps" data-h="220" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]' data-label="Port traffic"></div>
-    {% else %}<div class="fig"><div class="empty">Interface traffic appears here once SNMP devices have been polled twice.</div></div>{% endif %}
-  </div>
-  <div class="p c4"><div class="ph"><h2>Open alerts</h2><a href="/alerts" class="sub">View all</a></div>
-    <div class="bars">
-    {% for a in alerts %}
-      <div style="display:flex;gap:10px;align-items:flex-start"><span class="sev {{ a.severity }}">{{ {'crit':'Critical','warn':'Warning','info':'Info'}[a.severity] }}</span>
-        <div style="min-width:0"><div><b>{{ a.device.hostname if a.device else a.title }}</b>{% if a.device %} <span class="dim">· {{ a.title.split(':')[0] }}</span>{% endif %}</div><div class="dim" style="font-size:12.5px">{{ a.detail or '' }}</div></div>
-        <span class="dim mono" style="margin-left:auto;white-space:nowrap">{{ a.opened_at|ago }}</span></div>
-    {% else %}<p class="dim" style="margin:0">Nothing open.</p>{% endfor %}
-    </div></div>
-  <div class="p c4"><div class="ph"><h2>Devices by site</h2></div>
-    <div class="sites">{% for name, devs in sites %}
-      <div class="site"><h3>{{ name }}<span class="dim mono" style="font-weight:400">{{ devs|selectattr('status','equalto','up')|list|length }}/{{ devs|length }}</span></h3>
-        <div class="tiles">{% for d in devs|sort(attribute='status') %}<a href="/devices/{{ d.id }}" class="d-{{ d.status }}" title="{{ d.hostname }}: {{ d.status }}" aria-label="{{ d.hostname }} {{ d.status }}"></a>{% endfor %}</div></div>
-    {% endfor %}</div></div>
-  <div class="p c4"><div class="ph"><h2>Busiest ports</h2><span class="sub">Utilization, last poll</span></div>
-    <div class="bars">{% for p, host in busiest %}
-      {% set u = p.util_pct or 0 %}
-      <div class="bar"><span><b>{{ host }} {{ p.name }}</b> <span class="dim">{{ p.alias or '' }}</span></span><span class="v">{{ u|round|int }}%</span><div class="tr"><b style="width:{{ [u,100]|min }}%;background:{{ 'var(--down)' if u >= 85 else 'var(--warn)' if u >= 70 else 'var(--s1)' }}"></b></div></div>
-    {% else %}<p class="dim" style="margin:0">No interface data yet.</p>{% endfor %}</div></div>
-  <div class="p c4"><div class="ph"><h2>Highest CPU</h2><span class="sub">Last poll</span></div>
-    <div class="bars">{% for d in top_cpu %}
-      <div class="bar"><span><a class="row" style="color:inherit" href="/devices/{{ d.id }}"><b>{{ d.hostname }}</b></a></span><span class="v">{{ d.cpu|round|int }}%</span><div class="tr"><b style="width:{{ [d.cpu,100]|min }}%;background:{{ 'var(--down)' if d.cpu >= 85 else 'var(--warn)' if d.cpu >= 70 else 'var(--s1)' }}"></b></div></div>
-    {% else %}<p class="dim" style="margin:0">No CPU data yet.</p>{% endfor %}</div></div>
-</div>
 {% endif %}
+{% if edit %}<p class="help" id="w-hint">Drag widgets by their handle to move them, or use the arrows. Changes save as you go. {% if layout_source != 'user' %}You're starting from the {{ 'site default' if layout_source == 'site' else 'built-in' }} layout; your changes only affect your own dashboard.{% endif %}</p>{% endif %}
+<div class="grid{{ ' editing' if edit }}" id="widgets" data-layout='{{ layout_json }}'>
+{% for w in widgets %}
+  <section class="p c{{ w.w }} widget" id="w-{{ w.id }}" data-id="{{ w.id }}" data-type="{{ w.type }}" data-w="{{ w.w }}" data-opts='{{ w.opts|tojson }}'{% if w.type == 'summary' and not edit %} style="padding:0;background:none;border:0;box-shadow:none"{% endif %}>
+    {% if edit or w.type != 'summary' %}<div class="ph">
+      {% if edit %}<span class="w-handle" draggable="true" title="Drag to move" aria-hidden="true">⠿</span>{% endif %}
+      <h2>{{ title(w) }}</h2>
+      {% if not edit %}
+        {% if w.type in ('traffic', 'device_graph') %}{{ ranges() }}{% elif w.type == 'alerts' %}<a href="/alerts" class="sub">View all</a>{% elif w.type == 'map' %}<a href="/map" class="sub">Open</a>{% elif w.type == 'events' %}<a href="/eventlog" class="sub">View all</a>{% elif w.type == 'busiest' %}<a href="/ports?sort=util" class="sub">All ports</a>{% endif %}
+      {% else %}
+        <div class="w-tools">
+          <button class="btn sm" type="button" data-move="-1" title="Move earlier" aria-label="Move earlier">←</button><button class="btn sm" type="button" data-move="1" title="Move later" aria-label="Move later">→</button>
+          <select data-width aria-label="Width">{% for n in widths %}<option value="{{ n }}" {% if n == w.w %}selected{% endif %}>{{ {3:'¼',4:'⅓',6:'½',8:'⅔',12:'Full'}[n] }}</option>{% endfor %}</select>
+          {% if w.spec.options %}<button class="btn sm" type="button" data-settings>Settings</button>{% endif %}
+          <button class="btn sm" type="button" data-remove title="Remove" aria-label="Remove widget">✕</button>
+        </div>
+      {% endif %}</div>{% endif %}
+    {% if edit %}{{ options(w) }}{% endif %}
+    <div class="w-body">{{ body(w) }}</div>
+  </section>
+{% else %}
+  <div class="p c12 empty-state"><h2>Your dashboard is empty</h2><p>{% if edit %}Pick a widget from "Add a widget" above.{% else %}<a href="/?edit=1">Customise</a> it to add widgets.{% endif %}</p></div>
+{% endfor %}
+</div>
+{% if widgets|selectattr('type','equalto','map')|list %}<script src="/static/map.js?v={{ version }}" defer></script>{% endif %}
+{% if edit %}<script src="/static/dashboard.js?v={{ version }}" defer></script>{% endif %}
 {% endblock %}
