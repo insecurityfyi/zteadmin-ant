@@ -442,6 +442,7 @@ Then:
 | Update to the latest code | `~/zteadmin-ant/deploy/update.sh` |
 | Automatic updates on/off | `~/zteadmin-ant/deploy/enable-auto-update.sh` / `... off` |
 | Reset admin password | `~/zteadmin-ant/deploy/reset-password.sh` |
+| Microsoft Entra sign-in | Administration > Single sign-on, steps in [entra-sso.md](entra-sso.md) |
 | Restart | `systemctl --user restart linkwatch-web` |
 | Roll back by hand | `podman tag ghcr.io/insecurityfyi/linkwatch:previous ghcr.io/insecurityfyi/linkwatch:current && systemctl --user restart linkwatch-web` |
 | Database backup | `podman exec linkwatch-db pg_dump -U linkwatch linkwatch \| gzip > ~/linkwatch-$(date +%F).sql.gz` |

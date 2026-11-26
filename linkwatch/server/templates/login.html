@@ -11,12 +11,18 @@
   <div class="p" style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:10px"><svg width="28" height="28" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="#0d7c8c"/><path d="M5 15h4l2-6 4 10 2-4h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><h1 style="font-size:22px">Linkwatch</h1></div>
     {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
-    <form method="post" action="/login" class="stack">
+    {% if sso %}
+    <a class="btn pri" href="/saml/login?next={{ next|urlencode }}" style="justify-content:center;gap:10px;padding:9px 12px">
+      <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>{{ sso.button_label }}</a>
+    <details {% if username is defined and username %}open{% endif %}><summary class="sub" style="cursor:pointer">{{ 'Administrator sign-in with a password' if sso.local_login == 'admins' else 'Sign in with a password' }}</summary>
+    {% endif %}
+    <form method="post" action="/login" class="stack" {% if sso %}style="margin-top:12px"{% endif %}>
       <input type="hidden" name="next" value="{{ next }}">
-      <label class="f">Username<input type="text" name="username" id="username" autocomplete="username" value="{{ username|default('') }}" autofocus required autocapitalize="none" spellcheck="false"></label>
+      <label class="f">Username<input type="text" name="username" id="username" autocomplete="username" value="{{ username|default('') }}" {% if not sso %}autofocus{% endif %} required autocapitalize="none" spellcheck="false"></label>
       <label class="f">Password<input type="password" name="password" id="password" autocomplete="current-password" required></label>
-      <button class="btn pri" type="submit">Sign in</button>
+      <button class="btn {{ '' if sso else 'pri' }}" type="submit">Sign in</button>
     </form>
+    {% if sso %}</details>{% endif %}
   </div>
 </main>
 </body>

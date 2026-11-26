@@ -13,11 +13,13 @@
       <label class="chk"><input type="checkbox" name="disabled" id="u_disabled" {% if u.disabled %}checked{% endif %}> Disabled (can't sign in; signed out at once)</label>
       <div><button class="btn pri" type="submit">Save</button></div>
     </form></div>
-  <div class="p c6"><div class="ph"><h2>Set a new password</h2></div>
+  <div class="p c6">{% if u.auth_source == 'saml' %}<div class="ph"><h2>Single sign-on user</h2></div>
+    <p class="dim" style="margin-top:0">Created by single sign-on{% if u.external_id %} (Entra object ID <span class="mono">{{ u.external_id }}</span>){% endif %}. They have no Linkwatch password. Disable the account here, or remove them from the app in Entra, to stop them signing in.</p>
+    {% else %}<div class="ph"><h2>Set a new password</h2></div>
     <form method="post" action="/admin/users/{{ u.id }}/password" class="stack" autocomplete="off">
       <label class="f">New password<input type="password" name="password" id="u_password" required minlength="{{ min_password }}" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore><small>At least {{ min_password }} characters. Signs the user out everywhere.</small></label>
       <div><button class="btn" type="submit">Set password</button></div>
-    </form>
+    </form>{% endif %}
     {% if not me or u.id != me.id %}
     <div class="ph" style="margin-top:24px"><h2>Delete user</h2></div>
     <form method="post" action="/admin/users/{{ u.id }}/delete" class="actions">

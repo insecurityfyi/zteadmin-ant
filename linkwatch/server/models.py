@@ -102,6 +102,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    auth_source: Mapped[str | None] = mapped_column(String(16))      # None/local | saml (no usable password)
+    external_id: Mapped[str | None] = mapped_column(String(255))     # Entra object ID for SSO users
 
 
 class AuditEvent(Base):
