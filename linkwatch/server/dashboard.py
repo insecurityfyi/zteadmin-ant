@@ -1,7 +1,8 @@
 """The overview dashboard: a grid of widgets each user can add, remove, move, resize and configure.
 
 A layout is a list of {"id", "type", "w", "opts"} kept on the user (``users.dashboard``). Users without one see the
-site default (setting ``dashboard_default``, which an admin sets from their own layout), or else ``DEFAULT_LAYOUT``.
+site default (setting ``dashboard_default``, which an admin sets from their own layout), or else the theme's built-in
+layout (``THEME_LAYOUTS``, e.g. the Navy console) or ``DEFAULT_LAYOUT``.
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import json
 import re
 import secrets
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, Callable
 
 from fastapi import APIRouter, Request
@@ -17,7 +19,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .db import get_setting, set_setting
-from .models import Alert, Device, Event, Integration, Poller, Port, Sensor, Site, User
+from .models import (
+    Alert,
+    Device,
+    DeviceMetric,
+    Event,
+    Integration,
+    Poller,
+    Port,
+    PortMetric,
+    Sensor,
+    Site,
+    User,
+    utcnow,
+)
+from .themes import theme_for
 from .web import back, flash, render, st
 
 router = APIRouter(include_in_schema=False)
@@ -164,6 +180,61 @@ def load_map(s: Session, o: dict) -> dict:
     return {"site": o.get("site") or "", "height": max(200, min(1000, h))}
 
 
+def load_cards(s: Session, o: dict) -> dict:
+    """KPI cards: totals, online, offline/critical, average latency and bandwidth now."""
+    devices = [d for d in _devices(s) if d.status != "off"]
+    up = sum(1 for d in devices if d.status == "up")
+    down = sum(1 for d in devices if d.status == "down")
+    crit = s.scalar(select(func.count(Alert.id)).where(Alert.state == "open", Alert.severity == "crit")) or 0
+    pings = [d.ping_ms for d in devices if d.ping_ms is not None and d.status in ("up", "warn")]
+    bw = s.execute(select(func.sum(Port.in_bps), func.sum(Port.out_bps))).first() or (None, None)
+    new_7d = sum(1 for d in devices if d.created_at and d.created_at >= utcnow() - timedelta(days=7))
+    total_bw = (bw[0] or 0.0) + (bw[1] or 0.0)
+    scale = next(((f, u) for f, u in ((1e12, "Tbps"), (1e9, "Gbps"), (1e6, "Mbps"), (1e3, "kbps")) if total_bw >= f), (1, "bps"))
+    bw_value = total_bw / scale[0]
+    return {"bw_value": f"{bw_value:.1f}" if bw_value < 10 else f"{bw_value:.0f}", "bw_unit": scale[1],
+            "total": len(devices), "up": up, "down": down, "warn": sum(1 for d in devices if d.status == "warn"), "crit": crit,
+            "up_pct": (100.0 * up / len(devices)) if devices else None, "new_7d": new_7d,
+            "latency": (sum(pings) / len(pings)) if pings else None, "bw_in": bw[0] or 0.0, "bw_out": bw[1] or 0.0}
+
+
+def load_net_traffic(s: Session, o: dict) -> dict:
+    return {"scope": "edge" if o.get("ports") == "edge" else "all", "tall": o.get("size") == "tall"}
+
+
+def health_score(s: Session) -> dict:
+    """0-100: the share of devices up, less 5 per open critical alert and 2 per warning. None with no devices."""
+    devices = [d for d in _devices(s) if d.status != "off"]
+    if not devices:
+        return {"score": None}
+    up = sum(1 for d in devices if d.status == "up") + 0.5 * sum(1 for d in devices if d.status == "warn")
+    alerts = dict(s.execute(select(Alert.severity, func.count(Alert.id)).where(Alert.state == "open").group_by(Alert.severity)).all())
+    crit, warn = alerts.get("crit", 0), alerts.get("warn", 0)
+    score = max(0, min(100, round(100 * up / len(devices) - 5 * crit - 2 * warn)))
+    down = sum(1 for d in devices if d.status == "down")
+    label, color = ("Good", "var(--up)") if score >= 90 else ("Fair", "var(--warn)") if score >= 70 else ("Poor", "var(--down)")
+    if not down and not crit:
+        note, ok = "All systems operational", True
+    else:
+        bits = [f"{down} device{'s' if down != 1 else ''} down"] if down else []
+        bits += [f"{crit} critical alert{'s' if crit != 1 else ''}"] if crit else []
+        note, ok = ", ".join(bits), False
+    return {"score": score, "label": label, "color": color, "note": note, "ok": ok}
+
+
+def load_health(s: Session, o: dict) -> dict:
+    return health_score(s)
+
+
+def load_device_table(s: Session, o: dict) -> dict:
+    q = (select(Device).options(selectinload(Device.site), selectinload(Device.poller), selectinload(Device.integration))
+         .where(Device.disabled.is_(False)))
+    rows = s.scalars(q).all()
+    order = {"down": 0, "warn": 1, "unknown": 2, "up": 3, "off": 4}
+    rows = sorted(rows, key=lambda d: (order.get(d.status, 5), d.hostname.lower()))[:2000]
+    return {"devices": rows, "per_page": _limit(o, 10)}
+
+
 def load_note(s: Session, o: dict) -> dict:
     return {"text": str(o.get("text") or "")[:2000]}
 
@@ -195,6 +266,13 @@ WIDGETS: dict[str, Widget] = {
                                                            ("power", "Power")), default="temperature"), LIMIT]),
     "map": Widget("Network map", 12, load_map, "The LLDP/CDP network map.", [SITE, Opt("height", "Height (px)", "number", default=420)]),
     "note": Widget("Note", 4, load_note, "Your own text: on-call numbers, links, reminders.", [Opt("text", "Text", "text")]),
+    "cards": Widget("Status cards", 12, load_cards, "Total, online and offline devices, average latency and bandwidth, with trend lines."),
+    "net_traffic": Widget("Network traffic", 8, load_net_traffic, "Inbound and outbound traffic across every monitored port, or only routers and firewalls.",
+                          [Opt("ports", "Ports", choices=(("", "Every monitored port"), ("edge", "Routers and firewalls only"))),
+                           Opt("size", "Height", choices=(("", "Normal"), ("tall", "Tall (spans two rows)")))]),
+    "health": Widget("Overall health", 4, load_health, "A 0-100 score from devices up and open alerts."),
+    "device_table": Widget("Devices", 12, load_device_table, "Every device with status, site, poller, CPU, memory and last poll; searchable, a page at a time.",
+                           [Opt("limit", "Rows per page", "number", default=10)]),
 }
 
 DEFAULT_LAYOUT = [
@@ -224,7 +302,14 @@ def clean_layout(raw: Any) -> list[dict]:
     return out
 
 
-def layout_for(s: Session, user: User | None) -> tuple[list[dict], str]:
+# a theme's own starting layout, used when neither the user nor the site has one
+THEME_LAYOUTS = {
+    "navy": [{"type": "cards", "w": 12}, {"type": "net_traffic", "w": 8, "opts": {"size": "tall"}}, {"type": "health", "w": 4},
+             {"type": "top", "w": 4, "opts": {"metric": "cpu", "limit": "5"}}, {"type": "device_table", "w": 12}],
+}
+
+
+def layout_for(s: Session, user: User | None, theme: str = "") -> tuple[list[dict], str]:
     """The layout to show and where it came from: 'user', 'site' or 'builtin'."""
     if user is not None and user.dashboard:
         lay = clean_layout(user.dashboard)
@@ -236,7 +321,7 @@ def layout_for(s: Session, user: User | None) -> tuple[list[dict], str]:
         site = []
     if site:
         return site, "site"
-    return clean_layout(DEFAULT_LAYOUT), "builtin"
+    return clean_layout(THEME_LAYOUTS.get(theme, DEFAULT_LAYOUT)), "builtin"
 
 
 def _headline(s: Session) -> tuple[str, int, int]:
@@ -262,7 +347,8 @@ def dashboard(request: Request, edit: int = 0):
     user = getattr(request.state, "user", None)
     with st(request).db.session() as s:
         me = s.get(User, user.id) if user else None
-        layout, source = layout_for(s, me)
+        theme = theme_for(s, me)
+        layout, source = layout_for(s, me, theme)
         widgets = []
         for w in layout:
             try:
@@ -281,6 +367,56 @@ def dashboard(request: Request, edit: int = 0):
         "pollers": pollers, "interval": interval, "edit": bool(edit), "catalog": WIDGETS, "widths": WIDTHS,
         "site_names": sites, "pick_devices": pick_devices, "layout_json": json.dumps(layout),
     })
+
+
+RANGES = {"6h": (timedelta(hours=6), 300), "24h": (timedelta(hours=24), 900), "7d": (timedelta(days=7), 3600), "30d": (timedelta(days=30), 4 * 3600)}
+
+
+@router.get("/ui/metrics/network", include_in_schema=False)
+def network_series(request: Request, range: str = "24h", ports: str = ""):
+    """Network-wide series per time bucket: summed port traffic (in, out) and average device latency, CPU and memory.
+
+    Port traffic is the sum over every monitored port, so a link between two monitored devices counts on both ends.
+    ``ports=edge`` limits it to routers and firewalls.
+    """
+    span, step = RANGES.get(range, RANGES["24h"])
+    hourly = range == "30d"
+    since = utcnow() - span
+    with st(request).db.session() as s:
+        q = (select(PortMetric.ts, PortMetric.port_id, PortMetric.in_bps, PortMetric.out_bps)
+             .where(PortMetric.hourly.is_(hourly), PortMetric.ts >= since))
+        if ports == "edge":
+            q = q.join(Port, Port.id == PortMetric.port_id).join(Device, Device.id == Port.device_id).where(Device.type.in_(("Router", "Firewall")))
+        traffic = s.execute(q).all()
+        dev = s.execute(select(DeviceMetric.ts, DeviceMetric.device_id, DeviceMetric.ping_ms, DeviceMetric.cpu, DeviceMetric.mem)
+                        .where(DeviceMetric.hourly.is_(hourly), DeviceMetric.ts >= since)).all()
+    t0 = since.timestamp()
+    bucket = lambda ts: int((ts.timestamp() - t0) // step)
+    # a port polled twice in one bucket would count twice: average per port first, then add the ports up
+    per_port: dict[tuple[int, int], list] = {}
+    for ts, pid, i, o in traffic:
+        acc = per_port.setdefault((bucket(ts), pid), [0.0, 0.0, 0])
+        acc[0] += i or 0
+        acc[1] += o or 0
+        acc[2] += 1
+    tin: dict[int, float] = {}
+    tout: dict[int, float] = {}
+    for (b, _), (i, o, n) in per_port.items():
+        tin[b] = tin.get(b, 0.0) + i / n
+        tout[b] = tout.get(b, 0.0) + o / n
+    avg: dict[str, dict[int, list]] = {"ping": {}, "cpu": {}, "mem": {}}
+    for ts, _, ping, cpu, mem in dev:
+        b = bucket(ts)
+        for k, v in (("ping", ping), ("cpu", cpu), ("mem", mem)):
+            if v is not None:
+                avg[k].setdefault(b, []).append(v)
+    keys = sorted(set(tin) | set().union(*(set(v) for v in avg.values())))
+    mean = lambda xs: sum(xs) / len(xs) if xs else None
+    return {"ts": [(since + timedelta(seconds=(b + 0.5) * step)).isoformat() + "Z" for b in keys],
+            "in": [tin.get(b) for b in keys], "out": [tout.get(b) for b in keys],
+            "bw": [(tin[b] + tout.get(b, 0.0)) if b in tin else None for b in keys],
+            "ping": [mean(avg["ping"].get(b, [])) for b in keys], "cpu": [mean(avg["cpu"].get(b, [])) for b in keys],
+            "mem": [mean(avg["mem"].get(b, [])) for b in keys]}
 
 
 @router.get("/ui/dashboard/ports", include_in_schema=False)
@@ -319,7 +455,8 @@ def reset_layout(request: Request):
 @router.post("/admin/dashboard/default")
 def make_default(request: Request):
     with st(request).db.session() as s:
-        layout, _ = layout_for(s, s.get(User, request.state.user.id))
+        me = s.get(User, request.state.user.id)
+        layout, _ = layout_for(s, me, theme_for(s, me))
         set_setting(s, "dashboard_default", json.dumps(layout))
     flash(request, "Your layout is now the default for everyone who hasn't customised theirs.")
     return back("/")

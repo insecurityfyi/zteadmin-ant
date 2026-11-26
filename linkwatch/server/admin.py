@@ -13,7 +13,7 @@ from .models import AuditEvent, Device, Integration, Poller, User, utcnow
 from .security import hash_password, verify_password
 from .users import MIN_PASSWORD, ROLES, USERNAME, active_admins, audit, password_problem
 from .db import set_setting
-from .themes import THEMES, site_theme
+from .themes import LAYOUTS, THEME_LAYOUT, THEMES, site_layout, site_theme
 from .web import back, render, st
 
 router = APIRouter(include_in_schema=False)
@@ -37,11 +37,13 @@ def admin_page(request: Request, audit_q: str = ""):
                   "integrations": s.scalar(select(func.count(Integration.id))) or 0}
         dialect = s.bind.dialect.name
         theme = site_theme(s)
+        layout = site_layout(s)
     system = {"version": __version__, "python": platform.python_version(), "database": dialect,
               "public_url": st(request).config.public_url}
     return render(request, "admin.html", {"users": users, "events": events, "roles": ROLES, "audit_q": audit_q,
                                           "counts": counts, "system": system, "min_password": MIN_PASSWORD,
-                                          "themes": THEMES, "site_theme": theme})
+                                          "themes": THEMES, "site_theme": theme, "layouts": LAYOUTS, "site_layout": layout,
+                                          "theme_layout": THEME_LAYOUT})
 
 
 @router.post("/admin/theme")
@@ -50,9 +52,12 @@ async def admin_theme(request: Request):
     theme = str(form.get("theme") or "auto")
     if theme not in THEMES:
         theme = "auto"
+    layout = str(form.get("layout") or "")
+    layout = layout if layout in LAYOUTS else ""
     with st(request).db.session() as s:
         set_setting(s, "theme", theme)
-        audit(s, request.state.user.username, ip_of(request), "changed the site theme", theme)
+        set_setting(s, "layout", layout)
+        audit(s, request.state.user.username, ip_of(request), "changed the site theme", f"{theme}, menu {layout or 'theme default'}")
     flash(request, f"Site theme set to {THEMES[theme].split(' (')[0]}. Users who picked their own theme keep it.")
     return back("/admin#appearance")
 
@@ -178,8 +183,10 @@ async def user_delete(request: Request, uid: int):
 def account_page(request: Request):
     with st(request).db.session() as s:
         default = site_theme(s)
+        me = s.get(User, request.state.user.id)
+        my_layout = me.layout if me else None
     return render(request, "account.html", {"roles": ROLES, "min_password": MIN_PASSWORD, "themes": THEMES,
-                                            "site_theme": default})
+                                            "site_theme": default, "layouts": LAYOUTS, "my_layout": my_layout})
 
 
 @router.post("/account/theme")
@@ -189,6 +196,8 @@ async def account_theme(request: Request):
     with st(request).db.session() as s:
         user = s.get(User, request.state.user.id)
         user.theme = theme if theme in THEMES else None
+        layout = str(form.get("layout") or "")
+        user.layout = layout if layout in LAYOUTS else None
     flash(request, "Theme saved.")
     return back("/account")
 

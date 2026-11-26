@@ -40,7 +40,7 @@ from .notify import send_one
 from .alerts import AlertEvent
 from . import events
 from .security import mask, new_secret, sha256
-from .themes import theme_for
+from .themes import layout_for, theme_for
 
 router = APIRouter(include_in_schema=False)
 SNMP_AUTH = ["SHA", "SHA224", "SHA256", "SHA384", "SHA512", "MD5"]
@@ -67,6 +67,7 @@ def render(request: Request, name: str, ctx: dict[str, Any] | None = None, statu
         ctx["nav_types"] = s.execute(select(Device.type, func.count(Device.id)).group_by(Device.type).order_by(Device.type)).all()
         ctx["nav_down"] = s.scalar(select(func.count(Device.id)).where(Device.status == "down", Device.disabled.is_(False))) or 0
         ctx["theme"] = theme_for(s, getattr(request.state, "user", None))
+        ctx["layout"] = layout_for(s, getattr(request.state, "user", None), ctx["theme"])
         ctx["pollers_total"] = s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0
         ctx["nav_integrations"] = s.execute(select(Integration.id, Integration.name, Integration.kind, Integration.status,
                                                    Integration.enabled).order_by(Integration.name)).all()

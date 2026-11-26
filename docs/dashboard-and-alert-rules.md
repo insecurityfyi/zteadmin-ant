@@ -11,7 +11,36 @@ The Overview page is a grid of widgets. Each person arranges their own, and read
 5. **Settings** picks what a widget shows, for example the port for a traffic graph, the device for a device graph, or the metric for "Top devices". **✕** removes the widget.
 6. Every change saves as you make it. Click **Done** when you're finished.
 
-**Reset** goes back to the default layout. Admins also get **Make default for everyone**: everyone who hasn't customised their own dashboard then sees that layout. Without one, Linkwatch uses its built-in layout.
+**Reset** goes back to the default layout. Admins also get **Make default for everyone**: everyone who hasn't customised their own dashboard then sees that layout. Without one, Linkwatch uses its built-in layout. The Navy console theme has a built-in layout of its own, described below.
+
+The **Last 24 hours** menu next to Customise changes the time range of every graph on the page.
+
+### Navy console theme and the sidebar menu
+
+**Administration > Appearance** sets the site theme and menu style. Each person can override both under **Your account**.
+
+- **Navy console** is a dark navy theme with the Inter typeface and raised cards.
+- **Menu** is either:
+  - **Top menu**;
+  - **Left sidebar**, with icons, the sections as an accordion, and Pollers and Administration at the bottom;
+  - **Each theme's own**, the default: the sidebar for Navy console and the top menu for the other themes.
+- On screens narrower than 900 px, the sidebar becomes the top menu.
+
+With Navy console, anyone who hasn't customised their dashboard, and whose admin hasn't set a site-wide default, starts from:
+- status cards;
+- a tall network traffic graph;
+- overall health;
+- the highest CPU;
+- the device table.
+
+These widgets can be added to any theme's dashboard:
+
+| Widget | Shows |
+|---|---|
+| Status cards | Total devices (and how many were added in the last 7 days), online with the percentage, offline devices and critical alerts, average latency of reachable devices, and bandwidth now. The latency and bandwidth cards have trend lines. |
+| Network traffic | Inbound and outbound traffic summed over every monitored port. A link between two monitored devices counts on both ends. Settings can limit it to routers and firewalls, and make it tall (two rows high). |
+| Overall health | A 0–100 score: the share of devices up (a device needing attention counts half), less 5 for each open critical alert and 2 for each warning. 90 and above is Good, 70 and above is Fair, anything lower is Poor. |
+| Devices | Every device with a status pill, IP, site, poller (or integration), CPU and memory bars, and last poll. Down devices are listed first. It is searchable and shows one page at a time; Settings sets the rows per page. |
 
 | Widget | Shows | Settings |
 | --- | --- | --- |
