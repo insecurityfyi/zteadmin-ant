@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+import httpx
+
 from .base import Field, Integration, IntegrationError, Record
 
 BASE = "https://api.meraki.com/api/v1"
@@ -18,8 +20,35 @@ class Meraki(Integration):
     description = "Dashboard API: devices, status and uplinks across your organization."
     fields = [
         Field("api_key", "API key", "password", help="Organization > Settings > Dashboard API access, then your profile > API keys."),
-        Field("org_id", "Organization ID", required=False, help="Leave blank to use the first organization the key can see."),
+        Field("org_id", "Organization ID", required=False, help="Numeric ID or the organization's name. Leave blank to use the first organization the key can see."),
     ]
+
+    def _key(self) -> str:
+        """The key as pasted, minus whitespace/newlines and a stray "Bearer " prefix."""
+        key = re.sub(r"\s+", "", str(self.config.get("api_key") or ""))
+        return key[6:] if key.lower().startswith("bearer") else key
+
+    def _get(self, url: str, **kw):
+        # Bearer only: Meraki rejects newer keys sent in X-Cisco-Meraki-API-Key. Redirects to a regional
+        # shard are followed by hand so the Authorization header is re-sent (httpx drops it across hosts).
+        headers = {"Authorization": f"Bearer {self._key()}", "Accept": "application/json"}
+        try:
+            for _ in range(5):
+                resp = super()._get(url, headers=headers, **kw)
+                loc = resp.headers.get("Location") if resp.status_code in (301, 302, 303, 307, 308) else None
+                if not loc:
+                    return resp
+                target = httpx.URL(url).join(loc)
+                if target.scheme != "https" or not (target.host == "meraki.com" or target.host.endswith(".meraki.com")):
+                    raise IntegrationError(f"Meraki redirected to an unexpected host: {target.host}")
+                url, kw = str(target), {k: v for k, v in kw.items() if k != "params"}
+            raise IntegrationError("Too many redirects from the Meraki API")
+        except IntegrationError as exc:
+            if "rejected the credentials" in str(exc):
+                raise IntegrationError(
+                    f"{exc}. Meraki refused the API key: check it was copied whole, that API access is enabled under "
+                    "Organization > Settings, and that the server's IP is allowed if the organization restricts API access by IP") from None
+            raise
 
     def _paged(self, path: str, params: dict | None = None) -> list[dict]:
         url: str | None = BASE + path
@@ -28,7 +57,7 @@ class Meraki(Integration):
         for _ in range(50):
             if not url:
                 break
-            resp = self._get(url, params=params, headers={"Authorization": f"Bearer {self.config['api_key']}"})
+            resp = self._get(url, params=params)
             body = resp.json()
             items.extend(body if isinstance(body, list) else [body])
             m = re.search(r'<([^>]+)>;\s*rel=next', resp.headers.get("Link", ""))
@@ -37,12 +66,18 @@ class Meraki(Integration):
 
     def org_id(self) -> str:
         org = str(self.config.get("org_id") or "").strip()
-        if org:
+        if org.isdigit():
             return org
         orgs = self._paged("/organizations")
         if not orgs:
             raise IntegrationError("The API key cannot see any organization")
-        return str(orgs[0]["id"])
+        if not org:
+            return str(orgs[0]["id"])
+        for o in orgs:   # a name was typed instead of the numeric ID
+            if org.lower() in (str(o.get("name", "")).strip().lower(), str(o.get("id"))):
+                return str(o["id"])
+        seen = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs[:10])
+        raise IntegrationError(f"No organization named '{org}'. This key can see: {seen}. Use one of those IDs, or leave Organization ID blank.")
 
     def collect(self) -> list[Record]:
         org = self.org_id()

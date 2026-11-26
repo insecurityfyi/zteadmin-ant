@@ -89,6 +89,23 @@ class Integration(Base):
     poller: Mapped[Poller | None] = relationship()
 
 
+class DiscoveryJob(Base):
+    """A subnet scan run by a poller: ping sweep plus an SNMP probe with saved credentials."""
+    __tablename__ = "discovery_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poller_id: Mapped[int | None] = mapped_column(ForeignKey("pollers.id", ondelete="SET NULL"))
+    targets: Mapped[str] = mapped_column(Text)
+    profile_ids: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="queued")   # queued | running | done | failed
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    scanned: Mapped[int] = mapped_column(Integer, default=0)
+    results: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    poller: Mapped[Poller | None] = relationship()
+
+
 class Device(Base):
     __tablename__ = "devices"
     __table_args__ = (UniqueConstraint("integration_id", "external_id", name="uq_device_external"),)

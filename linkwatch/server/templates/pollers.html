@@ -7,6 +7,7 @@
 <div class="p" id="install"><div class="ph"><h2>Install the new poller</h2><span class="sub">This token is shown once, works once, and expires in 24 hours</span></div>
   <p style="margin-top:0">On any Linux machine on the LAN with Podman or Docker (a small VM, an LXC container on Proxmox, or a Raspberry Pi), run:</p>
 <pre class="cmd">podman run -d --name linkwatch-poller --restart=always \
+  --cap-add=NET_RAW \
   -e LW_SERVER={{ public_url }} \
   -e LW_ENROLL_TOKEN={{ new_token }} \
   -e LW_POLLER_NAME=poller-hq-01 \

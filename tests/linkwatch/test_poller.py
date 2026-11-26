@@ -43,3 +43,71 @@ def test_handle_config_and_ack(tmp_path):
         await p.handle({"type": "ack", "batch_id": "x1"})
         assert len(p.spool) == 0
     asyncio.run(go())
+
+
+def test_expand_targets_and_guess_type():
+    import pytest
+    from linkwatch.common.discovery import TargetError, expand_targets, guess_type
+    assert expand_targets("10.0.0.0/30") == ["10.0.0.1", "10.0.0.2"]
+    assert expand_targets("10.0.0.5-7\n10.0.0.6, 10.0.1.1") == ["10.0.0.5", "10.0.0.6", "10.0.0.7", "10.0.1.1"]
+    assert len(expand_targets("10.0.0.0/20")) == 4094
+    for bad in ["10.0.0.0/16", "nope", "10.0.0.9-3", ""]:
+        with pytest.raises(TargetError):
+            expand_targets(bad)
+    assert guess_type("Cisco IOS Software, C2960X Software") == "Switch"
+    assert guess_type("Linux pve 6.8.12-4-pve") == "Hypervisor"
+    assert guess_type(None, "1.3.6.1.4.1.25461.2.3.38") == "Firewall"
+
+
+def test_scan_reports_ping_or_snmp_hosts():
+    from linkwatch.poller.discover import scan
+
+    async def pinger(ip, count=1, timeout_s=1):
+        return {"loss_pct": 0.0, "rtt_ms": 0.5} if ip.endswith((".1", ".2")) else {"loss_pct": 100.0, "rtt_ms": None}
+
+    async def prober(ip, profiles, engine):
+        return {"profile_id": 7, "sys_name": "sw-" + ip} if ip.endswith((".2", ".3")) else None
+    ticks = []
+
+    async def progress(done, total):
+        ticks.append((done, total))
+    found = asyncio.run(scan([f"10.0.0.{i}" for i in range(1, 7)], [{"id": 7, "creds": {}}], engine=object(),
+                             pinger=pinger, prober=prober, progress=progress))
+    assert found == [{"ip": "10.0.0.1", "rtt_ms": 0.5}, {"ip": "10.0.0.2", "rtt_ms": 0.5, "profile_id": 7, "sys_name": "sw-10.0.0.2"},
+                     {"ip": "10.0.0.3", "rtt_ms": None, "profile_id": 7, "sys_name": "sw-10.0.0.3"}]
+
+
+def test_discover_message_queues_result_when_offline(tmp_path, monkeypatch):
+    import linkwatch.poller.main as pm
+    p = Poller("https://example.invalid", tmp_path)
+
+    async def fake_scan(hosts, profiles, engine=None, progress=None, **kw):
+        return [{"ip": hosts[0], "rtt_ms": 1.0}]
+    monkeypatch.setattr(pm, "scan", fake_scan)
+
+    async def go():
+        await p.handle({"type": "discover", "job_id": 5, "targets": "192.0.2.0/30", "profiles": []})
+        await asyncio.sleep(0.05)
+        await p.handle({"type": "discover", "job_id": 6, "targets": "bad target", "profiles": []})
+        await asyncio.sleep(0.05)
+    asyncio.run(go())
+    assert p.outbox[0] == {"type": "discovery_result", "job_id": 5, "scanned": 2, "total": 2, "found": [{"ip": "192.0.2.1", "rtt_ms": 1.0}]}
+    assert p.outbox[1]["job_id"] == 6 and "not an IPv4" in p.outbox[1]["error"]
+
+
+def test_ping_without_icmp_permission_returns_none(monkeypatch):
+    import linkwatch.poller.ping as pg
+
+    async def denied(*a, **kw):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(pg.asyncio, "create_subprocess_exec", denied)
+    assert asyncio.run(pg.ping("192.0.2.1")) is None
+
+    class Proc:
+        async def communicate(self):
+            return b"ping: socket: Address family not supported by protocol\n", None
+
+    async def no_socket(*a, **kw):
+        return Proc()
+    monkeypatch.setattr(pg.asyncio, "create_subprocess_exec", no_socket)
+    assert asyncio.run(pg.ping("192.0.2.1")) is None

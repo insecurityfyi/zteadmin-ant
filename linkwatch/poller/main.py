@@ -37,7 +37,9 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .. import __version__
+from ..common.discovery import TargetError, expand_targets
 from ..integrations import IntegrationError, build
+from .discover import scan
 from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
 from .spool import Spool
@@ -72,6 +74,8 @@ class Poller:
         self.wake = asyncio.Event()
         self.last_cycle_ms: int | None = None
         self._poll_now: set[int] = set()
+        self.outbox: list[dict] = []   # discovery results waiting for a connection
+        self.discovering: set[int] = set()
 
     # identity -------------------------------------------------------------
     @property
@@ -121,6 +125,9 @@ class Poller:
                                               "spooled": len(self.spool)}))
                     for batch in self.spool.pending():
                         await ws.send(json.dumps(batch))
+                    while self.outbox:
+                        await ws.send(json.dumps(self.outbox[0]))
+                        self.outbox.pop(0)
                     async for raw in ws:
                         await self.handle(json.loads(raw))
             except InvalidStatus as exc:
@@ -154,8 +161,44 @@ class Poller:
         elif t == "poll_now":
             self._poll_now.add(int(msg.get("device_id", 0)))
             self.wake.set()
+        elif t == "discover":
+            job = int(msg.get("job_id") or 0)
+            if job and job not in self.discovering:
+                self.discovering.add(job)
+                asyncio.create_task(self.discover(msg))
         elif t == "ping" and self.ws:
             await self.ws.send(json.dumps({"type": "pong"}))
+
+    async def send_or_queue(self, msg: dict, queue: bool = True) -> None:
+        if self.ws:
+            try:
+                await self.ws.send(json.dumps(msg))
+                return
+            except ConnectionClosed:
+                pass
+        if queue:
+            self.outbox.append(msg)
+
+    async def discover(self, msg: dict) -> None:
+        job = int(msg["job_id"])
+        try:
+            hosts = expand_targets(str(msg.get("targets") or ""))
+            log.info("Discovery %s: scanning %d addresses with %d credential sets", job, len(hosts), len(msg.get("profiles") or []))
+
+            async def progress(done: int, total: int) -> None:
+                await self.send_or_queue({"type": "discovery_progress", "job_id": job, "scanned": done, "total": total}, queue=False)
+            await progress(0, len(hosts))
+            found = await scan(hosts, list(msg.get("profiles") or []), engine=self.engine, progress=progress)
+            log.info("Discovery %s: %d of %d addresses answered", job, len(found), len(hosts))
+            out = {"type": "discovery_result", "job_id": job, "scanned": len(hosts), "total": len(hosts), "found": found}
+        except TargetError as exc:
+            out = {"type": "discovery_result", "job_id": job, "error": str(exc)}
+        except Exception as exc:
+            log.exception("Discovery %s failed", job)
+            out = {"type": "discovery_result", "job_id": job, "error": f"{exc.__class__.__name__}: {exc}"}
+        finally:
+            self.discovering.discard(job)
+        await self.send_or_queue(out)
 
     async def schedule_loop(self) -> None:
         await self.configured.wait()

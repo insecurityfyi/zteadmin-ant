@@ -1,7 +1,10 @@
 # Linkwatch remote poller (runs on your LAN; outbound HTTPS only)
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LW_DATA_DIR=/var/lib/linkwatch
-RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping && rm -rf /var/lib/apt/lists/*
+# ping gets cap_net_raw as *permitted* only (not effective): with --cap-add=NET_RAW it opens raw ICMP sockets,
+# without it it still starts and falls back to ICMP datagram sockets (net.ipv4.ping_group_range).
+RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping libcap2-bin \
+ && setcap cap_net_raw+p /usr/bin/ping && apt-get purge -y libcap2-bin && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY linkwatch/requirements-poller.txt ./
 RUN pip install --no-cache-dir -r requirements-poller.txt

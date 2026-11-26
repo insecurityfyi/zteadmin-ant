@@ -14,6 +14,7 @@ production clouds). Paths follow Zscaler's own Python SDK:
 """
 from __future__ import annotations
 
+import re
 import time
 from collections import Counter
 from typing import Any
@@ -42,6 +43,10 @@ class Zscaler(Integration):
         Field("zdx", "ZDX application scores", "bool", required=False, default=True),
         Field("zcc", "Client Connector device counts", "bool", required=False, default=True),
         Field("ztb", "Zero Trust Branch sites (experimental)", "bool", required=False, default=False),
+        Field("ztb_api_key", "ZTB API key (optional)", "password", required=False,
+              help="If ZTB refuses the OneAPI client: create an API key in the ZTB admin portal and paste it here."),
+        Field("ztb_tenant", "ZTB portal address", required=False,
+              help="Needed with a ZTB API key: the 'acme' in acme.goairgap.com, or the full https:// address."),
     ]
 
     def __init__(self, config: dict[str, Any], http: httpx.Client | None = None):
@@ -205,8 +210,39 @@ class Zscaler(Integration):
             extra={"product": "zcc", "devices": len(devices), "versions": dict(versions.most_common(10)), "os": dict(oses.most_common(10))},
         )]
 
+    def _ztb_legacy(self, path: str) -> Any:
+        """ZTB's own API key flow: POST /api/v3/api-key-auth/login -> delegate_token -> Bearer."""
+        tenant = str(self.config.get("ztb_tenant") or "").strip().rstrip("/")
+        if not tenant:
+            raise IntegrationError("Set 'ZTB portal address' (the 'acme' in acme.goairgap.com) to use the ZTB API key")
+        base = tenant if tenant.startswith("https://") else f"https://{tenant.removesuffix('.goairgap.com')}.goairgap.com"
+        key = re.sub(r"\s+", "", str(self.config.get("ztb_api_key") or ""))
+        try:
+            login = self.http.post(f"{base}/api/v3/api-key-auth/login", json={"api_key": key})
+        except httpx.HTTPError as exc:
+            raise IntegrationError(f"Could not reach {httpx.URL(base).host}: {exc.__class__.__name__}") from exc
+        if login.status_code != 200:
+            raise IntegrationError(f"ZTB API key login failed (HTTP {login.status_code}). Check the key and the portal address.")
+        try:
+            token = (login.json().get("result") or {})["delegate_token"]
+        except (ValueError, KeyError, AttributeError, TypeError):
+            raise IntegrationError("ZTB login answered without a delegate_token") from None
+        resp = self._get(f"{base}{path}", headers={"Authorization": f"Bearer {token}"})
+        return resp.json() if resp.content else None
+
     def _collect_ztb(self) -> list[Record]:
-        body = self.api("/ztb/api/v2/Site/")
+        if str(self.config.get("ztb_api_key") or "").strip():
+            body = self._ztb_legacy("/api/v2/Site/")
+        else:
+            try:
+                body = self.api("/ztb/api/v2/Site/")
+            except IntegrationError as exc:
+                if "refused (HTTP 401)" in str(exc) or "refused (HTTP 403)" in str(exc):
+                    raise IntegrationError(
+                        "OneAPI refused /ztb/api/v2/Site/ (HTTP 401/403). Your ZIdentity API client has no ZTB access, or the "
+                        "ZTB tenant isn't linked to ZIdentity yet. Either add ZTB to the API client's roles in ZIdentity, or "
+                        "create an API key in the ZTB portal and fill in 'ZTB API key' and 'ZTB portal address'.") from None
+                raise
         sites = body if isinstance(body, list) else (body or {}).get("result") or (body or {}).get("data") or (body or {}).get("sites") or []
         out: list[Record] = []
         for s in sites:
@@ -215,8 +251,8 @@ class Zscaler(Integration):
                      "down" if raw in ("down", "offline", "disconnected", "unhealthy") else "unknown"
             sid = s.get("id") or s.get("siteId") or s.get("site_id") or s.get("name")
             out.append(Record(
-                external_id=f"ztb-site-{sid}", hostname=f"ZTB {s.get('name') or s.get('siteName') or sid}", ip=None,
-                type="Zscaler", platform="Zero Trust Branch site", site=s.get("name") or s.get("siteName"), status=status,
+                external_id=f"ztb-site-{sid}", hostname=f"ZTB {s.get('display_name') or s.get('name') or s.get('siteName') or sid}", ip=None,
+                type="Zscaler", platform="Zero Trust Branch site", site=s.get("display_name") or s.get("name") or s.get("siteName"), status=status,
                 detail=f"Gateway type {s.get('gatewayType') or s.get('gateway_type') or '?'}", extra={"product": "ztb"},
             ))
         return out

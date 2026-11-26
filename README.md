@@ -23,7 +23,7 @@ Two things live in this repository:
 linkwatch/server        FastAPI web app, PostgreSQL (SQLite for local runs), alerting
 linkwatch/poller        the LAN poller (pysnmp, ping, local APIs, spool)
 linkwatch/integrations  one module per platform, shared by server and poller
-deploy/                 Quadlet units, nginx site, update.sh, deploy.sh, bootstrap-centos9.sh
+deploy/                 Quadlet units, nginx site, update.sh (+ auto-update timer), reset-password.sh, deploy.sh, bootstrap-centos9.sh
 docs/                   install-centos9.md (VPS walkthrough, firewalld), poller.md
 ```
 

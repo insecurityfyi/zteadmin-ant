@@ -47,6 +47,7 @@ Environment=LW_POLLER_NAME=poller-hq-01
 # Only needed for the first start; remove after the poller shows up as connected.
 Environment=LW_ENROLL_TOKEN=enr_xxxxxxxx
 Volume=linkwatch-poller:/var/lib/linkwatch
+AddCapability=NET_RAW
 AutoUpdate=registry
 
 [Service]
@@ -68,11 +69,16 @@ Pollers page. `--restart=always` keeps it running across reboots.
 
 ## Ping inside a container
 
-The poller runs as an unprivileged user and uses ICMP datagram sockets. Docker
-and Podman allow this by default. If every device shows 100% packet loss but
-SNMP works, add `--sysctl net.ipv4.ping_group_range="0 2147483647"` to the run
-command (or `Sysctl=net.ipv4.ping_group_range=0 2147483647` in the
-`.container` file).
+The poller runs as an unprivileged user. Give the container the `NET_RAW`
+capability so ping can send ICMP: `--cap-add=NET_RAW` on the run command, or
+`AddCapability=NET_RAW` in the `.container` file. Podman leaves `NET_RAW` out
+by default.
+
+Without it, ping still works if the host allows ICMP datagram sockets
+(`net.ipv4.ping_group_range`); otherwise the poller logs
+"ping can't open an ICMP socket" once and devices show no ping data. Don't use
+`--sysctl net.ipv4.ping_group_range=...` inside an LXC container: it fails with
+`crun: write to /proc/sys/net/ipv4/ping_group_range: Invalid argument`.
 
 ## Environment variables
 

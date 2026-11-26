@@ -1,3 +1,4 @@
+import json
 import httpx
 import pytest
 import respx
@@ -64,6 +65,24 @@ def test_zscaler_bad_credentials():
 
 
 @respx.mock
+def test_zscaler_ztb_api_key_flow_and_oneapi_hint():
+    respx.post("https://acme.zslogin.net/oauth2/v1/token").mock(return_value=httpx.Response(200, json={"access_token": "t", "expires_in": 3600}))
+    respx.get("https://api.zsapi.net/ztb/api/v2/Site/").mock(return_value=httpx.Response(401))
+    base = {"vanity_domain": "acme", "client_id": "id", "client_secret": "s", "zia": False, "zpa": False, "zdx": False, "zcc": False, "ztb": True}
+    with pytest.raises(IntegrationError, match="no ZTB access.*ZTB API key"):
+        build("zscaler", base).collect()
+
+    login = respx.post("https://acme.goairgap.com/api/v3/api-key-auth/login").mock(
+        return_value=httpx.Response(200, json={"result": {"delegate_token": "dlg"}}))
+    sites = respx.get("https://acme.goairgap.com/api/v2/Site/").mock(return_value=httpx.Response(
+        200, json={"result": [{"id": "s1", "display_name": "Branch 7", "gateway_type": "ZTB-400", "status": "online"}]}))
+    recs = build("zscaler", base | {"ztb_api_key": " zk-123 ", "ztb_tenant": "acme"}).collect()
+    assert json.loads(login.calls.last.request.content) == {"api_key": "zk-123"}
+    assert sites.calls.last.request.headers["authorization"] == "Bearer dlg"
+    assert [(r["hostname"], r["status"], r["site"]) for r in recs] == [("ZTB Branch 7", "up", "Branch 7")]
+
+
+@respx.mock
 def test_meraki_paginates_and_maps_status():
     base = "https://api.meraki.com/api/v1"
     respx.get(f"{base}/organizations").mock(return_value=httpx.Response(200, json=[{"id": "55"}]))
@@ -78,6 +97,41 @@ def test_meraki_paginates_and_maps_status():
     recs = build("meraki", {"api_key": "k"}).collect()
     assert [(r["hostname"], r["status"], r["type"], r["site"]) for r in recs] == [
         ("br02-sw01", "up", "Switch", "Branch 02"), ("br02-ap03", "down", "Wireless", "Branch 02")]
+
+
+@respx.mock
+def test_meraki_key_cleanup_headers_and_401_hint():
+    seen = {}
+
+    def orgs(request):
+        seen.update(request.headers)
+        return httpx.Response(401, json={"errors": ["Invalid API key"]})
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(side_effect=orgs)
+    with pytest.raises(IntegrationError, match="HTTP 401.*API access is enabled"):
+        build("meraki", {"api_key": " Bearer abc123\n "}).collect()
+    assert seen["authorization"] == "Bearer abc123" and "x-cisco-meraki-api-key" not in seen
+
+
+@respx.mock
+def test_meraki_follows_shard_redirect_with_key():
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(
+        return_value=httpx.Response(307, headers={"Location": "https://n42.meraki.com/api/v1/organizations"}))
+    shard = respx.get("https://n42.meraki.com/api/v1/organizations").mock(return_value=httpx.Response(200, json=[{"id": "7"}]))
+    assert build("meraki", {"api_key": "k"}).org_id() == "7"
+    assert shard.calls.last.request.headers["authorization"] == "Bearer k"
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(
+        return_value=httpx.Response(302, headers={"Location": "https://evil.example/steal"}))
+    with pytest.raises(IntegrationError, match="unexpected host"):
+        build("meraki", {"api_key": "k"}).org_id()
+
+
+@respx.mock
+def test_meraki_org_name_resolves_to_id():
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(return_value=httpx.Response(
+        200, json=[{"id": "111", "name": "Other"}, {"id": "2222", "name": "HCI-SOHO-Network"}]))
+    assert build("meraki", {"api_key": "k", "org_id": "hci-soho-network"}).org_id() == "2222"
+    with pytest.raises(IntegrationError, match=r"No organization named 'nope'.*HCI-SOHO-Network \(2222\)"):
+        build("meraki", {"api_key": "k", "org_id": "nope"}).org_id()
 
 
 PAN_INFO = """<response status="success"><result><system><hostname>dc-pa440</hostname><ip-address>10.50.0.1</ip-address>

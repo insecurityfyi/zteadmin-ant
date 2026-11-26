@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Discovery{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Discovery</h1><p>A poller scans the addresses you give it: a ping sweep, plus an SNMP query with each credential set you tick. You then choose which of the devices it finds to add.</p></div></div>
+<div class="p">
+<form method="post" class="stack">
+  <label class="f">Addresses to scan<textarea name="targets" id="targets" rows="3" required placeholder="10.10.0.0/24, 10.20.5.10-60, 192.168.1.1"></textarea>
+    <small>CIDR blocks, ranges or single IPs, separated by commas or new lines. Up to 4,096 addresses per scan (a /20). A /24 takes about a minute.</small></label>
+  <div class="row2">
+    <label class="f">Poller that can reach them<select name="poller_id" id="poller_id" required>
+      {% if not pollers %}<option value="">Install a poller first</option>{% endif %}
+      {% for p in pollers %}<option value="{{ p.id }}" {% if p.id not in connected %}disabled{% endif %}>{{ p.name }}{% if p.id not in connected %} (offline){% endif %}</option>{% endfor %}</select></label>
+    <fieldset class="f"><legend>SNMP credentials to try</legend>
+      {% for p in profiles %}<label class="chk"><input type="checkbox" name="profile_id" value="{{ p.id }}" checked> {{ p.name }} <span class="dim">(v{{ p.version }})</span></label>{% else %}<span class="dim">None saved yet. Add them under <a href="/settings">Settings</a>, or scan with ping only.</span>{% endfor %}
+      <small>Tried in this order on every address; the first that answers is saved with the device.</small></fieldset>
+  </div>
+  <div class="actions"><button class="btn pri" type="submit" {% if not connected %}disabled{% endif %}>Start scan</button>{% if not connected %}<span class="dim">No poller is connected.</span>{% endif %}</div>
+</form></div>
+
+{% if jobs %}
+<div class="p"><div class="ph"><h2>Recent scans</h2></div>
+<div class="scroll"><table>
+  <thead><tr><th>Started</th><th>Addresses</th><th>Poller</th><th>Status</th><th class="n">Found</th></tr></thead>
+  <tbody>{% for j in jobs %}
+    <tr class="click" onclick="location.href='/discovery/{{ j.id }}'">
+      <td class="nw"><a class="row" href="/discovery/{{ j.id }}">{{ j.created_at|ago }}</a></td>
+      <td class="mono">{{ j.targets|truncate(60) }}</td><td>{{ j.poller.name if j.poller else '–' }}</td>
+      <td>{% if j.status in ('queued', 'running') %}<span class="tag">{{ j.status }} {{ j.scanned }}/{{ j.total }}</span>{% elif j.status == 'failed' %}<span class="tag bad">failed</span>{% else %}<span class="tag">done</span>{% endif %}</td>
+      <td class="n">{{ (j.results or [])|length if j.status == 'done' else '' }}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+{% endif %}
+{% endblock %}
