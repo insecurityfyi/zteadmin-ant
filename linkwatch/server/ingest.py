@@ -75,6 +75,8 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
             dev.platform = dev.sys_descr.splitlines()[0][:255]
         dev.cpu, dev.mem = item.get("cpu"), item.get("mem")
         dev.poll_ms = item.get("poll_ms")
+        if isinstance(item.get("vendor"), dict):     # e.g. SonicWall connection counts
+            dev.extra = {**(dev.extra or {}), "vendor": item["vendor"]}
         _update_ports(s, dev, item.get("ports") or [], float(item.get("ts") or ts.timestamp()), ts)
 
     if (has_snmp and snmp_ok) or (not has_snmp and ping_ok):
@@ -285,6 +287,16 @@ def _fortigate_series(d: dict[str, Any]) -> list[Point]:
     return out
 
 
+def _sonicwall_series(d: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
+    if "sslvpn" in d:
+        out.append(("sslvpn:users", len(d["sslvpn"]), None, None))
+    if d.get("tunnels") is not None:
+        t = d["tunnels"]
+        out.append(("tunnels", sum(1 for x in t if x.get("up")), len(t), None))
+    return out
+
+
 def _proxmox_series(d: dict[str, Any]) -> list[Point]:
     g = d.get("guests") or {}
     out: list[Point] = [("guests", _num(g.get("running")), _num(g.get("total")), None)]
@@ -321,7 +333,7 @@ def _unifi_series(data: dict[str, Any]) -> list[Point]:
 
 
 SERIES = {"zscaler": _zscaler_series, "meraki": _meraki_series, "panos": _panos_series, "fortigate": _fortigate_series,
-          "proxmox": _proxmox_series, "unifi": _unifi_series}
+          "sonicwall": _sonicwall_series, "proxmox": _proxmox_series, "unifi": _unifi_series}
 
 
 def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:

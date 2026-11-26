@@ -6,11 +6,12 @@ from .fortigate import FortiGate
 from .meraki import Meraki
 from .panos import PanOS
 from .proxmox import Proxmox
+from .sonicwall import SonicWall
 from .unifi import UniFi
 from .zscaler import Zscaler
 
 REGISTRY: dict[str, type[Integration]] = {
-    cls.kind: cls for cls in (Zscaler, Meraki, PanOS, FortiGate, UniFi, Proxmox)
+    cls.kind: cls for cls in (Zscaler, Meraki, PanOS, FortiGate, SonicWall, UniFi, Proxmox)
 }
 
 

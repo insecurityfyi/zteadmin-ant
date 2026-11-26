@@ -8,7 +8,7 @@ from linkwatch.integrations.panos import parse_top, parse_uptime
 
 
 def test_registry_has_every_platform():
-    assert set(REGISTRY) == {"zscaler", "meraki", "panos", "fortigate", "unifi", "proxmox"}
+    assert set(REGISTRY) == {"zscaler", "meraki", "panos", "fortigate", "sonicwall", "unifi", "proxmox"}
     assert {k for k, c in REGISTRY.items() if c.runs_on == "server"} == {"zscaler", "meraki"}
 
 
@@ -286,3 +286,48 @@ def test_unreachable_host_gives_clear_error():
     respx.get("https://10.9.9.9/api/v2/monitor/system/status").mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(IntegrationError, match="Could not reach 10.9.9.9"):
         build("fortigate", {"host": "10.9.9.9", "api_token": "t"}).collect()
+
+
+@respx.mock
+def test_sonicwall_signs_in_collects_and_signs_out():
+    base = "https://10.0.0.1/api/sonicos"
+    login = respx.post(f"{base}/auth").mock(return_value=httpx.Response(200, json={"status": {"success": True}}))
+    logout = respx.delete(f"{base}/auth").mock(return_value=httpx.Response(200, json={"status": {"success": True}}))
+    respx.get(f"{base}/version").mock(return_value=httpx.Response(200, json={
+        "model": "TZ 470", "serial_number": "2CB8ED000000", "firmware_version": "SonicOS 7.0.1-5145", "system_uptime": "12 Days"}))
+    respx.get(f"{base}/interfaces/ipv4").mock(return_value=httpx.Response(200, json={"interfaces": [
+        {"ipv4": {"name": "X0", "ip_assignment": {"zone": "LAN", "mode": {"static": {"ip": "192.168.168.168", "netmask": "255.255.255.0"}}}}},
+        {"ipv4": {"name": "X1", "ip_assignment": {"zone": "WAN", "mode": {"dhcp": {}}}}}]}))
+    respx.get(f"{base}/reporting/ssl-vpn/sessions").mock(return_value=httpx.Response(200, json=[
+        {"user_name": "hopper", "client_wan_ip": "198.51.100.44", "virtual_ip": "192.168.200.10"}]))
+    respx.get(f"{base}/reporting/license/security-services").mock(return_value=httpx.Response(200, json={
+        "gateway_anti_virus": {"status": "Licensed", "expiration": "2027-03-01"}, "capture_atp": {"status": "Expired"}}))
+    respx.get(f"{base}/reporting/high-availability/status").mock(return_value=httpx.Response(404))
+    respx.get(f"{base}/reporting/vpn/ipsec/tunnels").mock(return_value=httpx.Response(404))
+    integ = build("sonicwall", {"host": "10.0.0.1", "username": "linkwatch", "password": "pw"})
+    recs = integ.collect()
+    assert login.called and logout.called
+    assert login.calls[0].request.headers["authorization"].startswith("Basic ")
+    r = recs[0]
+    assert (r["external_id"], r["serial"], r["ip"], r["status"]) == ("2CB8ED000000", "2CB8ED000000", "10.0.0.1", "warn")
+    assert "capture atp" in r["detail"] and "1 SSL VPN user" in r["detail"]
+    d = integ.data
+    assert d["interfaces"][0] == {"name": "X0", "zone": "LAN", "mode": "static", "ip": "192.168.168.168", "mask": "255.255.255.0",
+                                  "comment": None, "mtu": None, "vlan": None, "shutdown": False}
+    assert d["interfaces"][1]["mode"] == "dhcp"
+    assert d["sslvpn"][0]["user"] == "hopper" and d["sslvpn"][0]["tunnel_ip"] == "192.168.200.10"
+    assert {x["name"] for x in d["licenses"]} == {"gateway anti virus", "capture atp"}
+    assert d["not_offered"] == ["High availability", "IPsec tunnels"] and d["unavailable"] == []
+
+
+@respx.mock
+def test_sonicwall_bad_login_and_logout_after_errors():
+    base = "https://fw.lan:8443/api/sonicos"
+    respx.post(f"{base}/auth").mock(return_value=httpx.Response(401))
+    with pytest.raises(IntegrationError, match="RFC-2617 HTTP Basic"):
+        build("sonicwall", {"host": "fw.lan:8443", "username": "x", "password": "y"}).collect()
+    respx.post(f"{base}/auth").mock(return_value=httpx.Response(200, json={}))
+    logout = respx.delete(f"{base}/auth").mock(return_value=httpx.Response(200))
+    respx.get(url__startswith=f"{base}/").mock(return_value=httpx.Response(500))
+    recs = build("sonicwall", {"host": "fw.lan:8443", "username": "x", "password": "y"}).collect()
+    assert logout.called and recs[0]["external_id"] == "fw.lan:8443" and recs[0]["ip"] == "fw.lan"

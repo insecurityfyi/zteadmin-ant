@@ -72,6 +72,13 @@ UCD = {
 CISCO_CPU_5MIN = "1.3.6.1.4.1.9.9.109.1.1.1.1.8"
 CISCO_MEM_USED = "1.3.6.1.4.1.9.9.48.1.1.1.5"
 CISCO_MEM_FREE = "1.3.6.1.4.1.9.9.48.1.1.1.6"
+# SONICWALL-FIREWALL-IP-STATISTICS-MIB (enterprise 8741)
+SONICWALL = {
+    "max_connections": "1.3.6.1.4.1.8741.1.3.1.1.0",
+    "connections": "1.3.6.1.4.1.8741.1.3.1.2.0",
+    "cpu": "1.3.6.1.4.1.8741.1.3.1.3.0",
+    "ram": "1.3.6.1.4.1.8741.1.3.1.4.0",
+}
 STATUS = {1: "up", 2: "down", 3: "testing", 4: "unknown", 5: "dormant", 6: "notPresent", 7: "lowerLayerDown"}
 
 AUTH = {
@@ -205,9 +212,29 @@ async def poll_device(session: SnmpSession) -> dict[str, Any]:
             "in_errors": c("in_errors"), "out_errors": c("out_errors"),
         })
 
-    result["cpu"], result["mem"] = await _cpu_mem(session)
+    oid = str(by["sys_object_id"] or "")
+    if oid.startswith("1.3.6.1.4.1.8741."):
+        await _sonicwall(session, result)
+    if result["cpu"] is None or result["mem"] is None:
+        cpu, mem = await _cpu_mem(session)
+        result["cpu"] = result["cpu"] if result["cpu"] is not None else cpu
+        result["mem"] = result["mem"] if result["mem"] is not None else mem
     result["poll_ms"] = int((time.monotonic() - started) * 1000)
     return result
+
+
+async def _sonicwall(s: SnmpSession, result: dict[str, Any]) -> None:
+    try:
+        got = await s.get(list(SONICWALL.values()))
+    except SnmpError:
+        return
+    v = {k: got.get(o) for k, o in SONICWALL.items()}
+    if isinstance(v["cpu"], int):
+        result["cpu"] = float(v["cpu"])
+    if isinstance(v["ram"], int):
+        result["mem"] = float(v["ram"])
+    if isinstance(v["connections"], int):
+        result["vendor"] = {"connections": v["connections"], "max_connections": v["max_connections"]}
 
 
 async def _cpu_mem(s: SnmpSession) -> tuple[float | None, float | None]:
