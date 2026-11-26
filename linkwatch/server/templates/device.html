@@ -48,6 +48,7 @@
         <div class="stat"><span>Memory used</span><b>{{ d.mem|pct }}</b></div>
         <div class="stat"><span>Ping</span><b>{{ (d.ping_ms|round(1) ~ ' ms') if d.ping_ms is not none else '–' }}</b></div>
         <div class="stat"><span>Packet loss</span><b>{{ (d.loss_pct|round|int ~ '%') if d.loss_pct is not none else '–' }}</b></div>
+        {% set vend = (d.extra or {}).get('vendor') or {} %}{% if vend.get('connections') is not none %}<div class="stat"><span>Connections</span><b>{{ vend.connections|num }}</b>{% if vend.get('max_connections') %}<span>of {{ vend.max_connections|num }}</span>{% endif %}</div>{% endif %}
       </div></div>
     {% if port_counts.total %}<div class="p"><div class="ph"><h2>Ports</h2><a class="sub" href="?tab=ports">All {{ port_counts.total }}</a></div>
       <div class="stats" style="margin-bottom:12px">

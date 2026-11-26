@@ -224,6 +224,9 @@ def test_integration_pages(logged_in, app):
     pa = logged_in.get(f"/integrations/{ids['panos']}/overview").text
     assert "WildFire License" in pa and "(expired)" in pa and "to-azure" in pa
     assert "grace" in logged_in.get(f"/integrations/{ids['fortigate']}/overview").text
+    sw = logged_in.get(f"/integrations/{ids['sonicwall']}/overview").text
+    assert "hopper" in sw and "Capture ATP" in sw and "Active/Standby" in sw and "Not offered by this firmware: IPsec tunnels" in sw
+    assert (ids["sonicwall"], "sslvpn:users") in keys
     assert "local-zfs" in logged_in.get(f"/integrations/{ids['proxmox']}/overview").text
     assert logged_in.get("/integrations/999/overview").status_code == 404
     series = logged_in.get(f"/ui/metrics/integration/{ids['zscaler']}/objects").json()

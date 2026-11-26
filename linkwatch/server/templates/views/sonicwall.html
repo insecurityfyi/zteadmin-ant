@@ -1,0 +1,33 @@
+{% from "_iv.html" import chart, legend, dot, filter_box %}
+{% set sy = data.system or {} %}
+{% set fw = (devices|selectattr('type','equalto','Firewall')|list or [none])[0] %}
+{% set lic = data.licenses or [] %}
+{% set bad_lic = lic|selectattr('status','in',['expired','Expired','not licensed','Not Licensed'])|list %}
+<div class="kpis">
+  <div class="kpi"><span>CPU</span><b>{{ fw.cpu|pct if fw else '–' }}</b><em>{% if fw and fw.source in ('snmp','ping') %}memory {{ fw.mem|pct }} (SNMP){% else %}add SNMP for CPU and memory{% endif %}</em></div>
+  <div class="kpi"><span>SSL VPN users</span><b>{{ (data.sslvpn or [])|length if data.sslvpn is defined else '–' }}</b><em>connected now</em></div>
+  <div class="kpi"><span>Security services</span><b class="{{ 'bad' if bad_lic else '' }}">{{ (lic|length - bad_lic|length) if lic else '–' }}{% if lic %} / {{ lic|length }}{% endif %}</b><em>{{ (bad_lic|length ~ ' expired') if bad_lic else 'licensed' if lic else 'not reported' }}</em></div>
+  <div class="kpi"><span>IPsec tunnels up</span><b>{% if data.tunnels is defined %}{{ data.tunnels|selectattr('up')|list|length }} / {{ data.tunnels|length }}{% else %}–{% endif %}</b><em>{{ '&nbsp;'|safe if data.tunnels is defined else 'not offered by this firmware' }}</em></div>
+  <div class="kpi"><span>High availability</span><b style="font-size:18px">{{ data.ha.state if data.ha and data.ha.state else '–' }}</b><em>{{ data.ha.mode if data.ha and data.ha.mode else 'standalone or not reported' }}</em></div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>SSL VPN users</h2></div>{{ legend([('Connected', 'var(--s1)')]) }}{{ chart(integ.id, 'sslvpn:users', [{"key":"a","color":"var(--s1)"}], 'num', 170, 'SSL VPN users') }}</div>
+  <div class="p c6"><div class="ph"><h2>System</h2>{% if fw %}<a class="sub" href="/devices/{{ fw.id }}?tab=graphs">graphs</a>{% endif %}</div>
+    <dl class="kv">{% for k, label in [('model','Model'),('serial','Serial'),('firmware','Firmware'),('rom','ROM'),('uptime','Uptime'),('time','Firewall time')] if sy.get(k) %}<dt>{{ label }}</dt><dd>{{ sy.get(k) }}</dd>{% endfor %}
+      {% set vend = (fw.extra or {}).get('vendor') or {} if fw else {} %}{% if vend.get('connections') is not none %}<dt>Connections</dt><dd>{{ vend.connections|num }}{% if vend.get('max_connections') %} of {{ vend.max_connections|num }}{% endif %} (SNMP)</dd>{% endif %}
+      {% if fw %}<dt>Data from</dt><dd>{{ 'SonicOS API and SNMP' if fw.source in ('snmp','ping') else 'SonicOS API only' }}{% if fw.ports %}, <a href="/devices/{{ fw.id }}?tab=ports">{{ fw.ports|length }} interfaces with traffic</a>{% endif %}</dd>{% endif %}</dl>
+    {% if fw and fw.source not in ('snmp','ping') %}<p class="help" style="margin:12px 0 0">The SonicOS API has little live telemetry. Add this firewall as an SNMP device too (same IP) for CPU, memory, connections and per-interface traffic; Linkwatch merges the two.</p>{% endif %}</div>
+  {% if data.sslvpn %}<div class="p c6"><div class="ph"><h2>Connected SSL VPN users</h2>{{ filter_box('sw-vpn') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="sw-vpn"><thead><tr><th>User</th><th>From</th><th>Tunnel IP</th><th>Since</th></tr></thead><tbody>
+    {% for u in data.sslvpn %}<tr data-q="{{ [u.user, u.remote, u.tunnel_ip]|select|join(' ')|lower }}"><td><b>{{ u.user or '?' }}</b></td><td class="mono">{{ u.remote or '' }}</td><td class="mono">{{ u.tunnel_ip or '' }}</td><td class="dim">{{ u.since or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if lic %}<div class="p c6"><div class="ph"><h2>Licences and security services</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Service</th><th>Status</th><th>Expires</th></tr></thead><tbody>
+    {% for l in lic|sort(attribute='name') %}{% set st = (l.status|string)|lower %}<tr><td>{{ dot(false if st in ['expired','not licensed'] else (true if st in ['licensed','active','enabled','true','valid'] else none)) }}</td><td>{{ l.name }}</td><td class="{{ 'bad' if st in ['expired','not licensed'] else '' }}">{{ l.status if l.status is not none else '' }}</td><td class="dim">{{ l.expires or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.tunnels %}<div class="p c6"><div class="ph"><h2>IPsec tunnels</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Tunnel</th><th>Peer</th><th class="n">In</th><th class="n">Out</th></tr></thead><tbody>
+    {% for t in data.tunnels %}<tr><td>{{ dot(t.up) }}</td><td><b>{{ t.name or '' }}</b></td><td class="mono">{{ t.remote or '' }}</td><td class="n">{{ t.in_bytes|bytes }}</td><td class="n">{{ t.out_bytes|bytes }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.interfaces %}<div class="p c6"><div class="ph"><h2>Interfaces</h2>{{ filter_box('sw-if') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="sw-if"><thead><tr><th>Interface</th><th>Zone</th><th>Addressing</th><th>IP</th><th>Comment</th></tr></thead><tbody>
+    {% for i in data.interfaces %}<tr data-q="{{ [i.name, i.zone, i.ip, i.comment]|select|join(' ')|lower }}"><td class="mono">{{ i.name }}{% if i.shutdown %} <span class="tag">shut down</span>{% endif %}</td><td>{{ i.zone or '' }}</td><td class="dim">{{ i.mode or '' }}</td><td class="mono">{{ (i.ip ~ (' / ' ~ i.mask if i.mask else '')) if i.ip else '' }}</td><td class="dim">{{ i.comment or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+</div>
+{% if data.not_offered %}<p class="help">Not offered by this firmware: {{ data.not_offered|join(', ') }}.</p>{% endif %}

@@ -56,6 +56,15 @@ FORTIGATE = {"type": "fortigate", "unavailable": [],
              "sslvpn": [{"user": "grace", "remote": "198.51.100.200", "tunnel_ip": "10.212.134.200"}],
              "licenses": [{"feature": "antivirus", "status": "licensed", "expires": 1830000000}]}
 
+SONICWALL = {"type": "sonicwall", "unavailable": [], "not_offered": ["IPsec tunnels"],
+             "system": {"model": "TZ 470", "serial": "2CB8ED000000", "firmware": "SonicOS 7.0.1-5145", "uptime": "12 Days 03:10:44"},
+             "interfaces": [{"name": "X0", "zone": "LAN", "mode": "static", "ip": "192.168.168.168", "mask": "255.255.255.0"},
+                            {"name": "X1", "zone": "WAN", "mode": "dhcp"}],
+             "sslvpn": [{"user": "hopper", "remote": "198.51.100.44", "tunnel_ip": "192.168.200.10"}],
+             "licenses": [{"name": "Gateway Anti-Virus", "status": "Licensed", "expires": "2027-03-01"},
+                          {"name": "Capture ATP", "status": "Expired", "expires": "2025-01-01"}],
+             "ha": {"mode": "Active/Standby", "state": "Active"}}
+
 PROXMOX = {"type": "proxmox", "unavailable": [],
            "nodes": [{"name": "pve-01", "status": "online", "cpu": 23.5, "maxcpu": 16, "mem": 40 * 2**30, "maxmem": 128 * 2**30, "uptime_s": 900000, "guests": 12, "running": 10}],
            "storage": [{"name": "local-zfs", "node": "pve-01", "type": "zfspool", "status": "available", "used": 700 * 2**30, "size": 800 * 2**30, "shared": False}],
@@ -69,7 +78,8 @@ RECORDS = {
     "meraki": [{"external_id": "Q2-MX", "hostname": "dal-mx", "type": "Firewall", "status": "up", "site": "Dallas"}],
     "panos": [{"external_id": "0123456789", "hostname": "pa-edge", "type": "Firewall", "status": "up", "cpu": 18.0, "mem": 52.0}],
     "fortigate": [{"external_id": "FGT60F000", "hostname": "fg-branch", "type": "Firewall", "status": "up", "cpu": 7, "mem": 41}],
+    "sonicwall": [{"external_id": "2CB8ED000000", "hostname": "tz-branch", "type": "Firewall", "status": "warn"}],
     "proxmox": [{"external_id": "node-pve-01", "hostname": "pve-01", "type": "Hypervisor", "status": "up", "cpu": 23.5, "mem": 31.3},
                 {"external_id": "lxc-105", "hostname": "poller-hq-01", "type": "Container", "status": "up"}],
 }
-DATA = {"zscaler": ZSCALER, "meraki": MERAKI, "panos": PANOS, "fortigate": FORTIGATE, "proxmox": PROXMOX}
+DATA = {"zscaler": ZSCALER, "meraki": MERAKI, "panos": PANOS, "fortigate": FORTIGATE, "sonicwall": SONICWALL, "proxmox": PROXMOX}
