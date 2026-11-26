@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_unifi_macros.html" import ranges, bw_chart, signal, where %}
+{% block title %}{{ c.name if c else mac }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/unifi?i={{ integ.id }}">Wi-Fi &amp; clients</a> / Clients</div>
+  <h1>{{ c.name if c else mac }}</h1>
+  <p>{% if c %}{{ 'Wired' if c.wired else 'Wi-Fi' }} · {{ where(c, integ.id) }}{% if c.ip %} · <span class="mono">{{ c.ip }}</span>{% endif %}{% else %}Not connected in the latest UniFi data. The graphs show its history.{% endif %}</p></div>
+  {{ ranges() }}</div>
+<div class="grid">
+  {% if c %}
+  <div class="p c4"><h2 style="margin-bottom:12px">Now</h2><dl class="kv">
+    <dt>MAC</dt><dd class="mono">{{ c.mac }}</dd>
+    {% if c.hostname and c.hostname != c.name %}<dt>Hostname</dt><dd>{{ c.hostname }}</dd>{% endif %}
+    {% if c.vendor %}<dt>Vendor</dt><dd>{{ c.vendor }}</dd>{% endif %}
+    {% if c.network %}<dt>Network</dt><dd>{{ c.network }}{% if c.vlan %} (VLAN {{ c.vlan }}){% endif %}</dd>{% endif %}
+    {% if not c.wired %}
+      <dt>SSID</dt><dd>{{ c.ssid or '–' }}</dd>
+      <dt>Access point</dt><dd>{% if device_ids.get(c.ap_mac) %}<a href="/devices/{{ device_ids[c.ap_mac] }}">{{ c.ap }}</a>{% else %}{{ c.ap or '–' }}{% endif %}</dd>
+      <dt>Radio</dt><dd>{{ c.band or '' }}{% if c.channel %} channel {{ c.channel }}{% endif %}{% if c.proto %} · 802.11{{ c.proto }}{% endif %}</dd>
+      <dt>Signal</dt><dd>{{ signal(c.signal) }}{% if c.noise is not none %} <span class="dim">noise {{ c.noise|int }} dBm</span>{% endif %}</dd>
+    {% else %}
+      <dt>Switch</dt><dd>{{ c.switch or '–' }}{% if c.switch_port %} port {{ c.switch_port }}{% endif %}</dd>
+    {% endif %}
+    {% if c.tx_rate_mbps %}<dt>Link rate</dt><dd>{{ c.tx_rate_mbps }} Mb/s tx, {{ c.rx_rate_mbps or '–' }} Mb/s rx</dd>{% endif %}
+    <dt>Now</dt><dd>{{ c.down_bps|bps }} down, {{ c.up_bps|bps }} up</dd>
+    <dt>This session</dt><dd>{{ c.down_bytes|bytes }} down, {{ c.up_bytes|bytes }} up</dd>
+    <dt>Connected for</dt><dd>{{ c.uptime_s|duration }}</dd>
+    {% if c.satisfaction is not none %}<dt>Experience</dt><dd>{{ c.satisfaction|pct }}</dd>{% endif %}
+  </dl></div>
+  {% endif %}
+  <div class="p {{ 'c8' if c else '' }}">
+    <div class="ph"><h2>Bandwidth</h2><span class="sub">b/s</span></div>{{ bw_chart(integ, series, 200, 'Client bandwidth') }}
+    {% if not c or not c.wired %}<div class="ph" style="margin:18px 0 4px"><h3>Signal</h3><span class="sub">dBm, higher is better; below -70 is weak</span></div>
+    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ series|urlencode }}" data-unit="dbm" data-min="-100" data-max="-20" data-h="150" data-label="Signal" data-series='[{"key":"c","color":"var(--s1)","area":false}]'></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

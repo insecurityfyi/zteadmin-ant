@@ -1,0 +1,39 @@
+{% macro signal(v) %}{% if v is none %}<span class="dim">–</span>{% else %}<span class="{{ 'okc' if v >= -60 else ('' if v >= -70 else ('wa' if v >= -80 else 'bad')) }}">{{ v|int }} dBm</span>{% endif %}{% endmacro %}
+{% macro ranges() %}<div class="ranges">{% for r in ['6h','24h','7d','30d','1y'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div>{% endmacro %}
+{% macro bw_chart(integ, key, h=200, label='Bandwidth') %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Download</span><span><i style="background:var(--s2)"></i>Upload</span></div>
+<div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ key|urlencode }}" data-unit="bps" data-h="{{ h }}" data-label="{{ label }}" data-series='[{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)"}]'></div>{% endmacro %}
+{% macro where(c, iid) %}{% if c.wired %}{{ c.switch or 'Wired' }}{% if c.switch_port %} <span class="dim">port {{ c.switch_port }}</span>{% endif %}{% else %}<a href="/unifi/{{ iid }}/ssids/{{ c.ssid|urlencode }}">{{ c.ssid or 'Wi-Fi' }}</a>{% if c.ap %} <span class="dim">on {{ c.ap }}</span>{% endif %}{% endif %}{% endmacro %}
+{% macro client_rows(clients, iid) %}{% for c in clients %}
+<tr data-kind="{{ 'wired' if c.wired else 'wifi' }}" data-q="{{ [c.name, c.hostname, c.ip, c.mac, c.vendor, c.ssid, c.ap, c.switch, c.network]|select|join(' ')|lower }}">
+  <td><a class="row" href="/unifi/{{ iid }}/clients/{{ c.mac }}">{{ c.name }}</a>{% if c.guest %} <span class="tag">guest</span>{% endif %}<div class="dim" style="font-size:12px">{{ c.vendor or '' }}</div></td>
+  <td class="mono nw">{{ c.ip or '' }}</td>
+  <td>{{ where(c, iid) }}</td>
+  <td class="nw">{% if not c.wired %}{{ c.band or '' }}{% if c.channel %} <span class="dim">ch {{ c.channel }}</span>{% endif %}{% endif %}</td>
+  <td class="n" data-v="{{ c.signal if c.signal is not none else -999 }}">{% if not c.wired %}{{ signal(c.signal) }}{% endif %}</td>
+  <td class="n" data-v="{{ c.tx_rate_mbps or 0 }}">{% if c.tx_rate_mbps %}{{ c.tx_rate_mbps|round|int }} / {{ (c.rx_rate_mbps or 0)|round|int }} Mb/s{% endif %}</td>
+  <td class="n mono" data-v="{{ c.down_bps or 0 }}">{{ c.down_bps|bps }}</td>
+  <td class="n mono" data-v="{{ c.up_bps or 0 }}">{{ c.up_bps|bps }}</td>
+  <td class="n" data-v="{{ (c.down_bytes or 0) + (c.up_bytes or 0) }}">{{ ((c.down_bytes or 0) + (c.up_bytes or 0))|bytes }}</td>
+  <td class="n" data-v="{{ c.uptime_s or 0 }}">{{ c.uptime_s|duration }}</td>
+  <td class="n" data-v="{{ c.satisfaction if c.satisfaction is not none else -1 }}">{{ c.satisfaction|pct }}</td>
+</tr>{% endfor %}{% endmacro %}
+{% macro client_head() %}<thead><tr><th data-sort="text">Client</th><th>IP</th><th>Connected to</th><th>Band</th><th class="n" data-sort="num">Signal</th><th class="n" data-sort="num">Link (tx / rx)</th><th class="n" data-sort="num">Down</th><th class="n" data-sort="num">Up</th><th class="n" data-sort="num">Data</th><th class="n" data-sort="num">Connected</th><th class="n" data-sort="num">Experience</th></tr></thead>{% endmacro %}
+{% macro table_js() %}<script>
+document.querySelectorAll("[data-clients]").forEach(box => {
+  const tb = box.querySelector("tbody"), q = box.querySelector("input[type=search]"), count = box.querySelector("[data-count]");
+  let kind = "all";
+  const apply = () => { const t = (q ? q.value : "").trim().toLowerCase(); let n = 0;
+    tb.querySelectorAll("tr").forEach(r => { const ok = (kind === "all" || r.dataset.kind === kind) && (!t || r.dataset.q.includes(t)); r.hidden = !ok; if (ok) n++; });
+    if (count) count.textContent = n; };
+  if (q) q.addEventListener("input", apply);
+  box.querySelectorAll("[data-kind-set]").forEach(b => b.addEventListener("click", () => {
+    kind = b.dataset.kindSet; box.querySelectorAll("[data-kind-set]").forEach(o => o.setAttribute("aria-pressed", o === b)); apply(); }));
+  box.querySelectorAll("th[data-sort]").forEach((th, _, all) => { th.style.cursor = "pointer"; th.title = "Sort";
+    th.addEventListener("click", () => { const i = [...th.parentNode.children].indexOf(th), num = th.dataset.sort === "num";
+      const dir = th.dataset.dir === "desc" ? "asc" : "desc"; all.forEach(o => delete o.dataset.dir); th.dataset.dir = dir;
+      const rows = [...tb.querySelectorAll("tr")].sort((a, b) => { const x = a.children[i], y = b.children[i];
+        const r = num ? (+x.dataset.v || 0) - (+y.dataset.v || 0) : x.textContent.trim().localeCompare(y.textContent.trim());
+        return dir === "desc" ? -r : r; });
+      tb.append(...rows); }); });
+});
+</script>{% endmacro %}

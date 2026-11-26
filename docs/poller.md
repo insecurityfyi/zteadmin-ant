@@ -6,7 +6,7 @@ API work. It needs:
 * **Outbound** TCP 443 to `utilz.perrego.net`. This is the only connection it
   makes to the internet.
 * UDP 161 (SNMP) and ICMP to the devices it polls, and HTTPS to the on-prem
-  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it.
+  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it. UniFi setup: [unifi.md](unifi.md).
 * **Nothing inbound.** No port forwards, no VPN.
 
 One poller comfortably handles about 150 devices at a 5-minute interval. Add a
@@ -29,7 +29,26 @@ page gets close to the interval.
    gaps. Up to 5,000 batches are kept, about 17 days at a 5-minute interval.
 4. **Revoke** on the Pollers page cuts it off immediately.
 
-## Running under systemd (recommended)
+## Install script (quickest)
+
+Pollers > **Add poller** shows a ready-made command with a one-time token. It
+runs [`deploy/install-poller.sh`](../deploy/install-poller.sh) as root:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh \
+  | sudo bash -s -- --server https://utilz.perrego.net --token enr_... --name poller-hq-01
+```
+
+It installs Podman, curl and the SNMP tools (apt, dnf/yum or zypper), checks it
+can reach `/healthz`, pulls the image, starts the container with `NET_RAW`,
+a key volume and restart-on-boot (`podman-restart.service`), and waits for
+"Connected". It saves the server and name in `/etc/linkwatch-poller.env`, so
+running it again with no arguments updates the poller to the latest image
+without a new token. `--uninstall` removes the container and keeps the key.
+In a Proxmox LXC container, turn on *Options > Features > Nesting* (and
+*keyctl* if it is unprivileged) before running it.
+
+## Running under systemd as a non-root user
 
 On a Debian/Ubuntu/Rocky VM or LXC container with Podman:
 

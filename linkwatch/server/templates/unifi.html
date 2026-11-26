@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_unifi_macros.html" import ranges, bw_chart, client_rows, client_head, table_js, signal %}
+{% block title %}Wi-Fi &amp; clients{% endblock %}
+{% block content %}
+{% if not integ %}
+<div class="head"><div><h1>Wi-Fi &amp; clients</h1></div></div>
+<div class="p empty-state"><h2>No UniFi integration yet</h2><p>Add a UniFi Network integration to see every client, SSID, access point and WAN link here.</p>
+  <p class="actions" style="justify-content:center"><a class="btn pri" href="/integrations/new?kind=unifi">Add UniFi</a></p></div>
+{% else %}
+<div class="head"><div><div class="crumb"><a href="/integrations/{{ integ.id }}">{{ integ.name }}</a>{% if summary.sites %} · {{ summary.sites|join(', ') }}{% endif %}</div>
+  <h1>Wi-Fi &amp; clients</h1>
+  <p>{% if data_ts %}From UniFi {{ data_ts|ago }}{% if summary.isp %} · ISP {{ summary.isp }}{% endif %}{% if summary.wan_ip %} · <span class="mono">{{ summary.wan_ip }}</span>{% endif %}{% else %}Waiting for the first sync from the poller.{% endif %}</p></div>
+  <div class="actions">{% if others|length > 1 %}{% for o in others %}<a class="fbtn" href="/unifi?i={{ o.id }}" aria-pressed="{{ 'true' if o.id == integ.id else 'false' }}">{{ o.name }}</a>{% endfor %}{% endif %}{{ ranges() }}</div></div>
+{% if integ.status == 'error' %}<div class="flash bad" role="alert">Last sync failed: {{ integ.last_error }}{% if data_ts %} The figures below are from the last good sync.{% endif %}</div>{% endif %}
+{% if not data_ts %}
+<div class="p empty-state"><h2>No UniFi data yet</h2><p>The poller reads UniFi once per poll interval. Open the <a href="/integrations/{{ integ.id }}">integration</a> and press Sync now, or check it for an error.</p></div>
+{% else %}
+<div class="kpis">
+  <div class="kpi"><span>Clients</span><b>{{ summary.clients|num }}</b><em>{{ summary.wireless|num }} Wi-Fi · {{ summary.wired|num }} wired{% if summary.guests %} · {{ summary.guests }} guest{{ '' if summary.guests == 1 else 's' }}{% endif %}</em></div>
+  <div class="kpi"><span>Access points up</span><b>{{ summary.aps_up }} / {{ summary.aps }}</b>{% if summary.aps_up < summary.aps %}<em class="bad">{{ summary.aps - summary.aps_up }} not up</em>{% else %}<em class="okc">all up</em>{% endif %}</div>
+  <div class="kpi"><span>Internet now (down / up)</span><b>{{ summary.down_bps|bps }}</b><em>up {{ summary.up_bps|bps }}</em></div>
+  <div class="kpi"><span>Internet latency</span><b>{{ (summary.latency_ms|round|int ~ ' ms') if summary.latency_ms is not none else '–' }}</b><em>{% if summary.speedtest_down %}last speed test {{ summary.speedtest_down|round|int }} / {{ (summary.speedtest_up or 0)|round|int }} Mb/s{% else %}{{ summary.internet_status or '' }}{% endif %}</em></div>
+  <div class="kpi"><span>SSIDs</span><b>{{ data.ssids|length }}</b><em>{{ data.ssids|selectattr('clients')|list|length }} with clients</em></div>
+</div>
+<div class="grid">
+  <div class="p c8"><div class="ph"><h2>Internet traffic</h2><span class="sub">all WAN links, b/s</span></div>{{ bw_chart(integ, 'wan:total', 220, 'Internet traffic') }}</div>
+  <div class="p c4"><div class="ph"><h2>Connected clients</h2></div>
+    <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Total</span><span><i style="background:var(--s2)"></i>Wi-Fi</span><span><i style="background:var(--off)"></i>Wired</span></div>
+    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/clients" data-unit="num" data-h="220" data-label="Clients" data-series='[{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--s2)","area":false},{"key":"c","color":"var(--off)","area":false}]'></div></div>
+
+  {% if data.wans %}
+  <div class="p"><div class="ph"><h2>WAN links</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Link</th><th>Gateway</th><th>Address</th><th>ISP</th><th class="n">Down</th><th class="n">Up</th><th class="n">Speed</th></tr></thead><tbody>
+    {% for w in data.wans %}<tr><td><span class="dot {{ 'd-up' if w.up else 'd-down' }}"></span></td><td><b>{{ w.name }}</b></td><td>{{ w.device or '' }}</td><td class="mono">{{ w.ip or '' }}</td><td>{{ w.isp or '' }}</td>
+      <td class="n mono">{{ w.down_bps|bps }}</td><td class="n mono">{{ w.up_bps|bps }}</td><td class="n">{{ w.speed_mbps|speed }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  {% endif %}
+
+  <div class="p c6"><div class="ph"><h2>SSIDs</h2><span class="sub">bandwidth is the sum of the clients on each</span></div>
+    <div class="scroll"><table><thead><tr><th>SSID</th><th class="n">Clients</th><th class="n">Down</th><th class="n">Up</th><th>Security</th><th class="n">VLAN</th></tr></thead><tbody>
+    {% for x in data.ssids %}<tr><td><a class="row" href="/unifi/{{ integ.id }}/ssids/{{ x.series[5:]|urlencode }}">{{ x.name }}</a>{% if not x.enabled %} <span class="tag">off</span>{% endif %}{% if x.guest %} <span class="tag">guest</span>{% endif %}{% if x.site and summary.sites|length > 1 %}<div class="dim" style="font-size:12px">{{ x.site }}</div>{% endif %}</td>
+      <td class="n">{{ x.clients }}</td><td class="n mono">{{ x.down_bps|bps }}</td><td class="n mono">{{ x.up_bps|bps }}</td><td class="dim">{{ x.security or '' }}</td><td class="n">{{ x.vlan or '' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="dim">No SSIDs reported.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="p c6"><div class="ph"><h2>Access points</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>AP</th><th class="n">Clients</th><th>Radios</th><th class="n">Down</th><th class="n">Up</th><th class="n">Experience</th></tr></thead><tbody>
+    {% for a in data.aps %}<tr><td><span class="dot d-{{ a.status }}"></span></td>
+      <td>{% if device_ids.get(a.mac) %}<a class="row nw" href="/devices/{{ device_ids[a.mac] }}">{{ a.name }}</a>{% else %}<b class="nw">{{ a.name }}</b>{% endif %}<div class="dim" style="font-size:12px">{{ a.model or '' }}</div></td>
+      <td class="n">{{ a.clients }}</td>
+      <td style="font-size:12.5px">{% for r in a.radios %}<div class="nw">{{ r.band }}{% if r.channel %} ch {{ r.channel }}{% endif %}{% if r.utilization is not none %} <span class="{{ 'wa' if r.utilization >= 60 else 'dim' }}">{{ r.utilization|round|int }}% busy</span>{% endif %}{% if r.clients is not none %} <span class="dim">· {{ r.clients }} client{{ '' if r.clients == 1 else 's' }}</span>{% endif %}</div>{% endfor %}</td>
+      <td class="n mono">{{ a.down_bps|bps }}</td><td class="n mono">{{ a.up_bps|bps }}</td><td class="n">{{ a.satisfaction|pct }}</td></tr>
+    {% else %}<tr><td colspan="7" class="dim">No access points reported.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="p" data-clients><div class="ph"><h2>Clients <span class="sub" data-count>{{ data.clients|length }}</span></h2>
+    <div class="filters"><input type="search" placeholder="Name, IP, MAC, SSID, AP" aria-label="Filter clients" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <button class="fbtn" type="button" data-kind-set="all" aria-pressed="true">All</button><button class="fbtn" type="button" data-kind-set="wifi" aria-pressed="false">Wi-Fi</button><button class="fbtn" type="button" data-kind-set="wired" aria-pressed="false">Wired</button></div></div>
+    <div class="scroll"><table>{{ client_head() }}<tbody>{{ client_rows(data.clients, integ.id) }}</tbody></table></div>
+    {% if not data.clients %}<p class="dim">No clients connected.</p>{% endif %}</div>
+</div>
+{{ table_js() }}
+{% endif %}
+{% endif %}
+{% endblock %}

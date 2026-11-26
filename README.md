@@ -16,7 +16,7 @@ Two things live in this repository:
 | Devices | SNMP v2c/v3 and ping: system info, CPU, memory, every interface with traffic, errors and utilization, graphs for 6 h to 1 year. CSV import for bulk adds. |
 | Alerts | Device down, platform-reported problems, high CPU and memory, port down, port errors, bandwidth, failing integrations, offline pollers. Email, Teams, Slack or webhook. |
 | Pollers | Run on your LAN and only connect out (WebSocket over HTTPS). Results are buffered on disk if the link drops. Enrolled with a one-time token and revocable. |
-| Integrations | **Zscaler** over OneAPI (ZIA locations and tunnels, ZPA App Connectors, ZDX app scores, Client Connector fleet, Zero Trust Branch sites), **Cisco Meraki** (cloud); **Palo Alto PAN-OS**, **Fortinet FortiGate**, **UniFi**, **Proxmox VE** (called by a poller, inside your network). A Proxmox node that's also polled over SNMP shows as one device with both data sets. |
+| Integrations | **Zscaler** over OneAPI (ZIA locations and tunnels, ZPA App Connectors, ZDX app scores, Client Connector fleet, Zero Trust Branch sites), **Cisco Meraki** (cloud); **Palo Alto PAN-OS**, **Fortinet FortiGate**, **UniFi** (devices, ports, every client, per-SSID bandwidth, WAN; see [docs/unifi.md](docs/unifi.md)), **Proxmox VE** (called by a poller, inside your network). A Proxmox node that's also polled over SNMP shows as one device with both data sets. |
 | REST API | `/api/v1` with read-only or read-write keys; reference at `/api/docs` |
 
 ```

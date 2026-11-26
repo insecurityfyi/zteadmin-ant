@@ -1,0 +1,15 @@
+{% macro rule_form(action, rule, pollers, profiles, schedules, auto_add_modes, site_names, button) %}
+<form method="post" action="{{ action }}" class="stack">
+  <div class="row2"><label class="f">Name<input type="text" name="name" required value="{{ rule.name if rule else '' }}" placeholder="HQ server VLANs"></label>
+    <label class="f">Poller that can reach them<select name="poller_id" required>{% for p in pollers %}<option value="{{ p.id }}" {% if rule and rule.poller_id == p.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label></div>
+  <label class="f">Addresses<textarea name="targets" rows="2" required placeholder="10.10.0.0/24, 10.20.5.10-60">{{ rule.targets if rule else '' }}</textarea></label>
+  <fieldset class="f"><legend>SNMP credentials to try</legend>
+    {% for p in profiles %}<label class="chk"><input type="checkbox" name="profile_id" value="{{ p.id }}" {% if not rule or p.id in (rule.profile_ids or []) %}checked{% endif %}> {{ p.name }} <span class="dim">(v{{ p.version }})</span></label>{% else %}<span class="dim">None saved yet; the scan will be ping-only.</span>{% endfor %}
+    <small>Tried in the credential order set on the Discovery page.</small></fieldset>
+  <div class="row2"><label class="f">Schedule<select name="interval_hours">{% for h, label in schedules.items() %}<option value="{{ h }}" {% if rule and rule.interval_hours == h %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="f">When it finds new devices<select name="auto_add">{% for k, label in auto_add_modes.items() %}<option value="{{ k }}" {% if rule and rule.auto_add == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div>
+  <div class="row2"><label class="f">Site for devices it adds <span class="help">(optional)</span><input type="text" name="site_name" list="rule_sites" value="{{ rule.site_name or '' if rule else '' }}"><datalist id="rule_sites">{% for n in site_names %}<option value="{{ n }}">{% endfor %}</datalist></label>
+    <label class="chk" style="align-self:end"><input type="checkbox" name="enabled" {% if not rule or rule.enabled %}checked{% endif %}> Enabled</label></div>
+  <div><button class="btn pri" type="submit">{{ button }}</button></div>
+</form>
+{% endmacro %}

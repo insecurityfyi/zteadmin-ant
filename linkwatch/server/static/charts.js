@@ -8,6 +8,7 @@
     ms: v => (v === 0 ? "0" : v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)) + " ms",
     bps: v => { const u = ["b/s", "k", "M", "G", "T"]; let i = 0; while (v >= 1000 && i < 4) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + (i ? u[i] : " " + u[0]); },
     num: v => String(Math.round(v)),
+    dbm: v => Math.round(v) + " dBm",
   };
 
   function draw(host, data, series, opts) {
@@ -15,13 +16,14 @@
     if (ts.length < 2) { host.innerHTML = '<div class="empty">Not enough data yet. Graphs fill in after a few polls.</div>'; return; }
     const W = Math.max(280, host.clientWidth || 600), H = +(opts.h || 160), L = 52, R = 10, T = 8, B = 22;
     const vals = series.flatMap(s => data[s.key].filter(v => v != null));
+    const min = opts.min ? +opts.min : 0;
     let max = opts.max ? +opts.max : nice((Math.max(0, ...vals) || 1) * 1.1);
     const t0 = ts[0], t1 = ts[ts.length - 1] === t0 ? t0 + 1 : ts[ts.length - 1];
-    const x = t => L + (W - L - R) * (t - t0) / (t1 - t0), y = v => T + (H - T - B) * (1 - v / max);
+    const x = t => L + (W - L - R) * (t - t0) / (t1 - t0), y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
     const f = fmt[opts.unit || "num"];
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.label || "chart" });
     for (let k = 0; k <= 4; k++) {
-      const v = max * k / 4, yy = y(v);
+      const v = min + (max - min) * k / 4, yy = y(v);
       svg.append(el("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "gl" }));
       const t = el("text", { x: L - 6, y: yy + 3.5, "text-anchor": "end", class: "ax" }); t.textContent = f(v); svg.append(t);
     }
@@ -34,11 +36,11 @@
     }
     series.forEach(s => {
       const segs = []; let cur = [];
-      data[s.key].forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([x(ts[i]), y(Math.min(v, max))]); });
+      data[s.key].forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([x(ts[i]), y(Math.max(min, Math.min(v, max)))]); });
       if (cur.length) segs.push(cur);
       segs.forEach(seg => {
         const d = seg.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L");
-        if (s.area !== false) svg.append(el("path", { d: `M${seg[0][0]},${y(0)}L${d}L${seg[seg.length - 1][0]},${y(0)}Z`, fill: s.color, "fill-opacity": .12 }));
+        if (s.area !== false) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": .12 }));
         svg.append(el("path", { d: "M" + d, fill: "none", stroke: s.color, "stroke-width": 1.6, "stroke-linejoin": "round" }));
       });
       const last = segs.length ? segs[segs.length - 1].slice(-1)[0] : null;

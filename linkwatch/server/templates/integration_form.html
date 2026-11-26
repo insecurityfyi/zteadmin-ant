@@ -4,6 +4,7 @@
 <div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a></div><h1>{{ integ.name if integ else 'Add ' ~ cls.label }}</h1><p>{{ cls.description }}</p></div>
   {% if integ %}<div class="actions">
     <form class="inline" method="post" action="/integrations/{{ integ.id }}/test"><button class="btn" type="submit">Test</button></form>
+    {% if integ.kind == 'unifi' %}<a class="btn" href="/unifi?i={{ integ.id }}">Wi-Fi &amp; clients</a>{% endif %}
     <form class="inline" method="post" action="/integrations/{{ integ.id }}/sync"><button class="btn" type="submit">Sync now</button></form></div>{% endif %}</div>
 {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
 {% if test_result %}<div class="flash {{ test_result[0] }}" role="status">{{ test_result[1] }}</div>{% endif %}

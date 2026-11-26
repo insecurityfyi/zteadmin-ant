@@ -1,9 +1,11 @@
 {% extends "base.html" %}
+{% from "_rule_form.html" import rule_form %}
 {% block title %}Discovery{% endblock %}
 {% block content %}
-<div class="head"><div><h1>Discovery</h1><p>A poller scans the addresses you give it: a ping sweep, plus an SNMP query with each credential set you tick. You then choose which of the devices it finds to add.</p></div></div>
-<div class="p">
-<form method="post" class="stack">
+<div class="head"><div><h1>Discovery</h1><p>Your poller scans address ranges with a ping sweep and an SNMP query using your saved credentials. Run a scan now, or save scans that run on a schedule and can add new devices by themselves.</p></div></div>
+<div class="grid">
+<div class="p c7"><div class="ph"><h2>Scan now</h2></div>
+<form method="post" action="/discovery" class="stack">
   <label class="f">Addresses to scan<textarea name="targets" id="targets" rows="3" required placeholder="10.10.0.0/24, 10.20.5.10-60, 192.168.1.1"></textarea>
     <small>CIDR blocks, ranges or single IPs, separated by commas or new lines. Up to 4,096 addresses per scan (a /20). A /24 takes about a minute.</small></label>
   <div class="row2">
@@ -11,22 +13,49 @@
       {% if not pollers %}<option value="">Install a poller first</option>{% endif %}
       {% for p in pollers %}<option value="{{ p.id }}" {% if p.id not in connected %}disabled{% endif %}>{{ p.name }}{% if p.id not in connected %} (offline){% endif %}</option>{% endfor %}</select></label>
     <fieldset class="f"><legend>SNMP credentials to try</legend>
-      {% for p in profiles %}<label class="chk"><input type="checkbox" name="profile_id" value="{{ p.id }}" checked> {{ p.name }} <span class="dim">(v{{ p.version }})</span></label>{% else %}<span class="dim">None saved yet. Add them under <a href="/settings">Settings</a>, or scan with ping only.</span>{% endfor %}
-      <small>Tried in this order on every address; the first that answers is saved with the device.</small></fieldset>
+      {% for p in profiles %}<label class="chk"><input type="checkbox" name="profile_id" value="{{ p.id }}" checked> {{ p.name }} <span class="dim">(v{{ p.version }})</span></label>{% else %}<span class="dim">None saved yet. Add them under <a href="/settings#snmp">Settings</a>, or scan with ping only.</span>{% endfor %}
+      <small>Tried in the order below; the first that answers is saved with the device.</small></fieldset>
   </div>
   <div class="actions"><button class="btn pri" type="submit" {% if not connected %}disabled{% endif %}>Start scan</button>{% if not connected %}<span class="dim">No poller is connected.</span>{% endif %}</div>
 </form></div>
 
+<div class="p c5" id="order"><div class="ph"><h2>SNMP credential order</h2><a class="sub" href="/settings#snmp">Manage credentials</a></div>
+  {% if profiles %}<ol class="stack" style="margin:0;padding-left:20px">
+  {% for p in profiles %}<li><div class="actions" style="justify-content:space-between"><span><b>{{ p.name }}</b> <span class="dim">v{{ p.version }}</span></span>
+    <span class="nw"><form class="inline" method="post" action="/discovery/order"><input type="hidden" name="profile_id" value="{{ p.id }}"><input type="hidden" name="dir" value="up"><button class="btn sm" type="submit" {% if loop.first %}disabled{% endif %} aria-label="Move {{ p.name }} up">↑</button></form>
+      <form class="inline" method="post" action="/discovery/order"><input type="hidden" name="profile_id" value="{{ p.id }}"><input type="hidden" name="dir" value="down"><button class="btn sm" type="submit" {% if loop.last %}disabled{% endif %} aria-label="Move {{ p.name }} down">↓</button></form></span></div></li>{% endfor %}
+  </ol>
+  <p class="help">Every scan tries credentials from the top. Put the set most of your devices use first: scans get faster and fewer failed SNMPv3 attempts reach your devices.</p>
+  {% else %}<p class="dim" style="margin:0">No SNMP credentials saved yet.</p>{% endif %}
+</div>
+
+<div class="p c12" id="rules"><div class="ph"><h2>Saved scans</h2><span class="sub">Run by hand or on a schedule; optional auto-add</span></div>
+  {% if rules %}<div class="scroll"><table><thead><tr><th>Name</th><th>Addresses</th><th>Poller</th><th>Schedule</th><th>New devices</th><th>Last run</th><th></th></tr></thead><tbody>
+  {% for r in rules %}<tr>
+    <td class="nw"><a href="/discovery/rules/{{ r.id }}"><b>{{ r.name }}</b></a>{% if not r.enabled %} <span class="tag">disabled</span>{% endif %}</td>
+    <td class="mono">{{ r.targets|truncate(50) }}</td><td>{{ r.poller.name if r.poller else '–' }}{% if r.poller_id and r.poller_id not in connected %} <span class="dim">(offline)</span>{% endif %}</td>
+    <td class="nw">{{ schedules.get(r.interval_hours, '–') }}</td>
+    <td>{% if r.auto_add == 'off' %}Review{% elif r.auto_add == 'snmp' %}Auto-add SNMP{% else %}Auto-add all{% endif %}{% if r.site_name %} <span class="dim">→ {{ r.site_name }}</span>{% endif %}</td>
+    <td class="dim nw">{{ r.last_run|ago }}</td>
+    <td class="nw"><form class="inline" method="post" action="/discovery/rules/{{ r.id }}/run"><button class="btn sm" type="submit" {% if r.poller_id not in connected %}disabled{% endif %}>Run now</button></form>
+      <a class="btn sm" href="/discovery/rules/{{ r.id }}">Edit</a></td></tr>{% endfor %}
+  </tbody></table></div>{% endif %}
+  <details {% if not rules %}open{% endif %} style="margin-top:12px"><summary class="btn" style="display:inline-flex">Add a saved scan</summary>
+    <div style="margin-top:12px">{{ rule_form("/discovery/rules", none, pollers, profiles, schedules, auto_add_modes, site_names, "Save scan") }}</div></details>
+</div>
+
 {% if jobs %}
-<div class="p"><div class="ph"><h2>Recent scans</h2></div>
+<div class="p c12"><div class="ph"><h2>Recent scans</h2></div>
 <div class="scroll"><table>
-  <thead><tr><th>Started</th><th>Addresses</th><th>Poller</th><th>Status</th><th class="n">Found</th></tr></thead>
+  <thead><tr><th>Started</th><th>Saved scan</th><th>Addresses</th><th>Poller</th><th>Status</th><th class="n">Found</th><th class="n">Auto-added</th></tr></thead>
   <tbody>{% for j in jobs %}
     <tr class="click" onclick="location.href='/discovery/{{ j.id }}'">
       <td class="nw"><a class="row" href="/discovery/{{ j.id }}">{{ j.created_at|ago }}</a></td>
-      <td class="mono">{{ j.targets|truncate(60) }}</td><td>{{ j.poller.name if j.poller else '–' }}</td>
+      <td>{{ j.rule.name if j.rule else '' }}</td>
+      <td class="mono">{{ j.targets|truncate(50) }}</td><td>{{ j.poller.name if j.poller else '–' }}</td>
       <td>{% if j.status in ('queued', 'running') %}<span class="tag">{{ j.status }} {{ j.scanned }}/{{ j.total }}</span>{% elif j.status == 'failed' %}<span class="tag bad">failed</span>{% else %}<span class="tag">done</span>{% endif %}</td>
-      <td class="n">{{ (j.results or [])|length if j.status == 'done' else '' }}</td></tr>{% endfor %}
+      <td class="n">{{ (j.results or [])|length if j.status == 'done' else '' }}</td><td class="n">{{ j.added if j.added else '' }}</td></tr>{% endfor %}
   </tbody></table></div></div>
 {% endif %}
+</div>
 {% endblock %}

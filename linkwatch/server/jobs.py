@@ -11,7 +11,7 @@ from ..integrations import REGISTRY, IntegrationError, build
 from .alerts import Alerter
 from .db import get_setting, set_setting
 from .ingest import ingest_integration
-from .models import DeviceMetric, Integration, Poller, PortMetric, utcnow
+from .models import DeviceMetric, Integration, IntegrationMetric, Poller, PortMetric, utcnow
 
 log = logging.getLogger("linkwatch.jobs")
 
@@ -30,6 +30,7 @@ def run_server_integration(app_state, integration_id: int) -> None:
         try:
             item["records"] = client.collect()
             item["warnings"] = list(getattr(client, "errors", []) or [])
+            item["data"] = getattr(client, "data", None)
             item["ok"] = True
         finally:
             client.close()
@@ -88,9 +89,17 @@ def rollup_and_prune(app_state) -> None:
                          .group_by(PortMetric.port_id, bucket_p)).all()
         for port_id, b, i, o, ei, eo in rows:
             s.add(PortMetric(port_id=port_id, ts=_as_dt(b), hourly=True, in_bps=i, out_bps=o, in_err=ei, out_err=eo))
+        bucket_i = func.date_trunc("hour", IntegrationMetric.ts) if s.bind.dialect.name == "postgresql" \
+            else func.strftime("%Y-%m-%d %H:00:00", IntegrationMetric.ts)
+        rows = s.execute(select(IntegrationMetric.integration_id, IntegrationMetric.key, bucket_i, func.avg(IntegrationMetric.a),
+                                func.avg(IntegrationMetric.b), func.avg(IntegrationMetric.c))
+                         .where(IntegrationMetric.hourly.is_(False), IntegrationMetric.ts >= start, IntegrationMetric.ts < hour_end)
+                         .group_by(IntegrationMetric.integration_id, IntegrationMetric.key, bucket_i)).all()
+        for iid, key, b, va, vb, vc in rows:
+            s.add(IntegrationMetric(integration_id=iid, key=key, ts=_as_dt(b), hourly=True, a=va, b=vb, c=vc))
         set_setting(s, "rollup_until", hour_end.isoformat())
         raw_cut, hourly_cut = now - timedelta(days=cfg.raw_days), now - timedelta(days=cfg.hourly_days)
-        for model in (DeviceMetric, PortMetric):
+        for model in (DeviceMetric, PortMetric, IntegrationMetric):
             s.execute(delete(model).where(model.hourly.is_(False), model.ts < raw_cut))
             s.execute(delete(model).where(model.hourly.is_(True), model.ts < hourly_cut))
     log.info("Rollup done up to %s", hour_end)
@@ -98,6 +107,20 @@ def rollup_and_prune(app_state) -> None:
 
 def _as_dt(bucket):
     return bucket if isinstance(bucket, datetime) else datetime.fromisoformat(str(bucket))
+
+
+def run_scheduled_discovery(app_state) -> None:
+    from .discovery import due_rules, run_rule
+    with app_state.db.session() as s:
+        for rule in due_rules(s, set(app_state.hub.conns)):
+            job = run_rule(app_state, s, rule)
+            log.info("Scheduled discovery '%s' started as job %s", rule.name, job.id)
+
+
+def prune_audit(app_state) -> None:
+    from .models import AuditEvent
+    with app_state.db.session() as s:
+        s.execute(delete(AuditEvent).where(AuditEvent.at < utcnow() - timedelta(days=365)))
 
 
 async def background(app_state) -> None:
@@ -117,9 +140,11 @@ async def background(app_state) -> None:
                 last_sync[iid] = now
                 await asyncio.to_thread(run_server_integration, app_state, iid)
             await asyncio.to_thread(check_pollers, app_state)
+            await asyncio.to_thread(run_scheduled_discovery, app_state)
             if now - last_rollup >= 3600:
                 last_rollup = now
                 await asyncio.to_thread(rollup_and_prune, app_state)
+                await asyncio.to_thread(prune_audit, app_state)
         except asyncio.CancelledError:
             raise
         except Exception:

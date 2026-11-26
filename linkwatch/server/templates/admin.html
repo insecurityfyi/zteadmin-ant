@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Administration{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Administration</h1><p>Users and roles, the audit log, and system details. Admins can change anything; read-only users can see everything but change nothing.</p></div></div>
+<div class="grid">
+  <div class="p c8" id="users"><div class="ph"><h2>Users</h2><span class="sub">{{ users|length }} account{{ '' if users|length == 1 else 's' }}</span></div>
+    <div class="scroll"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+    {% for u in users %}<tr class="click" onclick="location.href='/admin/users/{{ u.id }}'">
+      <td class="nw"><a class="row" href="/admin/users/{{ u.id }}"><b>{{ u.username }}</b></a>{% if me and u.id == me.id %} <span class="tag">you</span>{% endif %}</td>
+      <td>{{ u.full_name or '' }}</td><td>{{ roles[u.role] }}</td>
+      <td>{% if u.disabled %}<span class="tag">disabled</span>{% else %}active{% endif %}</td>
+      <td class="dim nw">{{ u.last_login|ago }}</td>
+      <td><a class="btn sm" href="/admin/users/{{ u.id }}">Edit</a></td></tr>{% endfor %}
+    </tbody></table></div>
+    <details style="margin-top:12px"><summary class="btn" style="display:inline-flex">Add a user</summary>
+    <form method="post" action="/admin/users" class="stack" style="margin-top:12px" autocomplete="off">
+      <div class="row2"><label class="f">Username<input type="text" name="username" id="nu_username" required pattern="[A-Za-z0-9._@\-]{2,64}" autocomplete="off" data-1p-ignore data-lpignore="true" autocapitalize="none" spellcheck="false"></label>
+        <label class="f">Role<select name="role" id="nu_role">{% for k, v in roles.items() %}<option value="{{ k }}" {% if k == 'viewer' %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label></div>
+      <div class="row2"><label class="f">Full name <span class="help">(optional)</span><input type="text" name="full_name" id="nu_name"></label>
+        <label class="f">Email <span class="help">(optional)</span><input type="email" name="email" id="nu_email"></label></div>
+      <label class="f">Password<input type="password" name="password" id="nu_password" required minlength="{{ min_password }}" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore><small>At least {{ min_password }} characters. Give it to the user over a secure channel; they can change it under their account.</small></label>
+      <div><button class="btn pri" type="submit">Create user</button></div>
+    </form></details>
+  </div>
+  <div class="p c4"><div class="ph"><h2>System</h2></div>
+    <dl class="kv"><dt>Version</dt><dd>{{ system.version }}</dd><dt>Public URL</dt><dd class="mono">{{ system.public_url }}</dd>
+      <dt>Database</dt><dd>{{ system.database }}</dd><dt>Python</dt><dd>{{ system.python }}</dd>
+      <dt>Devices</dt><dd>{{ counts.devices|num }}</dd><dt>Pollers</dt><dd>{{ counts.pollers }}</dd><dt>Integrations</dt><dd>{{ counts.integrations }}</dd></dl>
+    <p class="help" style="margin-bottom:0">Locked out? On the server, <code>deploy/reset-password.sh</code> sets a new password for the <code>admin</code> user and re-enables it.</p>
+  </div>
+  <div class="p c12" id="audit"><div class="ph"><h2>Audit log</h2>
+      <form method="get" action="/admin#audit" class="filters"><input type="search" name="audit_q" value="{{ audit_q }}" placeholder="Filter by user, action or IP" aria-label="Filter audit log"></form></div>
+    {% if events %}<div class="scroll"><table><thead><tr><th>When (UTC)</th><th>User</th><th>Action</th><th>Detail</th><th>From</th></tr></thead><tbody>
+    {% for e in events %}<tr><td class="nw dim" title="{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }}">{{ e.at.strftime('%d %b %H:%M') }}</td><td class="nw">{{ e.username or '–' }}</td>
+      <td class="nw">{% if 'failed' in e.action %}<span class="bad">{{ e.action }}</span>{% else %}{{ e.action }}{% endif %}</td><td>{{ e.detail or '' }}</td><td class="mono dim">{{ e.ip or '' }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="margin:0">Nothing logged yet.</p>{% endif %}
+    <p class="help">Sign-ins and every change made in the web UI. The last 200 entries are shown; entries are kept for a year.</p>
+  </div>
+</div>
+{% endblock %}

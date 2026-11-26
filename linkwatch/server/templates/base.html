@@ -17,11 +17,14 @@
     <a class="nav" href="/" {% if n == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
     <a class="nav" href="/devices" {% if n.startswith('device') %}aria-current="page"{% endif %}>Devices</a>
     <a class="nav" href="/discovery" {% if n == 'discovery' %}aria-current="page"{% endif %}>Discovery</a>
+    {% if has_unifi %}<a class="nav" href="/unifi" {% if n == 'unifi' %}aria-current="page"{% endif %}>Wi-Fi &amp; clients</a>{% endif %}
     <a class="nav" href="/alerts" {% if n == 'alerts' %}aria-current="page"{% endif %}>Alerts {% if open_alerts %}<span class="ct">{{ open_alerts }}</span>{% endif %}</a>
     <div class="grp">Collection</div>
     <a class="nav" href="/pollers" {% if n == 'pollers' %}aria-current="page"{% endif %}>Pollers</a>
     <a class="nav" href="/integrations" {% if n.startswith('integration') %}aria-current="page"{% endif %}>Integrations</a>
     <a class="nav" href="/settings" {% if n == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    {% if me and me.role == 'admin' %}<a class="nav" href="/admin" {% if n == 'admin' %}aria-current="page"{% endif %}>Administration</a>{% endif %}
+    {% if me %}<a class="nav" href="/account" {% if n == 'account' %}aria-current="page"{% endif %} title="Your account">{{ me.username }}{% if me.role != 'admin' %} <span class="ct">read-only</span>{% endif %}</a>{% endif %}
     <form method="post" action="/logout"><button class="btn sm" type="submit" style="background:transparent;color:var(--railInk);border-color:#ffffff30">Sign out</button></form>
     <div class="ver">v{{ version }}</div>
   </nav>

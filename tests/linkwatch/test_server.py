@@ -15,13 +15,13 @@ def test_pages_need_login(client):
 
 def test_wrong_password_and_lockout(client):
     for _ in range(8):
-        assert client.post("/login", data={"password": "nope"}).status_code == 401
-    assert client.post("/login", data={"password": "pw-for-tests"}).status_code == 429
+        assert client.post("/login", data={"username": "admin", "password": "nope"}).status_code == 401
+    assert client.post("/login", data={"username": "admin", "password": "pw-for-tests"}).status_code == 429
 
 
 def test_every_page_renders(logged_in):
     for path in ["/", "/devices", "/alerts", "/pollers", "/integrations", "/settings", "/devices/new", "/devices/import",
-                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox", "/discovery"]:
+                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox", "/discovery", "/admin", "/account"]:
         r = logged_in.get(path)
         assert r.status_code == 200, path
 
@@ -29,6 +29,7 @@ def test_every_page_renders(logged_in):
 def enroll(client):
     page = client.post("/pollers/token").text
     token = re.search(r"LW_ENROLL_TOKEN=(\S+) ", page).group(1)
+    assert f"install-poller.sh \\\n  | sudo bash -s -- --server http://testserver --token {token} --name" in page
     r = client.post("/api/poller/enroll", json={"token": token, "name": "poller-hq-01", "hostname": "lan-box"})
     assert r.status_code == 200
     assert client.post("/api/poller/enroll", json={"token": token}).status_code == 403   # single use
@@ -149,3 +150,40 @@ def test_discovery_needs_connected_poller(logged_in):
     ident = enroll(logged_in)
     r = logged_in.post("/discovery", data={"targets": "10.9.0.0/30", "poller_id": ident["poller_id"]})
     assert "not connected" in r.text
+
+
+def test_unifi_pages(logged_in, app):
+    import respx
+    from linkwatch.integrations import build
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Device, Integration
+    from tests.linkwatch.test_integrations import mock_unifi
+
+    assert "Wi-Fi &amp; clients" not in logged_in.get("/").text          # nav item only once UniFi is set up
+    with respx.mock:
+        mock_unifi()
+        client = build("unifi", {"host": "192.168.1.1", "api_key": "k"})
+        records = client.collect()
+    db = app.state.lw.db
+    with db.session() as s:
+        integ = Integration(kind="unifi", name="Home UniFi", config_enc=app.state.lw.vault.seal({"host": "192.168.1.1", "api_key": "k"}))
+        s.add(integ)
+        s.flush()
+        ingest_integration(s, Alerter(s), integ, {"ok": True, "records": records, "data": client.data})
+        iid = integ.id
+        ap_id = s.scalar(select(Device.id).where(Device.external_id == "aa:aa:aa:00:00:01"))
+    page = logged_in.get("/unifi").text
+    assert "Wi-Fi &amp; clients" in page and "laptop" in page and "Fiber Co" in page and "ap-lobby" in page
+    assert f'href="/unifi/{iid}/ssids/Office"' in page
+    r = logged_in.get(f"/unifi/{iid}/clients/cc:00:00:00:00:01")
+    assert r.status_code == 200 and "-55 dBm" in r.text and "Apple" in r.text
+    assert logged_in.get(f"/unifi/{iid}/clients/ee:ee:ee:ee:ee:ee").status_code == 200      # gone, history only
+    r = logged_in.get(f"/unifi/{iid}/ssids/Office")
+    assert r.status_code == 200 and "laptop" in r.text and "phone" not in r.text
+    assert logged_in.get(f"/unifi/{iid}/ssids/Nope").status_code == 404
+    series = logged_in.get(f"/ui/metrics/integration/{iid}/ssid:Office").json()
+    assert series["a"] == [4_000_000.0] and series["c"] == [1.0]
+    assert logged_in.get(f"/ui/metrics/integration/{iid}/ssid%3AOffice").json()["a"] == [4_000_000.0]
+    assert "Wi-Fi traffic" in logged_in.get(f"/devices/{ap_id}").text
+    assert f'href="/unifi?i={iid}"' in logged_in.get(f"/integrations/{iid}").text

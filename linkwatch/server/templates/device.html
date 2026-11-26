@@ -39,6 +39,10 @@
       <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Ping from poller</h3><span class="sub">ms</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="ms" data-h="150" data-series='[{"key":"ping","color":"var(--s1)","area":false}]'></div></div>
       <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Packet loss</h3><span class="sub">%</span></div><div class="fig" data-src="/ui/metrics/device/{{ d.id }}" data-unit="pct" data-max="100" data-h="150" data-series='[{"key":"loss","color":"var(--down)"}]'></div></div>
       {% endif %}
+      {% if d.integration and d.integration.kind == 'unifi' and d.type == 'Wireless' and d.extra and d.extra.get('mac') %}
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Wi-Fi traffic</h3><span class="sub">sum of its clients, b/s</span></div><div class="fig" data-src="/ui/metrics/integration/{{ d.integration.id }}/ap:{{ d.extra.mac }}" data-unit="bps" data-h="150" data-series='[{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)"}]'></div></div>
+      <div class="c6"><div class="ph" style="margin-bottom:4px"><h3>Wi-Fi clients</h3><span class="sub"><a href="/unifi?i={{ d.integration.id }}">all clients</a></span></div><div class="fig" data-src="/ui/metrics/integration/{{ d.integration.id }}/ap:{{ d.extra.mac }}" data-unit="num" data-h="150" data-series='[{"key":"c","color":"var(--s1)"}]'></div></div>
+      {% endif %}
       {% if ports %}{% set up = ports[0] %}
       <div style="grid-column:span 12"><div class="ph" style="margin-bottom:4px"><h3>{{ up.name }} {{ up.alias or '' }}</h3><span class="sub">busiest port, b/s in and out</span></div>
         <div class="fig" data-src="/ui/metrics/port/{{ up.id }}" data-unit="bps" data-h="170" data-series='[{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}]'></div></div>

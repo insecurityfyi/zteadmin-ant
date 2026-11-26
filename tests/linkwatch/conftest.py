@@ -26,6 +26,6 @@ def client(app):
 
 @pytest.fixture
 def logged_in(client):
-    r = client.post("/login", data={"password": "pw-for-tests", "next": "/"}, follow_redirects=False)
+    r = client.post("/login", data={"username": "admin", "password": "pw-for-tests", "next": "/"}, follow_redirects=False)
     assert r.status_code == 303
     return client
