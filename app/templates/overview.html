@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block body %}
+{% set k = o.kpis %}
+<section class="band"><div class="in">
+  <div>
+    <h1>{% if k.transactions %}ZIA carried {{ k.bandwidth|bytes }} for {{ k.users_seen|num }} users in the last 7 days{% else %}ZIA overview{% endif %}</h1>
+    <p>{% if k.transactions %}{{ k.transactions|num }} logged transactions up to {{ o.end|time }}{% if k.blocked_pct is not none %}, {{ '%.1f'|format(k.blocked_pct) }}% blocked{% endif %}.{% else %}No log data yet. Policy, user and location counts come from the API; import a log export to see traffic and rule hits.{% endif %}</p>
+  </div>
+  <div class="figs">
+    <div><b>{{ k.users_seen|num }}</b><span>Users seen, 7 days</span></div>
+    <div><b>{{ k.users_directory|num }}</b><span>Users in directory</span></div>
+    <div><b>{{ k.bandwidth|bytes }}</b><span>Bandwidth, 7 days</span></div>
+    <div><b>{{ k.isolated|num }}</b><span>Isolated sessions</span></div>
+    <div><b>{{ k.rules|num }}</b><span>Policy rules</span></div>
+    <div><b>{{ k.locations|num }}</b><span>Locations</span></div>
+  </div>
+</div></section>
+<div class="wrap">
+  <div class="panel">
+    <div class="ph"><h2>Bandwidth, last 7 days, hourly</h2>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Total</span><span><i style="background:var(--iso)"></i>Upload</span><span class="src">{{ o.series_source }}</span></div></div>
+    {% if o.series %}
+    <div class="fig"><svg id="bw" role="img" aria-label="Hourly bandwidth for the last 7 days"></svg></div>
+    <script type="application/json" id="bw-data">{{ o.series|tojson }}</script>
+    <script src="/static/bandwidth.js" defer></script>
+    {% else %}<p class="empty">No traffic data yet. Enable Z-Insights on the API setup page or import a log export.</p>{% endif %}
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <div class="ph"><h2>Actions by policy type</h2><span class="src">imported logs</span></div>
+      <div class="legend" style="margin-bottom:6px"><span><i style="background:var(--ok)"></i>Allowed</span><span><i style="background:var(--bad)"></i>Blocked</span><span><i style="background:var(--iso)"></i>Isolated</span><span><i style="background:var(--warn)"></i>Caution</span></div>
+      {% set mx = (o.by_type|map(attribute='total')|max) if o.by_type else 1 %}
+      {% for t in o.by_type %}
+      <div class="row"><a href="/logs?type={{ t.type|urlencode }}" style="color:inherit">{{ t.type }}</a>
+        <div class="bar" style="width:{{ [4, t.total / mx * 100]|max }}%">{% for a, col in [("Allowed","--ok"),("Blocked","--bad"),("Isolated","--iso"),("Caution","--warn"),("Other","--line")] %}{% if t.counts[a] %}<span style="width:{{ t.counts[a] / t.total * 100 }}%;background:var({{ col }})" title="{{ a }}: {{ t.counts[a] }}"></span>{% endif %}{% endfor %}</div>
+        <span class="num">{{ t.total|num }}</span></div>
+      {% else %}<p class="empty">No log data in the last 7 days.</p>{% endfor %}
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Rules doing the most blocking</h2><span class="src">logs joined to rules</span></div>
+      {% if o.top_blockers %}
+      <div class="scroll"><table><thead><tr><th>Rule</th><th>Policy</th><th class="num">Blocked or isolated</th></tr></thead><tbody>
+      {% for b in o.top_blockers %}<tr class="link-row"><td><a class="cell" href="/logs?q={{ b.rule|urlencode }}">{{ b.rule }}</a></td><td class="muted">{{ b.policy_type }}</td><td class="num">{{ b.count|num }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<p class="empty">No blocks in the imported logs.</p>{% endif %}
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <div class="ph"><h2>Locations</h2><span class="src">API /locations + logs</span></div>
+      {% if o.locations %}
+      <div class="scroll"><table><thead><tr><th>Location</th><th class="num">VPN credentials</th><th class="num">Users</th><th class="num">7-day traffic</th></tr></thead><tbody>
+      {% for l in o.locations %}<tr><td>{{ l.name }}</td><td class="num">{{ l.tunnels }}</td><td class="num">{{ l.users|num }}</td><td class="num">{{ l.bytes|bytes }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<p class="empty">No locations synced.</p>{% endif %}
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Configuration health</h2><span class="src">API rules + logs</span></div>
+      {% set h = o.health %}
+      <div class="row" style="grid-template-columns:7em minmax(0,1fr)"><b>{{ h.unused|length if h.has_logs else '—' }}</b><span>enabled rules with no hits in 7 days{% if h.unused %}<br><span class="small muted">{{ h.unused[:3]|map(attribute='name')|join(', ') }}{% if h.unused|length > 3 %} and {{ h.unused|length - 3 }} more{% endif %}</span>{% elif not h.has_logs %}<br><span class="small muted">Needs imported logs</span>{% endif %}</span></div>
+      <div class="row" style="grid-template-columns:7em minmax(0,1fr)"><b>{{ h.disabled|length }}</b><span>disabled rules</span></div>
+      <div class="row" style="grid-template-columns:7em minmax(0,1fr)"><b>{{ h.activation or '—' }}</b><span>activation status<br><span class="small muted">PENDING means changes are saved but not activated</span></span></div>
+      <div class="row" style="grid-template-columns:7em minmax(0,1fr)"><b>{{ o.tunnels|length }}</b><span>GRE tunnels configured</span></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

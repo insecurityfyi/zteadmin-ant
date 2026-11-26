@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ZIA{% endblock %} · Zscaler Toolbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><i>Z</i>Zscaler Toolbox</a>
+  <nav>
+    {% for key, label, href in [("overview","Overview","/"),("users","Users","/users"),("logs","Logs to rules","/logs"),("rules","Policies","/rules"),("import","Log import","/import"),("setup","API setup","/setup"),("sources","Data sources","/sources")] %}
+    <a href="{{ href }}" class="{{ 'on' if nav == key }}">{{ label }}</a>
+    {% endfor %}
+    <span class="later" title="Planned module">ZPA</span><span class="later" title="Planned module">ZDX</span>
+  </nav>
+  {% if connected %}
+  <form method="post" action="/sync"><button class="btn ghost" type="submit">Sync now</button></form>
+  {% endif %}
+</header>
+{% if demo %}
+<div class="banner">Showing a sample tenant. <a href="/setup">Connect your ZIA tenant</a> or <a href="/import">import a log export</a> to replace it.</div>
+{% elif sync_status and sync_status.errors %}
+<div class="banner">Last sync {{ sync_status.finished_at|ago }} had {{ sync_status.errors|length }} problem{{ 's' if sync_status.errors|length > 1 }}. <a href="/setup#sync">See details</a>.</div>
+{% endif %}
+{% block body %}{% endblock %}
+</body>
+</html>

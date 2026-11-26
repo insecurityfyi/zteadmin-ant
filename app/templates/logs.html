@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Logs to rules{% endblock %}
+{% block body %}
+<div class="wrap">
+  <div class="head">
+    <div><h1>Each log line, joined to the rule that decided it</h1>
+      <p>The rule name in the log is matched to the rule pulled from the ZIA API, so you see its order, criteria and last change next to the event.</p></div>
+    <form class="controls" method="get">
+      <select name="type" aria-label="Policy type" onchange="this.form.submit()"><option value="">All policy types</option>{% for t in policy_types %}<option {{ 'selected' if f.type == t }}>{{ t }}</option>{% endfor %}</select>
+      <select name="action" aria-label="Action" onchange="this.form.submit()"><option value="">All actions</option>{% for a in actions %}<option {{ 'selected' if f.action == a }}>{{ a }}</option>{% endfor %}</select>
+      <input type="search" name="q" value="{{ f.q }}" placeholder="User, host, IP or rule" aria-label="Search logs">
+    </form>
+  </div>
+  <div class="split">
+    <div class="panel">
+      <div class="ph"><h2>{{ l.total|num }} log lines{% if l.total > l.rows|length %}, newest {{ l.rows|length }} shown{% endif %}</h2><span class="src">imported logs</span></div>
+      {% if l.rows %}
+      <div class="scroll"><table><thead><tr><th>Time</th><th>User</th><th>Destination</th><th>Action</th><th>Rule</th></tr></thead><tbody>
+      {% for r in l.rows %}{% set href = '?type=' ~ (f.type|urlencode) ~ '&action=' ~ (f.action|urlencode) ~ '&q=' ~ (f.q|urlencode) ~ '&sel=' ~ r.id %}
+      <tr class="link-row {{ 'sel' if selected and selected.id == r.id }}"><td class="num"><a class="cell" href="{{ href }}">{{ r.ts|time }}</a></td><td><a class="cell" href="{{ href }}">{{ (r.user or '').split('@')[0] }}</a></td><td><code>{{ r.destination or '' }}</code></td><td><span class="chip {{ r.action }}">{{ r.action }}</span></td><td><a class="cell" href="{{ href }}">{{ r.rule_label or '—' }}</a></td></tr>
+      {% endfor %}</tbody></table></div>
+      {% else %}<p class="empty">No log lines match. <a href="/import">Import a log export</a>.</p>{% endif %}
+    </div>
+    <div class="panel join">
+      {% if selected %}{% set s = selected %}
+      <div class="ph"><h2>Log line</h2><span class="src">{{ s.policy_type or 'Unknown policy' }}</span></div>
+      <dl class="kv"><dt>When</dt><dd>{{ s.ts|time }}</dd><dt>User</dt><dd>{{ s.user or '—' }}</dd><dt>Client IP</dt><dd>{{ s.client_ip or '—' }}</dd><dt>Location</dt><dd>{{ s.location or '—' }}</dd><dt>Destination</dt><dd>{{ s.destination or '—' }}</dd>{% if s.category %}<dt>Category</dt><dd>{{ s.category }}</dd>{% endif %}<dt>Action</dt><dd><span class="chip {{ s.action }}">{{ s.action }}</span></dd></dl>
+      <div class="linkline">matched on rule name</div>
+      {% if s.rule %}{% set ru = s.rule %}
+      <div class="rulecard"><div class="ph" style="margin-bottom:6px"><h3>{{ ru.name }}</h3><span class="chip {{ ru.action }}">{{ ru.action }}</span></div>
+        <dl class="kv"><dt>Policy</dt><dd>{{ ru.policy_type }}, order {{ ru.order if ru.order is not none else '—' }}</dd><dt>State</dt><dd>{{ ru.state|lower }}</dd><dt>ZIA action</dt><dd><code>{{ ru.raw_action }}</code></dd><dt>Applies to</dt><dd>{{ ru.applies_to }}</dd>
+        {% for label, val in ru.criteria %}<dt>{{ label }}</dt><dd>{{ val }}</dd>{% endfor %}
+        {% if ru.isolation_profile %}<dt>Isolation profile</dt><dd>{{ ru.isolation_profile }}</dd>{% endif %}
+        {% if ru.last_modified %}<dt>Last changed</dt><dd>{{ ru.last_modified|time }}{% if ru.last_modified_by %} by {{ ru.last_modified_by }}{% endif %}</dd>{% endif %}
+        {% if ru.description %}<dt>Description</dt><dd>{{ ru.description }}</dd>{% endif %}</dl></div>
+      {% elif s.rule_label %}
+      <div class="rulecard missing"><h3>{{ s.rule_label }}</h3><p class="small">No rule with this name in the synced ZIA policy. It may have been renamed or deleted, or the tenant has not been synced yet.</p></div>
+      {% else %}<div class="rulecard missing"><p class="small" style="margin:0">This log line has no rule name, so it cannot be matched.</p></div>{% endif %}
+      <details style="margin-top:12px"><summary class="small">Original fields</summary><pre>{{ s.raw|tojson(indent=1) }}</pre></details>
+      {% else %}<p class="muted">Select a log line to see the rule behind it.</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

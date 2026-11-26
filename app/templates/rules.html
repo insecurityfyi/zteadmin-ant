@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Policies{% endblock %}
+{% block body %}
+<div class="wrap">
+  <div class="head">
+    <div><h1>Policy rules with 7-day hit counts</h1>
+      <p>Rule order and settings come from the ZIA API. ZIA does not report hit counts through the API, so they are counted from imported logs{% if r.has_logs %} up to {{ r.end|time }}{% endif %}.</p></div>
+    <form class="controls" method="get"><select name="type" aria-label="Policy type" onchange="this.form.submit()"><option value="">All policy types</option>{% for t in policy_types %}<option {{ 'selected' if ftype == t }}>{{ t }}</option>{% endfor %}</select><noscript><button class="btn ghost">Filter</button></noscript></form>
+  </div>
+  <div class="panel">
+    <div class="ph"><h2>{{ r.rows|length }} rules</h2><span class="src">API rule endpoints + log counts</span></div>
+    {% if r.rows %}
+    <div class="scroll"><table><thead><tr><th class="num">Order</th><th>Rule</th><th>Policy</th><th>Action</th><th>Applies to</th><th class="num">Hits, 7 days</th><th>Last hit</th></tr></thead><tbody>
+    {% for x in r.rows %}<tr class="link-row"><td class="num">{{ x.order if x.order is not none else '' }}</td><td><a class="cell" href="/logs?q={{ x.name|urlencode }}">{{ x.name }}</a>{% if x.state != 'ENABLED' %} <span class="small muted">(disabled)</span>{% endif %}</td><td class="muted">{{ x.policy_type }}</td><td><span class="chip {{ x.action }}">{{ x.action }}</span></td><td class="small">{{ x.applies_to }}</td>
+      <td class="num">{% if not r.has_logs %}—{% elif x.hits %}{{ x.hits|num }}{% elif x.state == 'ENABLED' %}<span class="flag">0, review</span>{% else %}0{% endif %}</td><td class="num">{{ x.last_hit|ago(r.end) if x.last_hit else '—' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="empty">No rules synced yet. <a href="/setup">Connect your ZIA tenant</a>.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}
