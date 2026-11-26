@@ -219,6 +219,8 @@ async def poll_device(session: SnmpSession) -> dict[str, Any]:
         cpu, mem = await _cpu_mem(session)
         result["cpu"] = result["cpu"] if result["cpu"] is not None else cpu
         result["mem"] = result["mem"] if result["mem"] is not None else mem
+    from .snmp_extra import collect_extra
+    await collect_extra(session, result)
     result["poll_ms"] = int((time.monotonic() - started) * 1000)
     return result
 

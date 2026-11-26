@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_g.html" import graph, panel_graph, ranges, inout, portdot, sevtag, meter, event_rows %}
+{% from "_g.html" import graph, panel_graph, ranges, inout, portdot, sevtag, meter, event_rows, sensor_value, sensor_graph, SENSOR_LABELS %}
 {% block title %}{{ d.hostname }}{% endblock %}
 {% block content %}
 {% set dev = '/ui/metrics/device/' ~ d.id %}
@@ -22,7 +22,7 @@
   </div>
 </div>
 <nav class="tabs" aria-label="Device sections">
-  {% for key, label in tabs %}<a href="/devices/{{ d.id }}?tab={{ key }}" {% if key == tab %}aria-current="page"{% endif %}>{{ label }}{% if key == 'ports' and port_counts.total %} <span class="dim">{{ port_counts.total }}</span>{% elif key == 'alerts' and dev_alerts %} <span class="sev crit" style="padding:0 6px">{{ dev_alerts|length }}</span>{% endif %}</a>{% endfor %}
+  {% for key, label in tabs %}<a href="/devices/{{ d.id }}?tab={{ key }}" {% if key == tab %}aria-current="page"{% endif %}>{{ label }}{% if key == 'ports' and port_counts.total %} <span class="dim">{{ port_counts.total }}</span>{% elif key == 'neighbours' and neighbor_count %} <span class="dim">{{ neighbor_count }}</span>{% elif key == 'health' and sensors %} <span class="dim">{{ sensors|length + 4 }}</span>{% elif key == 'alerts' and dev_alerts %} <span class="sev crit" style="padding:0 6px">{{ dev_alerts|length }}</span>{% endif %}</a>{% endfor %}
 </nav>
 
 {% if tab == 'overview' %}
@@ -49,7 +49,10 @@
         <div class="stat"><span>Ping</span><b>{{ (d.ping_ms|round(1) ~ ' ms') if d.ping_ms is not none else '–' }}</b></div>
         <div class="stat"><span>Packet loss</span><b>{{ (d.loss_pct|round|int ~ '%') if d.loss_pct is not none else '–' }}</b></div>
         {% set vend = (d.extra or {}).get('vendor') or {} %}{% if vend.get('connections') is not none %}<div class="stat"><span>Connections</span><b>{{ vend.connections|num }}</b>{% if vend.get('max_connections') %}<span>of {{ vend.max_connections|num }}</span>{% endif %}</div>{% endif %}
-      </div></div>
+      </div>
+      {% set hot = sensors|selectattr('kind','in',['temperature','state','storage'])|list %}
+      {% if hot %}<table style="margin-top:12px"><tbody>{% for x in (hot|selectattr('status','ne','ok')|list + hot|selectattr('status','equalto','ok')|list)[:6] %}<tr><td class="dim">{{ SENSOR_LABELS.get(x.kind, x.kind) }}</td><td>{{ x.name }}</td><td class="n nw">{{ sensor_value(x) }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+    </div>
     {% if port_counts.total %}<div class="p"><div class="ph"><h2>Ports</h2><a class="sub" href="?tab=ports">All {{ port_counts.total }}</a></div>
       <div class="stats" style="margin-bottom:12px">
         <div class="stat"><span>Up</span><b class="okc">{{ port_counts.up }}</b></div>
@@ -135,6 +138,15 @@
     {{ panel_graph('Latency', 'ms', dev, [{"key":"ping","color":"var(--s1)","area":false}], 'ms', 160) }}
     {{ panel_graph('Packet loss', '%', dev, [{"key":"loss","color":"var(--down)"}], 'pct', 160, 100) }}
   </div></div>
+{% for kind, group in sensors|groupby('kind')|sort(attribute='grouper') %}
+<div class="p"><div class="ph"><h2>{{ SENSOR_LABELS.get(kind, kind|capitalize) }}</h2><span class="sub">{{ group|length }} sensor{{ '' if group|length == 1 else 's' }}{% if group|selectattr('status','ne','ok')|list %} · <span class="bad">{{ group|selectattr('status','ne','ok')|list|length }} not OK</span>{% endif %}</span></div>
+  {% if kind == 'state' %}
+  <div class="scroll"><table><tbody>{% for x in group %}<tr><td>{{ x.name }}</td><td class="dim">{{ (x.extra or {}).get('label', '') }}</td><td class="n">{{ sensor_value(x) }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}
+  <div class="portgrid">{% for x in group %}<div class="pg"><div class="ph" style="margin-bottom:4px"><span>{{ x.name }}</span><span>{{ sensor_value(x) }}</span></div>{{ sensor_graph(x) }}</div>{% endfor %}</div>
+  {% endif %}</div>
+{% endfor %}
+{% if not sensors and d.snmp_profile_id %}<p class="dim">No temperature, fan, power or storage sensors reported over SNMP yet. They appear after the next poll when the device supports ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, LM-SENSORS-MIB or HOST-RESOURCES storage.</p>{% endif %}
 
 {% elif tab == 'inventory' %}
 <div class="grid">
@@ -159,11 +171,29 @@
   <div class="p c6"><h2 style="margin-bottom:12px">{{ 'From ' ~ api.integration if api else 'Platform data' }}</h2>
     {% if info %}<dl class="kv">{% for k, v in info.items() if v is not none and v != '' and k != 'integration' %}<dt>{{ k|replace('_',' ') }}</dt><dd>{% if v is mapping %}{% for kk, vv in v.items() %}{{ kk }}: {{ vv }}{{ ', ' if not loop.last }}{% endfor %}{% else %}{{ v }}{% endif %}</dd>{% endfor %}</dl>
     {% else %}<p class="dim" style="margin:0">Nothing more reported for this device.</p>{% endif %}</div>
+  {% if d.inventory %}<div class="p c12"><div class="ph"><h2>Hardware</h2><span class="sub">{{ d.inventory|length }} parts from ENTITY-MIB</span></div>
+    <div class="scroll"><table><thead><tr><th>Part</th><th>Type</th><th>Model</th><th>Serial</th><th>Hardware</th><th>Firmware</th><th>Software</th><th>Description</th></tr></thead><tbody>
+    {% for e in d.inventory %}<tr><td class="nw"><b>{{ e.name or '' }}</b></td><td class="nw">{{ e['class'] }}</td><td class="mono">{{ e.model or '' }}</td><td class="mono">{{ e.serial or '' }}</td><td class="mono">{{ e.hw or '' }}</td><td class="mono">{{ e.fw or '' }}</td><td class="mono">{{ e.sw or '' }}</td><td class="dim">{{ e.descr if e.descr != e.name else '' }}</td></tr>{% endfor %}
+    </tbody></table></div></div>{% endif %}
+  {% set disks = sensors|selectattr('kind','equalto','storage')|list %}
+  {% if disks %}<div class="p c12"><div class="ph"><h2>Storage</h2></div>
+    <table><thead><tr><th>Volume</th><th>Type</th><th>Used</th></tr></thead><tbody>{% for x in disks %}<tr><td class="mono">{{ x.name }}</td><td class="dim">{{ (x.extra or {}).get('type', '') }}</td><td class="nw">{{ sensor_value(x) }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+
+{% elif tab == 'neighbours' %}
+<div class="p"><div class="ph"><h2>Neighbours</h2><span class="sub">From LLDP, CDP and integration uplinks · <a href="/map?focus={{ d.id }}">show on the map</a></span></div>
+  {% if neighbors %}<div class="scroll"><table><thead><tr><th>Local port</th><th>Neighbour</th><th>Remote port</th><th>Address</th><th>Platform</th><th>Seen by</th></tr></thead><tbody>
+  {% for n in neighbors %}<tr><td class="mono nw">{% if n.port %}<a href="/ports/{{ n.port_id }}">{{ n.port.name }}</a>{% else %}{{ n.local_port or '' }}{% endif %}</td>
+    <td class="nw">{% if n.remote_device %}<span class="dot d-{{ n.remote_device.status }}"></span> <a href="/devices/{{ n.remote_device_id }}?tab=neighbours"><b>{{ n.remote_device.hostname }}</b></a>{% else %}{{ n.remote_name or n.remote_chassis or '?' }} <span class="tag">not monitored</span>{% endif %}</td>
+    <td class="mono">{{ n.remote_port or '' }}</td><td class="mono">{{ n.remote_ip or n.remote_chassis or '' }}</td><td class="dim" style="font-size:12.5px">{{ (n.remote_platform or '')|truncate(60) }}</td><td><span class="tag">{{ n.protocol|upper }}</span></td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="dim" style="margin:0">No neighbours. Turn on LLDP (or CDP) on the device and its neighbours; Linkwatch reads LLDP-MIB and CISCO-CDP-MIB over SNMP on every poll.</p>{% endif %}
+  {% if seen_by %}<h3 style="margin:16px 0 8px">Seen by other devices</h3><table><tbody>{% for n in seen_by %}<tr><td><a href="/devices/{{ n.device_id }}?tab=neighbours">{{ n.device.hostname }}</a></td><td class="mono">{{ n.local_port or '' }}</td><td class="dim">→ {{ n.remote_port or '' }}</td><td><span class="tag">{{ n.protocol|upper }}</span></td></tr>{% endfor %}</tbody></table>{% endif %}
 </div>
 
 {% elif tab == 'events' %}
 <div class="p"><div class="ph"><h2>Events</h2>
-  <div class="filters">{% for k, label in [('', 'All'), ('device', 'Status'), ('port', 'Ports'), ('alert', 'Alerts'), ('config', 'Changes')] %}<a class="fbtn" href="?tab=events&kind={{ k }}" aria-pressed="{{ 'true' if kind == k else 'false' }}">{{ label }}</a>{% endfor %}</div></div>
+  <div class="filters">{% for k, label in [('', 'All'), ('device', 'Status'), ('port', 'Ports'), ('alert', 'Alerts'), ('sensor', 'Sensors'), ('config', 'Changes')] %}<a class="fbtn" href="?tab=events&kind={{ k }}" aria-pressed="{{ 'true' if kind == k else 'false' }}">{{ label }}</a>{% endfor %}</div></div>
   {% if events %}{{ event_rows(events) }}{% else %}<p class="dim" style="margin:0">No events recorded for this device yet.</p>{% endif %}</div>
 
 {% elif tab == 'alerts' %}

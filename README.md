@@ -12,10 +12,12 @@ Two things live in this repository:
 
 | Area | What it does |
 | --- | --- |
-| Layout | Top menu in the style of classic NMS consoles: Overview (dashboard, event log), Devices (by type, discovery), Ports, Health, Alerts and Integrations. Five colour themes (Linkwatch auto light/dark, Midnight NOC, Classic Light, Zscaler Blue, Graphite + Orange): a site default under Administration and a personal choice under Your account. |
+| Layout | Top menu in the style of classic NMS consoles: Overview (dashboard, event log, network map), Devices (by type, discovery), Ports, Health, Alerts, Map and Integrations. Five colour themes (Linkwatch auto light/dark, Midnight NOC, Classic Light, Zscaler Blue, Graphite + Orange): a site default under Administration and a personal choice under Your account. |
 | Dashboard | Devices up and down by site, open alerts, busiest ports, highest CPU, traffic graph |
-| Devices | SNMP v2c/v3 and ping: system info, CPU, memory, every interface with traffic, errors and utilization, graphs for 6 h to 1 year. Each device has Overview, Graphs, Ports, Health, Inventory, Events and Alerts tabs. CSV import, and bulk disable, enable or delete (for example all ping-only devices). |
+| Devices | SNMP v2c/v3 and ping: system info, CPU, memory, every interface with traffic, errors and utilization, graphs for 6 h to 1 year. Each device has Overview, Graphs, Ports, Health, Inventory, Neighbours, Events and Alerts tabs. CSV import, and bulk disable, enable or delete (for example all ping-only devices). |
 | Ports and health | Every interface across all devices with filters for down, shut down and errors; a page per port with traffic, utilisation and error graphs. Health pages rank devices by CPU, memory, latency and packet loss. |
+| Sensors and inventory | Temperatures, fans, power supplies, voltages and state sensors over SNMP (ENTITY-SENSOR-MIB, Cisco environment MIB, LM-SENSORS), disk and flash usage, and the hardware inventory (chassis, modules, serials) from ENTITY-MIB. Each sensor has a graph; Health pages list them network-wide. Alerts for hot or failed sensors and full storage. |
+| Neighbours and map | LLDP and CDP neighbours per port, matched to devices Linkwatch already knows, plus UniFi uplinks. The network map draws them with link colour by utilisation; drag nodes to arrange, and positions are remembered. |
 | Event log | Device and port up/down, alerts opening and clearing, poller connections, integration failures and configuration changes, per device and network-wide; kept 180 days. |
 | Discovery | Ping sweep plus SNMP probe with your saved credentials, scheduled scans with auto-add, and an option to skip hosts that answer ping but not SNMP. |
 | Alerts | Device down, platform-reported problems, high CPU and memory, port down, port errors, bandwidth, failing integrations, offline pollers. Email, Teams, Slack or webhook. |

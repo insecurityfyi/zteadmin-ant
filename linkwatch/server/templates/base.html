@@ -19,6 +19,7 @@
     <details class="menu {{ 'cur' if sec == 'overview' }}"><summary>Overview</summary><div class="dd">
       <a href="/" {% if nav == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
       <a href="/eventlog" {% if nav == 'eventlog' %}aria-current="page"{% endif %}>Event log</a>
+      <a href="/map" {% if nav == 'map' %}aria-current="page"{% endif %}>Network map</a>
     </div></details>
     <details class="menu {{ 'cur' if sec == 'devices' }}"><summary>Devices{% if nav_down %} <span class="ct" title="{{ nav_down }} down">{{ nav_down }}</span>{% endif %}</summary><div class="dd">
       <a href="/devices">All devices <span class="n">{{ nav_types|sum(attribute=1) }}</span></a>
@@ -39,6 +40,11 @@
       <a href="/health?metric=mem">Memory</a>
       <a href="/health?metric=ping">Latency</a>
       <a href="/health?metric=loss">Packet loss</a>
+      <hr><a href="/health?metric=temperature">Temperature</a>
+      <a href="/health?metric=fan">Fans</a>
+      <a href="/health?metric=power">Power</a>
+      <a href="/health?metric=state">Component state</a>
+      <a href="/health?metric=storage">Storage</a>
     </div></details>
     <details class="menu {{ 'cur' if sec == 'alerts' }}"><summary>Alerts{% if open_alerts %} <span class="ct">{{ open_alerts }}</span>{% endif %}</summary><div class="dd">
       <a href="/alerts?state=open">Open <span class="n">{{ open_alerts }}</span></a>
@@ -48,6 +54,7 @@
       <hr><a href="/settings#transports">Notifications</a>
       <a href="/eventlog?kind=alert">Alert events</a>
     </div></details>
+    <a class="m {{ 'cur' if sec == 'map' }}" href="/map">Map</a>
     <details class="menu {{ 'cur' if sec == 'integrations' }}"><summary>Integrations</summary><div class="dd">
       {% for i in nav_integrations %}{% set cur = (nav_iid is defined and nav_iid == i.id) or (nav == 'unifi' and integ is defined and integ and integ.id == i.id) %}
       <a href="{{ '/unifi?i=' ~ i.id if i.kind == 'unifi' else '/integrations/' ~ i.id ~ '/overview' }}" {% if cur %}aria-current="page"{% endif %}><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(i.status, 'd-off') if i.enabled else 'd-off' }}"></span>{{ i.name }}</a>

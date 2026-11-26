@@ -250,6 +250,8 @@ class UniFi(Integration):
             up_name = uplink.get("uplink_device_name") or uplink.get("uplink_mac") or ""
             port = uplink.get("uplink_remote_port")
             extra["uplink"] = " ".join(str(x) for x in (uplink.get("type"), up_name, f"port {port}" if port else "") if x)
+            extra["uplink_mac"], extra["uplink_port"] = uplink.get("uplink_mac"), port
+            extra["uplink_name"] = uplink.get("uplink_device_name")
         if d.get("type") == "uap":
             extra["radios"] = ", ".join(self._radio_text(r) for r in self._radios(d))
         for key in ("wan1", "wan2", "wan3"):
