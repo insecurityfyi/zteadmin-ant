@@ -167,3 +167,9 @@ def test_rule_builder_device_sensor_state_rules_and_delete(logged_in, app):
     assert viewer.post("/alerts/rules/new", data={"entity": "device", "metric": "cpu", "threshold": "1"}, follow_redirects=False).status_code == 303
     with app.state.lw.db.session() as s:
         assert s.scalar(select(AlertRule).where(AlertRule.name == "Device cpu")) is None
+
+
+def test_update_command_names_the_server(app):
+    from linkwatch.server.gateway import outdated_poller_message, update_command
+    assert update_command("poller 2").endswith("| sudo bash -s -- --server http://testserver --name 'poller 2'")
+    assert "--server http://testserver --name poller2 (no token needed" in outdated_poller_message("poller2", "VyOS")

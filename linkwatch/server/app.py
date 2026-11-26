@@ -126,7 +126,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     templates.env.filters.update({k: missing_is_none(f) for k, f in dict(
         bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
         num=lambda n: f"{int(n or 0):,}", pct=lambda v: "–" if v is None else f"{v:.0f}%").items()})
-    templates.env.globals.update(version=__version__, public_url=config.public_url)
+    from . import gateway
+    gateway.PUBLIC_URL = config.public_url.rstrip("/")
+    templates.env.globals.update(version=__version__, public_url=config.public_url, update_command=gateway.update_command)
     state = AppState(config, db, vault, notifier, hub, templates)
 
     sync_admin_from_env(db, config.admin_password)

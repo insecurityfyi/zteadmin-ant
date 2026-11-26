@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shlex
 from datetime import timedelta
 from typing import Any
 
@@ -19,10 +20,23 @@ from .security import new_secret, sha256
 log = logging.getLogger("linkwatch.gateway")
 
 
+PUBLIC_URL = ""      # set by create_app, so update commands can name the server
+
+
+def update_command(name: str | None = None) -> str:
+    """The one-line poller update. It names the server so it also works on pollers that were started by hand."""
+    cmd = "curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh | sudo bash"
+    if PUBLIC_URL:
+        cmd += f" -s -- --server {PUBLIC_URL}"
+        if name:
+            cmd += f" --name {shlex.quote(name)}"
+    return cmd
+
+
 def outdated_poller_message(poller: str, label: str) -> str:
     return (f"Poller {poller} is running an older image that doesn't support {label}. Update it on the poller host with: "
-            "curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh | sudo bash "
-            "(no arguments: it pulls the latest image and keeps the poller's key), then press Sync now.")
+            f"{update_command(poller if poller != 'the poller' else None)} "
+            "(no token needed: it pulls the latest image and keeps the poller's key), then press Sync now.")
 
 
 class EnrollError(Exception):

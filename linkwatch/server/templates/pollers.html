@@ -29,7 +29,7 @@
       <span>{% if p.version %}<span class="tag">v{{ p.version }}</span>{% endif %}
       {% set missing = poller_kinds|reject('in', p.integrations or [])|list %}
       {% if p.last_seen and missing %}<span class="tag" style="color:var(--warn);border-color:var(--warn)" title="Its image doesn't support: {{ missing|join(', ') }}">update available</span>{% endif %}</span></div>
-    {% if p.last_seen and missing and not p.revoked %}<p class="help wa" style="margin:0 0 10px">This poller's image is older than the server and can't run {{ missing|join(', ') }}. On the poller host run <code>curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh | sudo bash</code> (no arguments keeps its key).</p>{% endif %}
+    {% if p.last_seen and missing and not p.revoked %}<p class="help wa" style="margin:0 0 10px">This poller's image is older than the server and can't run {{ missing|join(', ') }}. On the poller host run <code>{{ update_command(p.name) }}</code> (no token needed: it keeps the poller's key).</p>{% endif %}
     <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px">
       <div class="kpi"><span>Devices</span><b>{{ counts.get(p.id, 0) }}</b></div>
       <div class="kpi"><span>Local APIs</span><b>{{ integ_counts.get(p.id, 0) }}</b></div>
