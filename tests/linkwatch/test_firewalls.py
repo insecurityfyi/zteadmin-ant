@@ -251,3 +251,15 @@ def test_pages_and_series(logged_in, app):
     v = logged_in.get(f"/integrations/{ids['vyos']}/overview").text
     for text in ("branch-tunnel-0", "printer", "203.0.113.1", "2001:db8::10/64", "sagitta", "WireGuard"):
         assert text in v, text
+
+
+@respx.mock
+def test_vyos_rest_api_off_is_explained():
+    respx.get("https://r15/info").mock(return_value=httpx.Response(200, json={"success": True, "data": {"version": "1.5.0", "hostname": "edge"}, "error": None}))
+    respx.post("https://r15/retrieve").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+    with pytest.raises(IntegrationError, match=r"VyOS 1\.5\.0 is answering, but its REST API is turned off.*set service https api rest"):
+        build("vyos", {"host": "r15", "api_key": "k"}).collect()
+    respx.get("https://r14/info").mock(return_value=httpx.Response(404, json={"detail": "Not Found"}))
+    respx.post("https://r14/retrieve").mock(return_value=httpx.Response(404, text="nope"))
+    with pytest.raises(IntegrationError, match="HTTPS API isn't answering.*api keys id linkwatch"):
+        build("vyos", {"host": "r14", "api_key": "k"}).collect()

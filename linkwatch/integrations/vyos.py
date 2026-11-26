@@ -118,6 +118,7 @@ class VyOS(Integration):
     def __init__(self, config: dict[str, Any], http: httpx.Client | None = None):
         super().__init__(config, http)
         self.base = host_url(config["host"])
+        self._info_cache: dict | None = None
 
     # http ---------------------------------------------------------------
     def _call(self, endpoint: str, payload: dict) -> Any:
@@ -133,14 +134,36 @@ class VyOS(Integration):
         err = (body or {}).get("error") if isinstance(body, dict) else None
         if r.status_code in (401, 403):
             raise IntegrationError(f"The router refused the API key (HTTP {r.status_code}). Check 'service https api keys'.")
-        if r.status_code == 404 and body is None:
-            raise IntegrationError("The HTTPS API isn't answering (HTTP 404). Configure 'service https api' "
-                                   "(on VyOS 1.5 also 'set service https api rest').")
+        if r.status_code == 404:
+            raise IntegrationError(self._not_found(endpoint))
         if body is None:
             raise IntegrationError(f"POST /{endpoint} returned HTTP {r.status_code} without JSON")
         if r.status_code >= 400 or body.get("success") is False:
             raise IntegrationError(f"POST /{endpoint} {' '.join(payload.get('path') or [])}: {str(err or r.reason_phrase)[:200]}")
         return body.get("data")
+
+    def _info(self) -> dict:
+        """GET /info: version and host name, without a key (VyOS 1.5 and newer). Empty when it isn't there."""
+        if self._info_cache is None:
+            self._info_cache = {}
+            try:
+                r = self.http.get(f"{self.base}/info")
+                body = r.json() if r.status_code == 200 else None
+                if isinstance(body, dict) and isinstance(body.get("data"), dict):
+                    self._info_cache = body["data"]
+            except Exception:  # noqa: BLE001 - optional; older versions have no /info
+                pass
+        return self._info_cache
+
+    def _not_found(self, endpoint: str) -> str:
+        ver = self._info().get("version")
+        if ver:
+            return (f"VyOS {ver} is answering, but its REST API is turned off (POST /{endpoint} returned 404). In configuration "
+                    "mode run 'set service https api rest' (VyOS 1.5 and newer need it), keep your key under "
+                    "'service https api keys id <name> key <key>', then commit and save.")
+        return (f"The router's HTTPS API isn't answering (POST /{endpoint} returned 404). Configure "
+                "'set service https api keys id linkwatch key <key>' and, on VyOS 1.5 and newer, also "
+                "'set service https api rest'; then commit and save.")
 
     def _show(self, *path: str) -> str:
         out = self._call("show", {"op": "show", "path": list(path)})
@@ -165,7 +188,9 @@ class VyOS(Integration):
             cfg = {}
         sysc = cfg.get("system") or {}
         host = self.config["host"]
-        name = ".".join(x for x in (sysc.get("host-name"), sysc.get("domain-name")) if isinstance(x, str) and x) or host
+        info = self._info()
+        name = ".".join(x for x in (sysc.get("host-name"), sysc.get("domain-name")) if isinstance(x, str) and x) \
+            or info.get("hostname") or host
 
         ver = kv(self._optional("Version", lambda: self._show("version")) or "")
         up_text = self._optional("Uptime", lambda: self._show("system", "uptime")) or ""
@@ -175,7 +200,7 @@ class VyOS(Integration):
         mb = lambda v: to_bytes(v + " MB") if v and re.fullmatch(r"[\d.]+", v.strip()) else to_bytes(v)
         total, used = mb(mem.get("total")), mb(mem.get("used"))
         mem_pct = round(100.0 * used / total, 1) if total and used is not None else None
-        system = {"hostname": name, "version": re.sub(r"^vyos\s+", "", ver.get("version") or "", flags=re.IGNORECASE) or None, "release": ver.get("release train"),
+        system = {"hostname": name, "version": re.sub(r"^vyos\s+", "", ver.get("version") or info.get("version") or "", flags=re.IGNORECASE) or None, "release": ver.get("release train"),
                   "built": ver.get("built on"), "model": ver.get("hardware model"), "vendor": ver.get("hardware vendor"),
                   "serial": ver.get("hardware s/n"), "uuid": ver.get("hardware uuid"),
                   "uptime": upkv.get("uptime") or ver.get("uptime"), "load": {m: float(v) for m, v in loads},
