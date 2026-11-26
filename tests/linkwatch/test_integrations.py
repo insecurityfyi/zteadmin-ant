@@ -1,3 +1,4 @@
+import json
 import httpx
 import pytest
 import respx
@@ -61,6 +62,24 @@ def test_zscaler_bad_credentials():
     z = build("zscaler", {"vanity_domain": "acme", "client_id": "id", "client_secret": "bad", "zpa": False})
     with pytest.raises(IntegrationError, match="token request failed"):
         z.collect()
+
+
+@respx.mock
+def test_zscaler_ztb_api_key_flow_and_oneapi_hint():
+    respx.post("https://acme.zslogin.net/oauth2/v1/token").mock(return_value=httpx.Response(200, json={"access_token": "t", "expires_in": 3600}))
+    respx.get("https://api.zsapi.net/ztb/api/v2/Site/").mock(return_value=httpx.Response(401))
+    base = {"vanity_domain": "acme", "client_id": "id", "client_secret": "s", "zia": False, "zpa": False, "zdx": False, "zcc": False, "ztb": True}
+    with pytest.raises(IntegrationError, match="no ZTB access.*ZTB API key"):
+        build("zscaler", base).collect()
+
+    login = respx.post("https://acme.goairgap.com/api/v3/api-key-auth/login").mock(
+        return_value=httpx.Response(200, json={"result": {"delegate_token": "dlg"}}))
+    sites = respx.get("https://acme.goairgap.com/api/v2/Site/").mock(return_value=httpx.Response(
+        200, json={"result": [{"id": "s1", "display_name": "Branch 7", "gateway_type": "ZTB-400", "status": "online"}]}))
+    recs = build("zscaler", base | {"ztb_api_key": " zk-123 ", "ztb_tenant": "acme"}).collect()
+    assert json.loads(login.calls.last.request.content) == {"api_key": "zk-123"}
+    assert sites.calls.last.request.headers["authorization"] == "Bearer dlg"
+    assert [(r["hostname"], r["status"], r["site"]) for r in recs] == [("ZTB Branch 7", "up", "Branch 7")]
 
 
 @respx.mock
