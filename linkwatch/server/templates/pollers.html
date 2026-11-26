@@ -5,15 +5,19 @@
   <form method="post" action="/pollers/token"><button class="btn pri" type="submit">Add poller</button></form></div>
 {% if new_token %}
 <div class="p" id="install"><div class="ph"><h2>Install the new poller</h2><span class="sub">This token is shown once, works once, and expires in 24 hours</span></div>
-  <p style="margin-top:0">On any Linux machine on the LAN with Podman or Docker (a small VM, an LXC container on Proxmox, or a Raspberry Pi), run:</p>
-<pre class="cmd">podman run -d --name linkwatch-poller --restart=always \
+  <p style="margin-top:0">On any Linux machine on the LAN (a small VM, an LXC container on Proxmox, or a Raspberry Pi), run this as root. It installs Podman if needed, checks it can reach this server, and starts the poller so it comes back after a reboot:</p>
+<pre class="cmd">curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh \
+  | sudo bash -s -- --server {{ public_url }} --token {{ new_token }} --name poller-hq-01</pre>
+  <p class="help">Change <code>poller-hq-01</code> to a name for this site. To update the poller later, run the same <code>curl ... | sudo bash</code> with no arguments. In a Proxmox LXC container, turn on Options &gt; Features &gt; Nesting first.</p>
+  <details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Or start the container by hand</summary>
+<pre class="cmd" style="margin-top:8px">podman run -d --name linkwatch-poller --restart=always \
   --cap-add=NET_RAW \
   -e LW_SERVER={{ public_url }} \
   -e LW_ENROLL_TOKEN={{ new_token }} \
   -e LW_POLLER_NAME=poller-hq-01 \
   -v linkwatch-poller:/var/lib/linkwatch \
   ghcr.io/insecurityfyi/linkwatch-poller:latest</pre>
-  <p class="help">Replace <code>podman</code> with <code>docker</code> if that is what the machine has. The first start enrolls the poller and saves its own key in the volume; after that the token is no longer needed. See <code>docs/poller.md</code> for a systemd setup.</p>
+  <p class="help">Replace <code>podman</code> with <code>docker</code> if that is what the machine has. The first start enrolls the poller and saves its own key in the volume; after that the token is no longer needed. See <code>docs/poller.md</code> for a systemd setup.</p></details>
 </div>
 {% endif %}
 {% if pollers %}

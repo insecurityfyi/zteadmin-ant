@@ -29,6 +29,7 @@ def test_every_page_renders(logged_in):
 def enroll(client):
     page = client.post("/pollers/token").text
     token = re.search(r"LW_ENROLL_TOKEN=(\S+) ", page).group(1)
+    assert f"install-poller.sh \\\n  | sudo bash -s -- --server http://testserver --token {token} --name" in page
     r = client.post("/api/poller/enroll", json={"token": token, "name": "poller-hq-01", "hostname": "lan-box"})
     assert r.status_code == 200
     assert client.post("/api/poller/enroll", json={"token": token}).status_code == 403   # single use
