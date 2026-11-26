@@ -12,6 +12,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from ..common.discovery import TargetError, expand_targets, guess_type
+from .discovery import AUTO_ADD, DEVICE_TYPES, SCHEDULES, add_from_job, in_order, move_profile, ordered_profiles, run_rule, start_job
 from ..integrations import REGISTRY, IntegrationError, build
 from .app import flash
 from .db import set_setting
@@ -21,6 +22,7 @@ from .models import (
     ApiKey,
     Device,
     DiscoveryJob,
+    DiscoveryRule,
     EnrollToken,
     Integration,
     Poller,
@@ -36,7 +38,6 @@ from .alerts import AlertEvent
 from .security import mask, new_secret, sha256
 
 router = APIRouter(include_in_schema=False)
-DEVICE_TYPES = ["Switch", "Router", "Firewall", "Wireless", "Server", "Hypervisor", "Storage", "Power", "Printer", "Camera", "Network", "Other"]
 SNMP_AUTH = ["SHA", "SHA224", "SHA256", "SHA384", "SHA512", "MD5"]
 SNMP_PRIV = ["AES", "AES192", "AES256", "DES"]
 
@@ -53,6 +54,7 @@ def render(request: Request, name: str, ctx: dict[str, Any] | None = None, statu
         ctx["open_alerts"] = s.scalar(select(func.count(Alert.id)).where(Alert.state == "open")) or 0
         ctx["pollers_total"] = s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0
     ctx["pollers_connected"] = len(st(request).hub.conns)
+    ctx["me"] = getattr(request.state, "user", None)
     return st(request).templates.TemplateResponse(request, name, ctx, status_code=status_code)
 
 
@@ -217,51 +219,148 @@ async def device_import(request: Request, file: UploadFile = File(...), poller_i
 
 
 # ------------------------------------------------------------------ discovery
+def _discovery_ctx(s) -> dict[str, Any]:
+    ctx = _device_form_ctx(s)
+    ctx["profiles"] = ordered_profiles(s)
+    ctx |= {"schedules": SCHEDULES, "auto_add_modes": AUTO_ADD}
+    return ctx
+
+
 @router.get("/discovery", response_class=HTMLResponse)
 def discovery_page(request: Request):
     with st(request).db.session() as s:
-        ctx = _device_form_ctx(s)
-        ctx["jobs"] = s.scalars(select(DiscoveryJob).options(selectinload(DiscoveryJob.poller))
+        ctx = _discovery_ctx(s)
+        ctx["jobs"] = s.scalars(select(DiscoveryJob).options(selectinload(DiscoveryJob.poller), selectinload(DiscoveryJob.rule))
                                 .order_by(DiscoveryJob.id.desc()).limit(15)).all()
+        ctx["rules"] = s.scalars(select(DiscoveryRule).options(selectinload(DiscoveryRule.poller)).order_by(DiscoveryRule.name)).all()
+        names = {p.id: p.name for p in ctx["profiles"]}
+    ctx["profile_names"] = names
     ctx["connected"] = set(st(request).hub.conns)
     return render(request, "discovery.html", ctx)
+
+
+def _int(v, default: int = 0) -> int:
+    try:
+        return int(v or default)
+    except (TypeError, ValueError):
+        return default
 
 
 @router.post("/discovery")
 async def discovery_start(request: Request):
     form = await request.form()
     targets = str(form.get("targets") or "").strip()
-    try:
-        hosts = expand_targets(targets)
-    except TargetError as exc:
-        flash(request, str(exc), "warn")
-        return back("/discovery")
-    try:
-        poller_id = int(form.get("poller_id") or 0)
-    except ValueError:
-        poller_id = 0
+    poller_id = _int(form.get("poller_id"))
     profile_ids = [int(v) for v in form.getlist("profile_id") if str(v).isdigit()]
     with st(request).db.session() as s:
         if not s.get(Poller, poller_id):
             flash(request, "Choose a poller.", "warn")
             return back("/discovery")
-        profiles = [p for pid in profile_ids if (p := s.get(SnmpProfile, pid))]
-        job = DiscoveryJob(poller_id=poller_id, targets=targets[:5000], profile_ids=[p.id for p in profiles], total=len(hosts), results=[])
-        s.add(job)
-        s.flush()
-        msg = {"type": "discover", "job_id": job.id, "targets": targets,
-               "profiles": [{"id": p.id, "creds": st(request).vault.open(p.config_enc)} for p in profiles]}
-        if not st(request).hub.send_soon(poller_id, msg):
-            job.status, job.error, job.finished_at = "failed", "The poller is not connected.", utcnow()
+        try:
+            job = start_job(st(request), s, poller_id, targets, in_order(s, profile_ids))
+        except TargetError as exc:
+            flash(request, str(exc), "warn")
+            return back("/discovery")
+        if job.status == "failed":
             flash(request, "That poller is not connected right now, so the scan could not start.", "warn")
         jid = job.id
     return back(f"/discovery/{jid}")
 
 
+def _read_rule(form, rule: DiscoveryRule) -> str | None:
+    rule.name = str(form.get("name") or "").strip()[:120] or "Saved scan"
+    rule.targets = str(form.get("targets") or "").strip()[:5000]
+    try:
+        expand_targets(rule.targets)
+    except TargetError as exc:
+        return str(exc)
+    rule.poller_id = _int(form.get("poller_id")) or None
+    rule.profile_ids = [int(v) for v in form.getlist("profile_id") if str(v).isdigit()]
+    hours = _int(form.get("interval_hours"))
+    rule.interval_hours = hours if hours in SCHEDULES else 0
+    mode = str(form.get("auto_add") or "off")
+    rule.auto_add = mode if mode in AUTO_ADD else "off"
+    rule.site_name = str(form.get("site_name") or "").strip()[:120] or None
+    rule.enabled = form.get("enabled") == "on"
+    return None if rule.poller_id else "Choose a poller."
+
+
+@router.post("/discovery/rules")
+async def discovery_rule_create(request: Request):
+    form = await request.form()
+    rule = DiscoveryRule(profile_ids=[])
+    if err := _read_rule(form, rule):
+        flash(request, err, "warn")
+        return back("/discovery#rules")
+    with st(request).db.session() as s:
+        s.add(rule)
+    flash(request, f"Saved scan '{rule.name}'." + (" It runs on its schedule while the poller is connected." if rule.interval_hours else ""))
+    return back("/discovery#rules")
+
+
+@router.get("/discovery/rules/{rid}", response_class=HTMLResponse)
+def discovery_rule_page(request: Request, rid: int):
+    with st(request).db.session() as s:
+        rule = s.get(DiscoveryRule, rid)
+        if rule is None:
+            raise HTTPException(404)
+        ctx = _discovery_ctx(s)
+        ctx["rule"] = rule
+        ctx["jobs"] = s.scalars(select(DiscoveryJob).where(DiscoveryJob.rule_id == rid).order_by(DiscoveryJob.id.desc()).limit(10)).all()
+    return render(request, "discovery_rule.html", ctx)
+
+
+@router.post("/discovery/rules/{rid}")
+async def discovery_rule_update(request: Request, rid: int):
+    form = await request.form()
+    with st(request).db.session() as s:
+        rule = s.get(DiscoveryRule, rid)
+        if rule is None:
+            raise HTTPException(404)
+        if err := _read_rule(form, rule):
+            s.rollback()
+            flash(request, err, "warn")
+            return back(f"/discovery/rules/{rid}")
+        name = rule.name
+    flash(request, f"Saved '{name}'.")
+    return back("/discovery#rules")
+
+
+@router.post("/discovery/rules/{rid}/run")
+def discovery_rule_run(request: Request, rid: int):
+    with st(request).db.session() as s:
+        rule = s.get(DiscoveryRule, rid)
+        if rule is None:
+            raise HTTPException(404)
+        job = run_rule(st(request), s, rule)
+        if job.status == "failed":
+            flash(request, "That scan's poller is not connected right now.", "warn")
+        jid = job.id
+    return back(f"/discovery/{jid}")
+
+
+@router.post("/discovery/rules/{rid}/delete")
+def discovery_rule_delete(request: Request, rid: int):
+    with st(request).db.session() as s:
+        rule = s.get(DiscoveryRule, rid)
+        if rule is not None:
+            s.delete(rule)
+    flash(request, "Deleted the saved scan. Devices it added stay.")
+    return back("/discovery#rules")
+
+
+@router.post("/discovery/order")
+async def discovery_order(request: Request):
+    form = await request.form()
+    with st(request).db.session() as s:
+        move_profile(s, _int(form.get("profile_id")), str(form.get("dir") or "up"))
+    return back("/discovery#order")
+
+
 @router.get("/discovery/{jid}", response_class=HTMLResponse)
 def discovery_job(request: Request, jid: int):
     with st(request).db.session() as s:
-        job = s.get(DiscoveryJob, jid, options=[selectinload(DiscoveryJob.poller)])
+        job = s.get(DiscoveryJob, jid, options=[selectinload(DiscoveryJob.poller), selectinload(DiscoveryJob.rule)])
         if job is None:
             raise HTTPException(404)
         ips = [r["ip"] for r in job.results or []]
@@ -282,20 +381,8 @@ async def discovery_add(request: Request, jid: int):
         job = s.get(DiscoveryJob, jid)
         if job is None:
             raise HTTPException(404)
-        existing = set(s.scalars(select(Device.ip).where(Device.ip.is_not(None))))
-        site = site_by_name(s, str(form.get("site") or "").strip() or None)
-        added = 0
-        for r in job.results or []:
-            ip = r.get("ip")
-            if ip not in chosen or ip in existing:
-                continue
-            kind = str(form.get(f"type_{ip}") or "") or guess_type(r.get("sys_descr"), r.get("sys_object_id"))
-            prof = r.get("profile_id") if r.get("profile_id") and s.get(SnmpProfile, r["profile_id"]) else None
-            s.add(Device(hostname=(r.get("sys_name") or ip)[:255], ip=ip, type=kind if kind in DEVICE_TYPES else "Network",
-                         site_id=site.id if site else None, poller_id=job.poller_id, snmp_profile_id=prof, ping=True,
-                         source="snmp" if prof else "ping", sys_descr=r.get("sys_descr"), extra={}))
-            existing.add(ip)
-            added += 1
+        types = {ip: str(form.get(f"type_{ip}") or "") for ip in chosen}
+        added = add_from_job(s, job, chosen, str(form.get("site") or "").strip() or None, types)
         poller_id = job.poller_id
     push_poller(request, poller_id)
     flash(request, f"Added {added} device{'s' if added != 1 else ''}. They are polled on the next cycle." if added else "Nothing new was selected.")
@@ -543,7 +630,7 @@ async def integration_create(request: Request):
         ctx = _integration_ctx(s, kind)
         cls = ctx["cls"]
         cfg = _read_integration_form(cls, form, None)
-        err = _validate_integration(cls, cfg, form, st(request).config.admin_password)
+        err = _validate_integration(cls, cfg, form, st(request).config.admin_password, getattr(request.state, "user", None))
         if err:
             ctx.update(values=cfg, error=err, name=form.get("name"))
             return render(request, "integration_form.html", ctx, 400)
@@ -557,12 +644,14 @@ async def integration_create(request: Request):
     return back(f"/integrations/{iid}")
 
 
-def _validate_integration(cls, cfg: dict, form, admin_password: str | None = None) -> str | None:
-    if admin_password:
-        for f in cls.fields:
-            if f.kind == "password" and (form.get(f.name) or "").strip() == admin_password:
-                return (f"{f.label} is your Linkwatch sign-in password, most likely filled in by the browser. "
-                        "Clear the field (blank keeps the saved value) or paste the real one.")
+def _validate_integration(cls, cfg: dict, form, admin_password: str | None = None, user=None) -> str | None:
+    from .security import verify_password
+    for f in cls.fields:
+        typed = (form.get(f.name) or "").strip()
+        if f.kind == "password" and typed and not typed.startswith("••") and (
+                typed == admin_password or (user is not None and verify_password(typed, user.password_hash))):
+            return (f"{f.label} is your Linkwatch sign-in password, most likely filled in by the browser. "
+                    "Clear the field (blank keeps the saved value) or paste the real one.")
     missing = [f.label for f in cls.fields if f.required and f.kind != "bool" and not str(cfg.get(f.name, "")).strip()]
     if missing:
         return "Fill in: " + ", ".join(missing)
@@ -598,7 +687,7 @@ async def integration_update(request: Request, iid: int):
         for f in cls.fields:   # a masked value posted back means "unchanged"
             if f.kind == "password" and str(form.get(f.name, "")).startswith("••"):
                 cfg[f.name] = old.get(f.name, "")
-        err = _validate_integration(cls, cfg, form, st(request).config.admin_password)
+        err = _validate_integration(cls, cfg, form, st(request).config.admin_password, getattr(request.state, "user", None))
         if err:
             flash(request, err, "warn")
             return back(f"/integrations/{iid}")

@@ -100,6 +100,20 @@ def _as_dt(bucket):
     return bucket if isinstance(bucket, datetime) else datetime.fromisoformat(str(bucket))
 
 
+def run_scheduled_discovery(app_state) -> None:
+    from .discovery import due_rules, run_rule
+    with app_state.db.session() as s:
+        for rule in due_rules(s, set(app_state.hub.conns)):
+            job = run_rule(app_state, s, rule)
+            log.info("Scheduled discovery '%s' started as job %s", rule.name, job.id)
+
+
+def prune_audit(app_state) -> None:
+    from .models import AuditEvent
+    with app_state.db.session() as s:
+        s.execute(delete(AuditEvent).where(AuditEvent.at < utcnow() - timedelta(days=365)))
+
+
 async def background(app_state) -> None:
     """Runs for the life of the web process."""
     last_sync: dict[int, float] = {}
@@ -117,9 +131,11 @@ async def background(app_state) -> None:
                 last_sync[iid] = now
                 await asyncio.to_thread(run_server_integration, app_state, iid)
             await asyncio.to_thread(check_pollers, app_state)
+            await asyncio.to_thread(run_scheduled_discovery, app_state)
             if now - last_rollup >= 3600:
                 last_rollup = now
                 await asyncio.to_thread(rollup_and_prune, app_state)
+                await asyncio.to_thread(prune_audit, app_state)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -13,7 +13,8 @@
     {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/login" class="stack">
       <input type="hidden" name="next" value="{{ next }}">
-      <label class="f">Admin password<input type="password" name="password" id="password" autocomplete="current-password" autofocus required></label>
+      <label class="f">Username<input type="text" name="username" id="username" autocomplete="username" value="{{ username|default('') }}" autofocus required autocapitalize="none" spellcheck="false"></label>
+      <label class="f">Password<input type="password" name="password" id="password" autocomplete="current-password" required></label>
       <button class="btn pri" type="submit">Sign in</button>
     </form>
   </div>

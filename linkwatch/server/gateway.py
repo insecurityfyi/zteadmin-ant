@@ -125,15 +125,21 @@ class Hub:
             self.notifier.dispatch(alerter.events)
 
     def _discovery(self, poller_id: int, msg: dict) -> None:
+        if self._discovery_update(poller_id, msg):
+            self.push_config_soon(poller_id)   # a saved scan auto-added devices
+
+    def _discovery_update(self, poller_id: int, msg: dict) -> bool:
+        """Store progress or results; returns True when devices were auto-added."""
+        added = False
         with self.db.session() as s:
             job = s.get(DiscoveryJob, int(msg.get("job_id") or 0))
             if job is None or job.poller_id != poller_id or job.status in ("done", "failed"):
-                return
+                return False
             job.total = int(msg.get("total") or job.total or 0)
             job.scanned = int(msg.get("scanned") or 0)
             if msg.get("type") == "discovery_progress":
                 job.status = "running"
-                return
+                return False
             if msg.get("error"):
                 job.status, job.error = "failed", str(msg["error"])[:1000]
             else:
@@ -147,7 +153,11 @@ class Hub:
                                  | {"rtt_ms": r.get("rtt_ms") if isinstance(r.get("rtt_ms"), (int, float)) else None,
                                     "profile_id": r.get("profile_id") if isinstance(r.get("profile_id"), int) else None})
                 job.results = clean
+                if job.rule_id:
+                    from .discovery import auto_add
+                    added = auto_add(s, job) > 0
             job.finished_at = utcnow()
+        return added
 
     async def serve(self, ws: WebSocket, poller: Poller, client_ip: str | None) -> None:
         self.loop = asyncio.get_running_loop()

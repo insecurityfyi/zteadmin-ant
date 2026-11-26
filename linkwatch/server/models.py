@@ -89,6 +89,48 @@ class Integration(Base):
     poller: Mapped[Poller | None] = relationship()
 
 
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    full_name: Mapped[str | None] = mapped_column(String(120))
+    email: Mapped[str | None] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16), default="viewer")   # admin | viewer
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AuditEvent(Base):
+    """Who did what: sign-ins and every change made in the web UI."""
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    username: Mapped[str | None] = mapped_column(String(64))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(120))
+    detail: Mapped[str | None] = mapped_column(String(500))
+
+
+class DiscoveryRule(Base):
+    """A saved scan: address ranges, poller and credentials, optionally on a schedule with auto-add."""
+    __tablename__ = "discovery_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    targets: Mapped[str] = mapped_column(Text)
+    poller_id: Mapped[int | None] = mapped_column(ForeignKey("pollers.id", ondelete="SET NULL"))
+    profile_ids: Mapped[list] = mapped_column(JSON, default=list)
+    interval_hours: Mapped[int] = mapped_column(Integer, default=0)      # 0 = only when run by hand
+    auto_add: Mapped[str] = mapped_column(String(8), default="off")      # off | snmp | all
+    site_name: Mapped[str | None] = mapped_column(String(120))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    poller: Mapped[Poller | None] = relationship()
+
+
 class DiscoveryJob(Base):
     """A subnet scan run by a poller: ping sweep plus an SNMP probe with saved credentials."""
     __tablename__ = "discovery_jobs"
@@ -103,7 +145,10 @@ class DiscoveryJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    rule_id: Mapped[int | None] = mapped_column(ForeignKey("discovery_rules.id", ondelete="SET NULL"))
+    added: Mapped[int | None] = mapped_column(Integer)
     poller: Mapped[Poller | None] = relationship()
+    rule: Mapped["DiscoveryRule | None"] = relationship()
 
 
 class Device(Base):

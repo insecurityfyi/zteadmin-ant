@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import secrets
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -15,20 +14,22 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import __version__
 from .config import Config
 from .db import Database
 from .gateway import Hub
-from .models import utcnow
+from .models import User, utcnow
 from .notify import Notifier
-from .security import Vault, sha256
+from .security import Vault, sha256, verify_password
+from .users import audit, sync_admin_from_env
 
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
 PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/")
+VIEWER_MAY_POST = ("/logout", "/account")
 
 
 @dataclass
@@ -103,8 +104,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     templates.env.globals.update(version=__version__, public_url=config.public_url)
     state = AppState(config, db, vault, notifier, hub, templates)
 
-    if not config.admin_password:
-        log.warning("LW_ADMIN_PASSWORD is not set: the web UI will refuse every login until it is.")
+    sync_admin_from_env(db, config.admin_password)
+    with db.session() as s:
+        if not s.scalar(select(func.count(User.id))):
+            log.warning("No users exist and LW_ADMIN_PASSWORD is not set: nobody can sign in until it is.")
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -124,14 +127,41 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     failures: dict[str, list[float]] = defaultdict(list)
 
+    def client_ip(request: Request) -> str | None:
+        return request.headers.get("x-real-ip") or (request.client.host if request.client else None)
+
     @app.middleware("http")
     async def require_login(request: Request, call_next):
         path = request.url.path
-        if path.startswith(PUBLIC_PREFIXES) or path in ("/api/docs", "/api/openapi.json") or request.session.get("auth"):
+        request.state.user = None
+        if path.startswith(PUBLIC_PREFIXES) or path in ("/api/docs", "/api/openapi.json"):
             return await call_next(request)
-        if path.startswith("/ui/"):
-            return JSONResponse({"detail": "Not signed in"}, status_code=401)
-        return RedirectResponse(f"/login?next={path}", status_code=303)
+        uid = request.session.get("uid")
+        user = None
+        if uid:
+            with db.session() as s:
+                user = s.get(User, uid)
+                if user is not None and (user.disabled or sha256("pwv:" + user.password_hash)[:20] != request.session.get("pwv")):
+                    user = None   # disabled, deleted or password changed since this session signed in
+        if user is None:
+            request.session.clear()
+            if path.startswith("/ui/"):
+                return JSONResponse({"detail": "Not signed in"}, status_code=401)
+            return RedirectResponse(f"/login?next={path}", status_code=303)
+        request.state.user = user
+        writing = request.method not in ("GET", "HEAD", "OPTIONS")
+        if (path.startswith("/admin") or (writing and not path.startswith(VIEWER_MAY_POST))) and user.role != "admin":
+            if path.startswith("/ui/"):
+                return JSONResponse({"detail": "Your account is read-only"}, status_code=403)
+            flash(request, "Your account is read-only. Ask an admin to make this change." if writing
+                  else "Only admins can open Administration.", "warn")
+            ref = request.headers.get("referer") or "/"
+            return RedirectResponse(ref if "/admin" not in ref else "/", status_code=303)
+        response = await call_next(request)
+        if writing and response.status_code < 400 and not path.startswith(("/logout", "/admin", "/account")):
+            with db.session() as s:
+                audit(s, user.username, client_ip(request), f"{request.method} {path}")
+        return response
 
     # Added after the middleware above so it wraps it (sessions must be decoded first).
     app.add_middleware(SessionMiddleware, secret_key=sha256("session:" + config.secret_key), session_cookie="lw_session",
@@ -148,28 +178,47 @@ def create_app(config: Config | None = None) -> FastAPI:
         return templates.TemplateResponse(request, "login.html", {"next": next, "error": None})
 
     @app.post("/login", response_class=HTMLResponse)
-    def login(request: Request, password: str = Form(""), next: str = Form("/")):
-        ip = request.client.host if request.client else "?"
+    def login(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("/")):
+        ip = client_ip(request) or "?"
         now = time.time()
         failures[ip] = [t for t in failures[ip] if now - t < 900]
         if len(failures[ip]) >= 8:
-            return templates.TemplateResponse(request, "login.html", {"next": next, "error": "Too many attempts. Wait 15 minutes."}, status_code=429)
-        if config.admin_password and secrets.compare_digest(password.encode(), config.admin_password.encode()):
+            return templates.TemplateResponse(request, "login.html", {"next": next, "error": "Too many attempts. Wait 15 minutes.",
+                                                                       "username": username}, status_code=429)
+        username = username.strip()
+        with db.session() as s:
+            user = s.scalar(select(User).where(func.lower(User.username) == username.lower()))
+            ok = user is not None and not user.disabled and verify_password(password, user.password_hash)
+            if not ok:
+                if user is None:
+                    verify_password(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")  # same timing
+                audit(s, username, ip, "sign-in failed", "account disabled" if user is not None and user.disabled else None)
+            else:
+                user.last_login = utcnow()
+                audit(s, user.username, ip, "signed in")
+                uid, pwv = user.id, sha256("pwv:" + user.password_hash)[:20]
+        if ok:
             request.session.clear()
-            request.session["auth"] = True
+            request.session["uid"], request.session["pwv"] = uid, pwv
             failures.pop(ip, None)
             return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
         failures[ip].append(now)
-        msg = "Wrong password." if config.admin_password else "Login is disabled until LW_ADMIN_PASSWORD is set on the server."
-        return templates.TemplateResponse(request, "login.html", {"next": next, "error": msg}, status_code=401)
+        return templates.TemplateResponse(request, "login.html", {"next": next, "error": "Wrong username or password.",
+                                                                   "username": username}, status_code=401)
 
     @app.post("/logout")
     def logout(request: Request):
+        user = getattr(request.state, "user", None)
+        if user is not None:
+            with db.session() as s:
+                audit(s, user.username, client_ip(request), "signed out")
         request.session.clear()
         return RedirectResponse("/login", status_code=303)
 
+    from .admin import router as admin_router
     from .api import router as api_router
     from .web import router as web_router
     app.include_router(api_router)
     app.include_router(web_router)
+    app.include_router(admin_router)
     return app

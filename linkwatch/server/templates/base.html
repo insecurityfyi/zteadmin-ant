@@ -22,6 +22,8 @@
     <a class="nav" href="/pollers" {% if n == 'pollers' %}aria-current="page"{% endif %}>Pollers</a>
     <a class="nav" href="/integrations" {% if n.startswith('integration') %}aria-current="page"{% endif %}>Integrations</a>
     <a class="nav" href="/settings" {% if n == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    {% if me and me.role == 'admin' %}<a class="nav" href="/admin" {% if n == 'admin' %}aria-current="page"{% endif %}>Administration</a>{% endif %}
+    {% if me %}<a class="nav" href="/account" {% if n == 'account' %}aria-current="page"{% endif %} title="Your account">{{ me.username }}{% if me.role != 'admin' %} <span class="ct">read-only</span>{% endif %}</a>{% endif %}
     <form method="post" action="/logout"><button class="btn sm" type="submit" style="background:transparent;color:var(--railInk);border-color:#ffffff30">Sign out</button></form>
     <div class="ver">v{{ version }}</div>
   </nav>

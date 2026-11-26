@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -53,11 +53,27 @@ class Database:
 
     def init(self) -> None:
         Base.metadata.create_all(self.engine)
+        self.add_missing_columns()
         with self.session() as s:
             have = set(s.scalars(select(AlertRule.key)))
             for key, name, desc, sev, thr, polls in DEFAULT_RULES:
                 if key not in have:
                     s.add(AlertRule(key=key, name=name, description=desc, severity=sev, threshold=thr, polls=polls))
+
+    def add_missing_columns(self) -> None:
+        """create_all() makes new tables but not new columns on old ones. Add nullable columns that are missing."""
+        insp = inspect(self.engine)
+        existing_tables = set(insp.get_table_names())
+        with self.engine.begin() as conn:
+            for table in Base.metadata.sorted_tables:
+                if table.name not in existing_tables:
+                    continue
+                have = {c["name"] for c in insp.get_columns(table.name)}
+                for col in table.columns:
+                    if col.name in have or not col.nullable or col.primary_key:
+                        continue
+                    ddl = col.type.compile(dialect=self.engine.dialect)
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))
 
     @contextmanager
     def session(self) -> Iterator[Session]:

@@ -15,13 +15,13 @@ def test_pages_need_login(client):
 
 def test_wrong_password_and_lockout(client):
     for _ in range(8):
-        assert client.post("/login", data={"password": "nope"}).status_code == 401
-    assert client.post("/login", data={"password": "pw-for-tests"}).status_code == 429
+        assert client.post("/login", data={"username": "admin", "password": "nope"}).status_code == 401
+    assert client.post("/login", data={"username": "admin", "password": "pw-for-tests"}).status_code == 429
 
 
 def test_every_page_renders(logged_in):
     for path in ["/", "/devices", "/alerts", "/pollers", "/integrations", "/settings", "/devices/new", "/devices/import",
-                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox", "/discovery"]:
+                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox", "/discovery", "/admin", "/account"]:
         r = logged_in.get(path)
         assert r.status_code == 200, path
 
