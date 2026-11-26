@@ -150,7 +150,13 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
     ref = f"integration:{integ.id}"
     old_status = integ.status
     if not item.get("ok"):
-        integ.status, integ.last_error = "error", (item.get("error") or "Unknown error")[:2000]
+        err = item.get("error") or "Unknown error"
+        if "Unknown integration type" in err:
+            from ..integrations import REGISTRY
+            from .gateway import outdated_poller_message
+            cls = REGISTRY.get(integ.kind)
+            err = outdated_poller_message(integ.poller.name if integ.poller else "the poller", cls.label if cls else integ.kind)
+        integ.status, integ.last_error = "error", err[:2000]
         if old_status != "error":
             events.log(s, "integration", f"{integ.name}: sync failing: {integ.last_error[:300]}", "crit")
         alerter.set("integration_failed", ref, True, f"Integration failing: {integ.name}", integ.last_error)
