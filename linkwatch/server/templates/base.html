@@ -17,11 +17,14 @@
     <a class="nav" href="/" {% if n == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
     <a class="nav" href="/devices" {% if n.startswith('device') %}aria-current="page"{% endif %}>Devices</a>
     <a class="nav" href="/discovery" {% if n == 'discovery' %}aria-current="page"{% endif %}>Discovery</a>
-    {% if has_unifi %}<a class="nav" href="/unifi" {% if n == 'unifi' %}aria-current="page"{% endif %}>Wi-Fi &amp; clients</a>{% endif %}
     <a class="nav" href="/alerts" {% if n == 'alerts' %}aria-current="page"{% endif %}>Alerts {% if open_alerts %}<span class="ct">{{ open_alerts }}</span>{% endif %}</a>
+    {% if nav_integrations %}<div class="grp">Integrations</div>
+    {% for i in nav_integrations %}{% set cur = (nav_iid is defined and nav_iid == i.id) or (n == 'unifi' and integ is defined and integ and integ.id == i.id) %}
+    <a class="nav sub" href="{{ '/unifi?i=' ~ i.id if i.kind == 'unifi' else '/integrations/' ~ i.id ~ '/overview' }}" {% if cur %}aria-current="page"{% endif %}><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(i.status, 'd-off') if i.enabled else 'd-off' }}"></span>{{ i.name }}</a>
+    {% endfor %}{% endif %}
     <div class="grp">Collection</div>
     <a class="nav" href="/pollers" {% if n == 'pollers' %}aria-current="page"{% endif %}>Pollers</a>
-    <a class="nav" href="/integrations" {% if n.startswith('integration') %}aria-current="page"{% endif %}>Integrations</a>
+    <a class="nav" href="/integrations" {% if n.startswith('integration') and not (nav_iid is defined) %}aria-current="page"{% endif %}>Integrations</a>
     <a class="nav" href="/settings" {% if n == 'settings' %}aria-current="page"{% endif %}>Settings</a>
     {% if me and me.role == 'admin' %}<a class="nav" href="/admin" {% if n == 'admin' %}aria-current="page"{% endif %}>Administration</a>{% endif %}
     {% if me %}<a class="nav" href="/account" {% if n == 'account' %}aria-current="page"{% endif %} title="Your account">{{ me.username }}{% if me.role != 'admin' %} <span class="ct">read-only</span>{% endif %}</a>{% endif %}

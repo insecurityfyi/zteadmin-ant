@@ -183,6 +183,9 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
         if ext not in seen and dev.source == integ.kind and dev.status != "unknown":
             set_status(dev, "unknown", f"No longer reported by {integ.name}")
             alerter.evaluate_device(dev)
+    counts = {k: sum(1 for r in records if r.get("status") == k) for k in ("up", "warn", "down")}
+    s.add(IntegrationMetric(integration_id=integ.id, key="objects", ts=ts, a=counts["up"], b=len(records),
+                            c=counts["warn"] + counts["down"]))
     if item.get("data"):
         ingest_integration_data(s, integ, item["data"], ts)
 
@@ -190,9 +193,97 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
 MAX_CLIENT_SERIES = 1000
 
 
-def integration_series(data: dict[str, Any]) -> list[tuple[str, float | None, float | None, float | None]]:
-    """Time-series points from an integration's extra payload (see IntegrationMetric for what a/b/c mean)."""
-    out: list[tuple[str, float | None, float | None, float | None]] = []
+Point = tuple[str, "float | None", "float | None", "float | None"]
+
+
+def integration_series(data: dict[str, Any]) -> list[Point]:
+    """Time-series points from an integration's extra payload (see IntegrationMetric for what a/b/c mean).
+    Items that get their own graph are tagged with a "series" key so pages can link to it."""
+    kind = data.get("type")
+    if kind in SERIES:
+        return SERIES[kind](data)
+    return _unifi_series(data)
+
+
+def _num(v) -> float | None:
+    try:
+        return None if v is None or v == "" else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _zscaler_series(d: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
+    zia, zpa, zdx, zcc, ztb = (d.get(k) or {} for k in ("zia", "zpa", "zdx", "zcc", "ztb"))
+    if zia:
+        out.append(("zia:inventory", len(zia.get("locations") or []), len(zia.get("tunnels") or []), None))
+    if zpa:
+        conns = zpa.get("connectors") or []
+        out.append(("zpa:connectors", zpa.get("healthy"), len(conns), zpa.get("outdated")))
+    for app in zdx.get("apps") or []:
+        app["series"] = f"zdx:{app.get('id')}"
+        out.append((app["series"], _num(app.get("score")), _num(app.get("users")), None))
+    if zdx.get("apps"):
+        scores = [a["score"] for a in zdx["apps"] if a.get("score") is not None]
+        out.append(("zdx:average", sum(scores) / len(scores) if scores else None, min(scores) if scores else None, len(scores)))
+    if zcc:
+        registered = sum(n for st, n in zcc.get("states") or [] if str(st).lower() == "registered")
+        out.append(("zcc:devices", zcc.get("total"), registered, None))
+    if ztb:
+        sites = ztb.get("sites") or []
+        up = sum(1 for x in sites if x.get("status") in ("up", "online", "active", "healthy", "connected"))
+        out.append(("ztb:sites", up, len(sites), None))
+    return out
+
+
+def _meraki_series(d: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
+    c = d.get("clients") or {}
+    if c:
+        out.append(("clients", _num(c.get("total")), _num(c.get("down_bps")), _num(c.get("up_bps"))))
+    for u in d.get("loss_latency") or []:
+        u["series"] = f"uplink:{u.get('serial')}/{u.get('uplink')}"
+        out.append((u["series"], _num(u.get("latency_ms")), _num(u.get("loss_pct")), None))
+    return out
+
+
+def _panos_series(d: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
+    ss = d.get("sessions") or {}
+    if ss:
+        out.append(("sessions", _num(ss.get("active")), _num(ss.get("cps")), _num(ss.get("throughput_bps"))))
+    if "globalprotect" in d:
+        out.append(("gp:users", d["globalprotect"].get("count"), None, None))
+    if d.get("tunnels") is not None:
+        t = d["tunnels"]
+        out.append(("tunnels", sum(1 for x in t if x.get("state") == "active"), len(t), None))
+    return out
+
+
+def _fortigate_series(d: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
+    r = d.get("resources") or {}
+    if r:
+        out.append(("sessions", _num(r.get("session")), _num(r.get("setuprate")), None))
+    t = d.get("tunnels") or []
+    out.append(("tunnels", sum(1 for x in t if x.get("phase2_up")), len(t), None))
+    if "sslvpn" in d:
+        out.append(("sslvpn:users", len(d["sslvpn"]), None, None))
+    return out
+
+
+def _proxmox_series(d: dict[str, Any]) -> list[Point]:
+    g = d.get("guests") or {}
+    out: list[Point] = [("guests", _num(g.get("running")), _num(g.get("total")), None)]
+    for st in d.get("storage") or []:
+        if st.get("size"):
+            st["series"] = f"storage:{st.get('node')}/{st.get('name')}"
+            out.append((st["series"], round(100.0 * (st.get("used") or 0) / st["size"], 1), _num(st.get("used")), _num(st.get("size"))))
+    return out
+
+
+def _unifi_series(data: dict[str, Any]) -> list[Point]:
+    out: list[Point] = []
     summ = data.get("summary") or {}
     if "clients" in summ:
         out.append(("clients", summ.get("clients"), summ.get("wireless"), summ.get("wired")))
@@ -214,6 +305,10 @@ def integration_series(data: dict[str, Any]) -> list[tuple[str, float | None, fl
             x["series"] = f"client:{x['mac']}"
             out.append((x["series"], x.get("down_bps"), x.get("up_bps"), x.get("signal")))
     return out
+
+
+SERIES = {"zscaler": _zscaler_series, "meraki": _meraki_series, "panos": _panos_series, "fortigate": _fortigate_series,
+          "proxmox": _proxmox_series, "unifi": _unifi_series}
 
 
 def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:

@@ -1,0 +1,109 @@
+{% from "_iv.html" import chart, legend, meter, yesno, dot, filter_box %}
+{% set zia, zpa, zdx, zcc, ztb = data.zia or {}, data.zpa or {}, data.zdx or {}, data.zcc or {}, data.ztb or {} %}
+{% set products = data.products or {} %}
+{% if tab == 'overview' %}
+<div class="kpis">
+  <div class="kpi"><span>ZIA locations / GRE tunnels</span><b>{{ (zia.locations or [])|length }} / {{ (zia.tunnels or [])|length }}</b><em>{% if zia.activation %}config {{ zia.activation|lower }}{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>ZPA App Connectors healthy</span><b class="{{ 'bad' if zpa.connectors and zpa.healthy < zpa.connectors|length else '' }}">{{ zpa.healthy if zpa else '–' }} / {{ (zpa.connectors or [])|length }}</b><em>{% if zpa.outdated %}<span class="wa">{{ zpa.outdated }} need an upgrade</span>{% elif zpa %}all on the expected version{% else %}&nbsp;{% endif %}</em></div>
+  {% set scores = (zdx.apps or [])|selectattr('score')|map(attribute='score')|list %}
+  <div class="kpi"><span>ZDX average score</span><b class="{{ '' if not scores else ('okc' if (scores|sum / scores|length) >= 66 else ('wa' if (scores|sum / scores|length) >= 34 else 'bad')) }}">{{ ((scores|sum / scores|length)|round|int) if scores else '–' }}</b><em>{{ (zdx.apps or [])|length }} apps{% if scores %}, lowest {{ scores|min }}{% endif %}</em></div>
+  <div class="kpi"><span>Client Connector devices</span><b>{{ zcc.total|num if zcc else '–' }}</b><em>{% for st, n in (zcc.states or [])[:2] %}{{ n|num }} {{ st|lower }}{{ ', ' if not loop.last }}{% endfor %}&nbsp;</em></div>
+  <div class="kpi"><span>Zero Trust Branch sites</span><b>{{ (ztb.sites or [])|length if ztb else '–' }}</b><em>&nbsp;</em></div>
+</div>
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Products</h2></div>
+    <table><tbody>{% for k, label in tabs if k != 'overview' %}{% set p = products.get(k) %}
+      <tr><td>{{ dot(p.ok if p else none) }}</td><td><a class="row" href="?tab={{ k }}">{{ label }}</a></td>
+        <td class="{{ 'bad' if p and not p.ok else 'dim' }}" style="font-size:12.5px">{{ (p.objects ~ ' objects') if p and p.ok else (p.error[:140] if p else 'not enabled') }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if zdx.apps %}<div class="p c4"><div class="ph"><h2>ZDX score</h2><span class="sub">average and lowest app</span></div>
+    {{ legend([('Average', 'var(--s1)'), ('Lowest', 'var(--down)')]) }}
+    {{ chart(integ.id, 'zdx:average', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)","area":false}], 'num', 160, 'ZDX score', 100) }}</div>{% endif %}
+  {% if zpa %}<div class="p c4"><div class="ph"><h2>App Connectors</h2><span class="sub">healthy of total</span></div>
+    {{ legend([('Healthy', 'var(--up)'), ('Total', 'var(--off)')]) }}
+    {{ chart(integ.id, 'zpa:connectors', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false}], 'num', 160, 'Connectors') }}</div>{% endif %}
+  {% if zcc %}<div class="p c4"><div class="ph"><h2>Client Connector fleet</h2></div>
+    {{ legend([('Enrolled', 'var(--s1)'), ('Registered', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'zcc:devices', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--s2)","area":false}], 'num', 160, 'Devices') }}</div>{% endif %}
+</div>
+
+{% elif tab == 'zia' %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Locations</span><b>{{ (zia.locations or [])|length }}</b><em>{{ (zia.locations or [])|selectattr('sub')|list|length }} sub-locations</em></div>
+  <div class="kpi"><span>GRE tunnels</span><b>{{ (zia.tunnels or [])|length }}</b><em>{{ (zia.tunnels or [])|map(attribute='primary')|select|unique|list|length }} primary data centers</em></div>
+  <div class="kpi"><span>Configuration</span><b style="font-size:18px">{{ (zia.activation or '–')|title }}</b><em>{{ 'changes waiting to be activated' if zia.activation and zia.activation|upper != 'ACTIVE' else 'activation state' }}</em></div>
+  <div class="kpi"><span>Firewall on</span><b>{{ (zia.locations or [])|selectattr('firewall')|list|length }} / {{ (zia.locations or [])|length }}</b><em>{{ (zia.locations or [])|selectattr('ssl_scan')|list|length }} with SSL inspection</em></div>
+</div>
+<div class="p"><div class="ph"><h2>Locations</h2>{{ filter_box('zia-loc') }}</div>
+  <div class="scroll"><table id="zia-loc"><thead><tr><th>Location</th><th>Country</th><th>Static IPs</th><th class="n">VPN creds</th><th class="n">Bandwidth (down / up)</th><th>Firewall</th><th>SSL inspection</th><th>Auth</th><th>XFF</th></tr></thead><tbody>
+  {% for l in zia.locations or [] %}<tr data-q="{{ [l.name, l.country, l.ips|join(' ')]|join(' ')|lower }}"><td><b>{{ l.name }}</b>{% if l.sub %} <span class="tag">sub</span>{% endif %}</td><td>{{ (l.country or '')|replace('_', ' ')|title }}</td>
+    <td class="mono" style="font-size:12px">{{ l.ips|join(', ') or '–' }}</td><td class="n">{{ l.vpn_credentials }}</td>
+    <td class="n">{% if l.down_kbps or l.up_kbps %}{{ ((l.down_kbps or 0) * 1000)|bps }} / {{ ((l.up_kbps or 0) * 1000)|bps }}{% else %}<span class="dim">unlimited</span>{% endif %}</td>
+    <td>{{ yesno(l.firewall) }}</td><td>{{ yesno(l.ssl_scan) }}</td><td>{{ yesno(l.auth) }}</td><td>{{ yesno(l.xff) }}</td></tr>
+  {% else %}<tr><td colspan="9" class="dim">No locations.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="p"><div class="ph"><h2>GRE tunnels</h2><span class="sub">ZIA's API has no live tunnel state; add the tunnel's source router over SNMP to graph it</span></div>
+  <div class="scroll"><table><thead><tr><th>Source IP</th><th>Primary</th><th>Secondary</th><th>Inside range</th><th>Comment</th></tr></thead><tbody>
+  {% for t in zia.tunnels or [] %}<tr><td class="mono">{{ t.source_ip }}</td><td>{{ t.primary or '?' }} <span class="dim mono">{{ t.primary_vip or '' }}</span></td><td>{{ t.secondary or '?' }} <span class="dim mono">{{ t.secondary_vip or '' }}</span></td><td class="mono">{{ t.inside or '' }}</td><td class="dim">{{ t.comment or '' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="dim">No GRE tunnels.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% elif tab == 'zpa' %}
+{% set conns = zpa.connectors or [] %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Connectors healthy</span><b class="{{ 'bad' if zpa.healthy < conns|length else 'okc' }}">{{ zpa.healthy }} / {{ conns|length }}</b><em>{{ conns|rejectattr('enabled')|list|length }} disabled</em></div>
+  <div class="kpi"><span>Need an upgrade</span><b class="{{ 'wa' if zpa.outdated else '' }}">{{ zpa.outdated or 0 }}</b><em>running a version other than expected</em></div>
+  <div class="kpi"><span>Connector groups</span><b>{{ zpa.groups if zpa.get('groups') is not none else '–' }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>Application segments</span><b>{{ zpa.applications if zpa.get('applications') is not none else '–' }}</b><em>&nbsp;</em></div>
+</div>
+<div class="grid"><div class="p c6"><div class="ph"><h2>Healthy connectors</h2></div>
+  {{ legend([('Healthy', 'var(--up)'), ('Total', 'var(--off)'), ('Outdated', 'var(--warn)')]) }}
+  {{ chart(integ.id, 'zpa:connectors', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--warn)","area":false}], 'num', 170, 'Connectors') }}</div>
+  <div class="p c6"><div class="ph"><h2>By group</h2></div>
+    <table><thead><tr><th>Group</th><th class="n">Healthy</th><th class="n">Total</th></tr></thead><tbody>
+    {% for g, items in conns|groupby('group') %}<tr><td>{{ g or '–' }}</td><td class="n {{ 'bad' if items|selectattr('healthy')|list|length < items|length }}">{{ items|selectattr('healthy')|list|length }}</td><td class="n">{{ items|length }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="p"><div class="ph"><h2>App Connectors</h2>{{ filter_box('zpa-ac') }}</div>
+  <div class="scroll"><table id="zpa-ac"><thead><tr><th></th><th>Connector</th><th>Group</th><th>Control channel</th><th>Version</th><th>Private IP</th><th>Public IP</th><th>Location</th><th>Last connected</th></tr></thead><tbody>
+  {% for c in conns|sort(attribute='healthy') %}<tr data-q="{{ [c.name, c.group, c.private_ip, c.public_ip, c.location]|select|join(' ')|lower }}"><td>{{ dot(c.healthy if c.enabled else none) }}</td><td><b>{{ c.name }}</b><div class="dim" style="font-size:12px">{{ c.os or '' }}</div></td><td>{{ c.group or '' }}</td>
+    <td class="{{ '' if c.healthy else 'bad' }}">{{ c.channel }}</td>
+    <td class="nw">{{ c.version or '?' }}{% if c.expected and c.version and c.expected != c.version %} <span class="wa" title="expected {{ c.expected }}">→ {{ c.expected }}</span>{% endif %}{% if c.upgrade %}<div class="dim" style="font-size:12px">{{ c.upgrade|lower|replace('_', ' ') }}</div>{% endif %}</td>
+    <td class="mono">{{ c.private_ip or '' }}</td><td class="mono">{{ c.public_ip or '' }}</td><td>{{ c.location or '' }}</td><td class="nw dim">{{ c.last_connect|replace('T', ' ')|replace('Z', ' UTC') if c.last_connect else '–' }}</td></tr>
+  {% else %}<tr><td colspan="9" class="dim">No App Connectors.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% elif tab == 'zdx' %}
+{% set apps = (zdx.apps or [])|sort(attribute='score') %}
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Applications</h2><span class="sub">ZDX score over the last 2 hours, lowest first</span></div>
+    <div class="scroll"><table><thead><tr><th>Application</th><th>Score</th><th class="n">Users</th><th>Most affected</th></tr></thead><tbody>
+    {% for a in apps %}<tr><td><b>{{ a.name }}</b></td>
+      <td class="nw">{% if a.get('score') is none %}<span class="dim">no data</span>{% else %}<span class="meter"><b style="width:{{ a.score }}%;background:{{ 'var(--up)' if a.score >= 66 else ('var(--warn)' if a.score >= 34 else 'var(--down)') }}"></b></span>{{ a.score }}{% endif %}</td>
+      <td class="n">{{ a.users|num if a.get('users') is not none else '–' }}</td><td class="dim">{{ a.region or '' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">No applications.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c6"><div class="ph"><h2>Average and lowest score</h2></div>
+    {{ legend([('Average', 'var(--s1)'), ('Lowest', 'var(--down)')]) }}
+    {{ chart(integ.id, 'zdx:average', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)","area":false}], 'num', 200, 'ZDX score', 100) }}</div>
+  {% for a in apps[:6] if a.series %}<div class="p c4"><div class="ph"><h3>{{ a.name }}</h3><span class="sub">score</span></div>
+    {{ chart(integ.id, a.series, [{"key":"a","color":"var(--s1)"}], 'num', 130, a.name ~ ' score', 100) }}</div>{% endfor %}
+</div>
+
+{% elif tab == 'zcc' %}
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Registration state</h2><span class="sub">{{ zcc.total|num }} devices</span></div>
+    <div class="bars">{% for st, n in zcc.states or [] %}<div class="bar"><span>{{ st }}</span><span class="v">{{ n|num }}</span><div class="tr"><b style="width:{{ (100 * n / (zcc.total or 1))|round(1) }}%;background:{{ 'var(--up)' if st|lower == 'registered' else 'var(--off)' }}"></b></div></div>{% endfor %}</div></div>
+  <div class="p c4"><div class="ph"><h2>Agent versions</h2></div>
+    <div class="bars">{% for v, n in zcc.versions or [] %}<div class="bar"><span class="mono">{{ v }}</span><span class="v">{{ n|num }}</span><div class="tr"><b style="width:{{ (100 * n / (zcc.total or 1))|round(1) }}%;background:var(--s1)"></b></div></div>{% endfor %}</div></div>
+  <div class="p c4"><div class="ph"><h2>Operating systems</h2></div>
+    <div class="bars">{% for v, n in zcc.os or [] %}<div class="bar"><span>{{ v }}</span><span class="v">{{ n|num }}</span><div class="tr"><b style="width:{{ (100 * n / (zcc.total or 1))|round(1) }}%;background:var(--s2)"></b></div></div>{% endfor %}</div></div>
+  <div class="p"><div class="ph"><h2>Enrolled and registered over time</h2></div>
+    {{ legend([('Enrolled', 'var(--s1)'), ('Registered', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'zcc:devices', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--s2)","area":false}], 'num', 170, 'Devices') }}</div>
+  <div class="p"><div class="ph"><h2>Devices</h2>{% if (zcc.devices or [])|length < zcc.total %}<span class="sub">first {{ (zcc.devices or [])|length|num }} of {{ zcc.total|num }}</span>{% endif %}{{ filter_box('zcc-dev', 'Host, user, OS, version') }}</div>
+    <div class="scroll" style="max-height:560px;overflow:auto"><table id="zcc-dev"><thead><tr><th>Device</th><th>User</th><th>OS</th><th>Agent</th><th>State</th><th>Last seen</th></tr></thead><tbody>
+    {% for d in zcc.devices or [] %}<tr data-q="{{ [d.hostname, d.user, d.os, d.version, d.state, d.model]|select|join(' ')|lower }}"><td><b>{{ d.hostname or '–' }}</b><div class="dim" style="font-size:12px">{{ d.model or '' }}</div></td><td>{{ d.user or '' }}</td><td>{{ d.os or '' }}</td><td class="mono">{{ d.version or '' }}</td>
+      <td class="{{ '' if (d.state or '')|lower == 'registered' else 'dim' }}">{{ d.state or '' }}</td><td class="dim nw">{{ d.last_seen or '' }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+{% elif tab == 'ztb' %}
+<div class="p"><div class="ph"><h2>Zero Trust Branch sites</h2><span class="sub">{{ (ztb.sites or [])|length }} sites</span></div>
+  <div class="scroll"><table><thead><tr><th></th><th>Site</th><th>Status</th><th>Gateway</th><th>Location</th><th>Other details</th></tr></thead><tbody>
+  {% for x in ztb.sites or [] %}<tr><td>{{ dot(true if x.status in ['up','online','active','healthy','connected'] else (false if x.status in ['down','offline','disconnected','unhealthy'] else none)) }}</td><td><b>{{ x.name }}</b></td><td>{{ x.status }}</td><td>{{ x.gateway or '' }}</td><td>{{ x.location or '' }}</td>
+    <td class="dim" style="font-size:12px">{% for k, v in (x.details or {}).items() if k not in ['status','state','health','gatewayType','gateway_type','location'] %}{{ k }}: {{ v }}{{ ' · ' if not loop.last }}{% endfor %}</td></tr>
+  {% else %}<tr><td colspan="6" class="dim">No sites.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}

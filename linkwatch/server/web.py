@@ -53,7 +53,8 @@ def render(request: Request, name: str, ctx: dict[str, Any] | None = None, statu
     with st(request).db.session() as s:
         ctx["open_alerts"] = s.scalar(select(func.count(Alert.id)).where(Alert.state == "open")) or 0
         ctx["pollers_total"] = s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0
-        ctx["has_unifi"] = bool(s.scalar(select(func.count(Integration.id)).where(Integration.kind == "unifi")))
+        ctx["nav_integrations"] = s.execute(select(Integration.id, Integration.name, Integration.kind, Integration.status,
+                                                   Integration.enabled).order_by(Integration.name)).all()
     ctx["pollers_connected"] = len(st(request).hub.conns)
     ctx["me"] = getattr(request.state, "user", None)
     return st(request).templates.TemplateResponse(request, name, ctx, status_code=status_code)

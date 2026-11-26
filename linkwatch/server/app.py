@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import jinja2
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -117,9 +118,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     notifier = Notifier(db, vault, config.public_url)
     hub = Hub(db, vault, notifier, config.poll_interval)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
-    templates.env.filters.update(bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
-                                 num=lambda n: f"{int(n or 0):,}",
-                                 pct=lambda v: "–" if v is None else f"{v:.0f}%")
+    def missing_is_none(fn):
+        # a key an integration didn't send renders as "–", not a template error
+        return lambda v, *a: fn(None if isinstance(v, jinja2.Undefined) else v, *a)
+    templates.env.filters.update({k: missing_is_none(f) for k, f in dict(
+        bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
+        num=lambda n: f"{int(n or 0):,}", pct=lambda v: "–" if v is None else f"{v:.0f}%").items()})
     templates.env.globals.update(version=__version__, public_url=config.public_url)
     state = AppState(config, db, vault, notifier, hub, templates)
 
@@ -244,6 +248,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     from .admin import router as admin_router
     from .api import router as api_router
+    from .integration_views import router as integration_views_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
@@ -251,5 +256,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(web_router)
     app.include_router(unifi_router)
     app.include_router(sso_router)
+    app.include_router(integration_views_router)
     app.include_router(admin_router)
     return app

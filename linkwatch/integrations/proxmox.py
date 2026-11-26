@@ -34,6 +34,23 @@ class Proxmox(Integration):
         except Exception:  # standalone nodes still answer; tolerate odd setups
             pass
         include_guests = bool(self.config.get("include_guests", True))
+        guests = [r for r in resources if r.get("type") in ("qemu", "lxc") and not r.get("template")]
+        self.data = {"type": "proxmox", "unavailable": [],
+                     "nodes": [{"name": r.get("node"), "status": r.get("status"), "cpu": round(100.0 * float(r.get("cpu") or 0), 1),
+                                "maxcpu": r.get("maxcpu"), "mem": r.get("mem"), "maxmem": r.get("maxmem"), "uptime_s": r.get("uptime"),
+                                "guests": sum(1 for g in guests if g.get("node") == r.get("node")),
+                                "running": sum(1 for g in guests if g.get("node") == r.get("node") and g.get("status") == "running")}
+                               for r in resources if r.get("type") == "node"],
+                     "storage": [{"name": r.get("storage"), "node": r.get("node"), "type": r.get("plugintype"),
+                                  "status": r.get("status"), "used": r.get("disk"), "size": r.get("maxdisk"),
+                                  "shared": bool(r.get("shared"))} for r in resources if r.get("type") == "storage"],
+                     "guests": {"total": len(guests), "running": sum(1 for g in guests if g.get("status") == "running"),
+                                "vms": sum(1 for g in guests if g.get("type") == "qemu"),
+                                "containers": sum(1 for g in guests if g.get("type") == "lxc")},
+                     "top_guests": sorted(({"name": g.get("name"), "vmid": g.get("vmid"), "node": g.get("node"), "type": g.get("type"),
+                                            "cpu": round(100.0 * float(g.get("cpu") or 0), 1), "mem": g.get("mem"), "maxmem": g.get("maxmem"),
+                                            "netin": g.get("netin"), "netout": g.get("netout")}
+                                           for g in guests if g.get("status") == "running"), key=lambda g: -g["cpu"])[:25]}
         out: list[Record] = []
         for r in resources:
             t = r.get("type")

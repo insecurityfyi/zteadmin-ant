@@ -1,0 +1,27 @@
+{% from "_iv.html" import chart, legend, meter, dot, filter_box %}
+{% set sy, rs = data.system or {}, data.resources or {} %}
+{% set fw = (devices|selectattr('type','equalto','Firewall')|list or [none])[0] %}
+{% set tun = data.tunnels or [] %}
+<div class="kpis">
+  <div class="kpi"><span>CPU</span><b>{{ rs.cpu|pct }}</b><em>memory {{ rs.mem|pct }}</em></div>
+  <div class="kpi"><span>Sessions</span><b>{{ rs.session|num if rs.get('session') is not none else '–' }}</b><em>{{ (rs.setuprate|num ~ ' new per second') if rs.get('setuprate') is not none else '&nbsp;'|safe }}</em></div>
+  <div class="kpi"><span>IPsec tunnels up</span><b class="{{ 'bad' if tun and tun|selectattr('phase2_up')|list|length < tun|length else '' }}">{{ tun|selectattr('phase2_up')|list|length }} / {{ tun|length }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>SSL VPN users</span><b>{{ (data.sslvpn or [])|length if data.sslvpn is defined else '–' }}</b><em>connected now</em></div>
+  <div class="kpi"><span>Disk</span><b>{{ rs.disk|pct }}</b><em>FortiOS {{ sy.version or '?' }}</em></div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Sessions</h2></div>{{ legend([('Sessions', 'var(--s1)')]) }}{{ chart(integ.id, 'sessions', [{"key":"a","color":"var(--s1)"}], 'num', 170, 'Sessions') }}</div>
+  <div class="p c6"><div class="ph"><h2>IPsec tunnels up</h2></div>{{ legend([('Up', 'var(--up)'), ('Total', 'var(--off)')]) }}{{ chart(integ.id, 'tunnels', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false}], 'num', 170, 'Tunnels') }}</div>
+  <div class="p c6"><div class="ph"><h2>IPsec tunnels</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Tunnel</th><th>Remote gateway</th><th class="n">Phase 2 up</th><th class="n">In</th><th class="n">Out</th></tr></thead><tbody>
+    {% for t in tun|sort(attribute='phase2_up') %}<tr><td>{{ dot(t.phase2_up > 0) }}</td><td><b>{{ t.name }}</b>{% if t.comment %}<div class="dim" style="font-size:12px">{{ t.comment }}</div>{% endif %}</td><td class="mono">{{ t.remote or '' }}</td><td class="n">{{ t.phase2_up }} / {{ t.phase2 }}</td><td class="n">{{ t.in_bytes|bytes }}</td><td class="n">{{ t.out_bytes|bytes }}</td></tr>
+    {% else %}<tr><td colspan="6" class="dim">No IPsec tunnels.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c6"><div class="ph"><h2>System</h2>{% if fw %}<a class="sub" href="/devices/{{ fw.id }}#ports">interface graphs</a>{% endif %}</div>
+    <dl class="kv">{% for k, label in [('hostname','Hostname'),('model','Model'),('serial','Serial'),('version','FortiOS'),('build','Build')] if sy.get(k) %}<dt>{{ label }}</dt><dd>{{ sy.get(k) }}</dd>{% endfor %}</dl>
+    {% if data.licenses %}<h3 style="margin:14px 0 8px">FortiGuard</h3><table><tbody>{% for l in data.licenses %}<tr><td>{{ l.feature|replace('_',' ') }}</td><td class="{{ '' if l.status in ['licensed','valid'] else 'wa' }}">{{ l.status }}</td><td class="dim">{% if l.expires %}{{ l.expires }}{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>
+  {% if data.interfaces %}<div class="p c6"><div class="ph"><h2>Interfaces</h2>{{ filter_box('fg-if') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="fg-if"><thead><tr><th></th><th>Interface</th><th>IP</th><th class="n">Speed</th><th class="n">VLAN</th></tr></thead><tbody>
+    {% for i in data.interfaces %}<tr data-q="{{ [i.name, i.alias, i.ip]|select|join(' ')|lower }}"><td>{{ dot(i.up) }}</td><td class="mono">{{ i.name }}{% if i.alias %} <span class="dim">{{ i.alias }}</span>{% endif %}</td><td class="mono">{{ i.ip if i.ip and i.ip != '0.0.0.0' else '' }}</td><td class="n">{{ (i.speed|int)|speed if i.speed else '' }}</td><td class="n">{{ i.vlan or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.sslvpn %}<div class="p c6"><div class="ph"><h2>SSL VPN users</h2></div>
+    <table><thead><tr><th>User</th><th>From</th><th>Tunnel IP</th></tr></thead><tbody>{% for u in data.sslvpn %}<tr><td><b>{{ u.user }}</b></td><td class="mono">{{ u.remote or '' }}</td><td class="mono">{{ u.tunnel_ip or '' }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>

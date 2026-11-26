@@ -1,0 +1,35 @@
+{% from "_iv.html" import chart, legend, meter, dot, filter_box %}
+{% set sy, ss, ha, gp = data.system or {}, data.sessions or {}, data.ha or {}, data.globalprotect or {} %}
+{% set fw = devices[0] if devices else none %}
+<div class="kpis">
+  <div class="kpi"><span>Active sessions</span><b>{{ ss.active|num if ss.get('active') is not none else '–' }}</b><em>{% if ss.max %}{{ (100 * (ss.active or 0) / ss.max)|round(1) }}% of {{ ss.max|num }}{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>New sessions / s</span><b>{{ ss.cps|num if ss.get('cps') is not none else '–' }}</b><em>{{ (ss.pps|num ~ ' packets/s') if ss.get('pps') is not none else '' }}&nbsp;</em></div>
+  <div class="kpi"><span>Throughput</span><b>{{ ss.throughput_bps|bps }}</b><em>all interfaces</em></div>
+  <div class="kpi"><span>CPU / memory</span><b>{{ fw.cpu|pct if fw else '–' }}</b><em>memory {{ fw.mem|pct if fw else '–' }}</em></div>
+  <div class="kpi"><span>{{ 'GlobalProtect users' if data.globalprotect is defined and data.globalprotect else 'High availability' }}</span>
+    {% if gp %}<b>{{ gp.count }}</b><em>{{ ('HA ' ~ ha.local) if ha.local else 'connected now' }}</em>{% else %}<b style="font-size:18px">{{ ha.local or 'standalone' }}</b><em>{{ ('peer ' ~ ha.peer) if ha.peer else '&nbsp;'|safe }}</em>{% endif %}</div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Sessions</h2></div>
+    {{ legend([('Active', 'var(--s1)')]) }}{{ chart(integ.id, 'sessions', [{"key":"a","color":"var(--s1)"}], 'num', 170, 'Sessions') }}</div>
+  <div class="p c6"><div class="ph"><h2>Throughput</h2><span class="sub">b/s</span></div>
+    {{ legend([('Throughput', 'var(--s2)')]) }}{{ chart(integ.id, 'sessions', [{"key":"c","color":"var(--s2)"}], 'bps', 170, 'Throughput') }}</div>
+  {% if data.globalprotect is defined and data.globalprotect %}<div class="p c6"><div class="ph"><h2>GlobalProtect users</h2></div>{{ chart(integ.id, 'gp:users', [{"key":"a","color":"var(--s1)"}], 'num', 150, 'GlobalProtect users') }}</div>{% endif %}
+  <div class="p c6"><div class="ph"><h2>System</h2>{% if fw %}<a class="sub" href="/devices/{{ fw.id }}#ports">interface graphs</a>{% endif %}</div>
+    <dl class="kv">{% for k, label in [('hostname','Hostname'),('model','Model'),('serial','Serial'),('sw-version','PAN-OS'),('uptime','Uptime'),('app-version','App-ID'),('threat-version','Threats'),('av-version','Antivirus'),('wildfire-version','WildFire'),('url-filtering-version','URL filtering'),('global-protect-client-package-version','GlobalProtect client'),('operational-mode','Mode'),('multi-vsys','Multi-vsys')] if sy.get(k) %}
+      <dt>{{ label }}</dt><dd class="{{ 'mono' if k in ['serial'] else '' }}">{{ sy.get(k) }}</dd>{% endfor %}
+      {% if ha.mode %}<dt>HA</dt><dd>{{ ha.mode }}: this firewall {{ ha.local or '?' }}, peer {{ ha.peer or '?' }}{% if ha.peer_ip %} ({{ ha.peer_ip }}){% endif %}{% if ha.sync %}, config {{ ha.sync }}{% endif %}</dd>{% endif %}</dl></div>
+  {% if data.licenses %}<div class="p c6"><div class="ph"><h2>Licences and subscriptions</h2></div>
+    <table><thead><tr><th>Feature</th><th>Expires</th></tr></thead><tbody>
+    {% for l in data.licenses %}<tr><td>{{ l.feature }}</td><td class="{{ 'bad' if l.expired else '' }}">{{ l.expires }}{% if l.expired %} (expired){% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  {% if data.tunnels is defined %}<div class="p c6"><div class="ph"><h2>IPsec tunnels</h2><span class="sub">{{ data.tunnels|selectattr('state','equalto','active')|list|length }} of {{ data.tunnels|length }} up</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Tunnel</th><th>Peer</th><th>Local</th><th>Interface</th></tr></thead><tbody>
+    {% for t in data.tunnels|sort(attribute='state') %}<tr><td>{{ dot(t.state == 'active') }}</td><td><b>{{ t.name }}</b> <span class="dim">{{ t.state }}</span></td><td class="mono">{{ t.peer }}</td><td class="mono">{{ t.local }}</td><td>{{ t.interface }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">No IPsec tunnels.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.interfaces %}<div class="p c6"><div class="ph"><h2>Interfaces</h2>{{ filter_box('pa-if') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="pa-if"><thead><tr><th></th><th>Interface</th><th>Zone</th><th>IP</th></tr></thead><tbody>
+    {% for i in data.interfaces %}<tr data-q="{{ [i.name, i.zone, i.ip]|join(' ')|lower }}"><td>{{ dot(i.state == 'up' if i.state else none) }}</td><td class="mono">{{ i.name }}</td><td>{{ i.zone }}</td><td class="mono">{{ i.ip if i.ip != 'N/A' else '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if gp.users %}<div class="p"><div class="ph"><h2>GlobalProtect users connected</h2>{{ filter_box('pa-gp') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="pa-gp"><thead><tr><th>User</th><th>Virtual IP</th><th>Public IP</th><th>Client</th><th>Signed in</th></tr></thead><tbody>
+    {% for u in gp.users %}<tr data-q="{{ [u.user, u.virtual_ip, u.public_ip, u.client]|join(' ')|lower }}"><td><b>{{ u.user }}</b></td><td class="mono">{{ u.virtual_ip }}</td><td class="mono">{{ u.public_ip }}</td><td>{{ u.client }}</td><td class="dim">{{ u.login }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+</div>
