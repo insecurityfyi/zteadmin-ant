@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ probe.name }}{% endblock %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+{% set r = last_ok %}
+<div class="head"><div><div class="crumb"><a href="/probes">Path probes</a></div><h1>{{ probe.name }}</h1>
+  <p><span class="mono">{{ probe.target }}</span> · {{ protocols[probe.protocol] }}{% if probe.port %} port {{ probe.port }}{% endif %} · {{ probe.count }} packets per hop · {{ intervals.get(probe.interval_s, probe.interval_s ~ ' s')|lower }}{% if not probe.enabled %} · <b>paused</b>{% endif %}</p></div>
+  {% if admin %}<div class="actions"><form class="inline" method="post" action="/probes/{{ probe.id }}/run"><button class="btn" type="submit">Run now</button></form><a class="btn" href="/probes/{{ probe.id }}/edit">Edit</a></div>{% endif %}</div>
+{% if missing %}<div class="flash warn">{{ missing|join(', ') }} {{ 'is' if missing|length == 1 else 'are' }} running an older poller image without mtr. On the poller host run <code>{{ update_cmd }}</code> (no token needed: it keeps the poller's key).</div>{% endif %}
+{% for a in alerts %}<div class="flash warn"><b>{{ a.title }}</b>{% if a.detail %}: {{ a.detail }}{% endif %} <span class="dim">since {{ a.opened_at|ago }}</span></div>{% endfor %}
+{% if (probe.poller_ids or [])|length > 1 %}<nav class="tabs" aria-label="Pollers" style="margin-bottom:14px">{% for pid in probe.poller_ids %}<a href="/probes/{{ probe.id }}?poller={{ pid }}" {% if pid == chosen %}aria-current="page"{% endif %}><span class="dot d-{{ {'up':'up','warn':'warn','down':'down','error':'down'}.get(statuses[pid], 'off') }}"></span> From {{ pollers[pid].name if pid in pollers else 'removed poller' }}</a>{% endfor %}</nav>{% endif %}
+
+<div class="kpis" style="margin-bottom:16px">
+  <div class="kpi"><span>Status</span><b><span class="pill {{ {'up':'up','warn':'warn','down':'down','error':'down'}.get(status, 'unknown') }}" style="font-size:15px">{{ {'up':'OK','warn':'Degraded','down':'Unreachable','error':'Error','unknown':'Waiting'}[status] }}</span></b><em>{{ 'last run ' ~ (shown.ts|ago) if shown else 'no result yet' }}</em></div>
+  <div class="kpi"><span>Loss at target</span><b class="{{ 'bad' if r and (r.loss_pct or 0) > 0 }}">{{ '%.0f%%'|format(r.loss_pct) if r and r.loss_pct is not none else '–' }}</b><em>{{ r.hops[-1].sent if r and r.hops else 0 }} sent</em></div>
+  <div class="kpi"><span>Latency</span><b>{{ '%.1f'|format(r.avg_ms) if r and r.avg_ms is not none else '–' }}<small> ms</small></b><em>{% if r and r.best_ms is not none %}best {{ '%.1f'|format(r.best_ms) }}, worst {{ '%.1f'|format(r.worst_ms) }}{% endif %}</em></div>
+  <div class="kpi"><span>Jitter</span><b>{{ '%.1f'|format(r.jitter_ms) if r and r.jitter_ms is not none else '–' }}<small> ms</small></b><em>average change between packets</em></div>
+  <div class="kpi"><span>Hops</span><b>{{ r.hop_count if r else '–' }}</b><em>{{ nets|selectattr('asn')|list|length }} public networks</em></div>
+</div>
+{% if shown and not shown.ok %}<div class="flash warn">The last run from this poller failed: {{ shown.error }}</div>{% endif %}
+
+<div class="p"><div class="ph"><h2>Hop by hop</h2><span class="sub">{% if r %}{% if is_latest or (shown and not shown.ok) %}Latest run, {{ r.ts|ago }}{% else %}Run at {{ r.ts.strftime('%d %b %H:%M') }} UTC · <a href="/probes/{{ probe.id }}?poller={{ chosen }}">back to latest</a>{% endif %}{% endif %}</span></div>
+{% if dia %}
+  <div class="pathwrap"><svg class="pathsvg" viewBox="0 0 {{ dia.width }} 250" width="{{ dia.width }}" height="250" role="img" aria-label="Path from {{ dia.nodes[0].label }} to {{ probe.target }}">
+    {% for b in dia.bands %}
+      {% if b.hue is not none %}<rect x="{{ b.x }}" y="8" width="{{ b.w }}" height="234" rx="12" style="fill:hsl({{ b.hue }} 70% 50% / .09);stroke:hsl({{ b.hue }} 60% 50% / .45)"/>
+      <text x="{{ b.x + 10 }}" y="27" class="bt" style="fill:color-mix(in srgb,hsl({{ b.hue }} 65% 45%) 75%,var(--ink))">{{ b.title }}</text>
+      <text x="{{ b.x + 10 }}" y="43" class="bn"><title>{{ b.holder or b.name }}</title>{{ b.name|truncate((b.w / 7)|int, true, '…') }}</text>
+      {% else %}<rect x="{{ b.x }}" y="8" width="{{ b.w }}" height="234" rx="12" style="fill:var(--soft);stroke:var(--line)"/>
+      <text x="{{ b.x + 10 }}" y="27" class="bt" style="fill:var(--mute)">{{ b.title }}</text>{% endif %}
+    {% endfor %}
+    {% for n in dia.nodes %}{% if not loop.first %}{% set p = dia.nodes[loop.index0 - 1] %}
+      <line x1="{{ p.x + 20 }}" y1="120" x2="{{ n.x - 20 }}" y2="120" class="lk {{ 'lk-none' if n.health == 'none' }}"/>
+      {% if n.delta is not none and n.delta >= 5 %}<text x="{{ (p.x + n.x) / 2 }}" y="112" class="dl {{ 'dl-hi' if n.delta >= 30 }}" text-anchor="middle">+{{ '%.0f'|format(n.delta) }} ms</text>{% endif %}
+    {% endif %}{% endfor %}
+    {% for n in dia.nodes %}
+      <g class="nd h-{{ n.health }}">
+      {% if n.kind == 'source' %}
+        <rect x="{{ n.x - 22 }}" y="102" width="44" height="36" rx="8" class="src"/>
+        <path d="M{{ n.x - 9 }} 126h18M{{ n.x - 9 }} 114h18" class="srcl"/>
+        <text x="{{ n.x }}" y="160" text-anchor="middle" class="ip">{{ n.label|truncate(18, true, '…') }}</text>
+        <text x="{{ n.x }}" y="176" text-anchor="middle" class="ms">poller</text>
+      {% else %}{% set h = n.hop %}
+        <title>Hop {{ h.n }}: {{ h.ip or 'no reply' }}{% if n.net.asn %} · AS{{ n.net.asn }} {{ n.net.holder }}{% endif %}{% if h.ip %} · loss {{ h.loss|round(1) }}% · avg {{ h.avg }} ms · best {{ h.best }} · worst {{ h.worst }} · jitter {{ h.jitter }}{% endif %}</title>
+        {% if n.kind == 'target' %}<circle cx="{{ n.x }}" cy="120" r="23" class="tg"/>{% endif %}
+        <circle cx="{{ n.x }}" cy="120" r="18" class="c"/>
+        <text x="{{ n.x }}" y="125" text-anchor="middle" class="hn">{{ h.n }}</text>
+        <text x="{{ n.x }}" y="164" text-anchor="middle" class="ip">{{ n.label }}</text>
+        {% if h.ip %}<text x="{{ n.x }}" y="181" text-anchor="middle" class="ms">{{ '%.1f'|format(h.avg) if h.avg is not none else '–' }} ms{% if h.jitter is not none %} · ±{{ '%.1f'|format(h.jitter) }}{% endif %}</text>
+        <text x="{{ n.x }}" y="198" text-anchor="middle" class="ls">{{ '%.0f'|format(h.loss) }}% loss{% if n.health == 'limited' %} (rate-limited){% endif %}</text>{% endif %}
+        {% if n.kind == 'target' and probe.target != h.ip %}<text x="{{ n.x }}" y="222" text-anchor="middle" class="ms tgl">{{ probe.target|truncate(22, true, '…') }}</text>{% endif %}
+      {% endif %}
+      </g>
+    {% endfor %}
+  </svg></div>
+  <div class="plegend"><span><i class="lg h-ok"></i>No loss</span><span><i class="lg h-limited"></i>Loss at this hop only (router rate-limits replies)</span><span><i class="lg h-bad"></i>Loss that carries on to the target</span><span><i class="lg h-none"></i>No reply</span><span class="dim">+ms on a link is the latency added by that hop</span></div>
+{% elif shown and not shown.ok %}<p class="dim">No successful run yet.</p>
+{% else %}<p class="dim">Waiting for the first result. It arrives within a minute of a poller getting this probe.</p>{% endif %}
+</div>
+
+{% if table %}
+<div class="p"><div class="ph"><h2>Hops</h2></div><div class="scroll"><table><thead><tr><th class="n">#</th><th>Address</th><th>Network</th><th>Provider</th><th class="n">Loss</th><th class="n">Sent</th><th class="n">Last</th><th class="n">Avg</th><th class="n">Best</th><th class="n">Worst</th><th class="n">StDev</th><th class="n">Jitter</th></tr></thead><tbody>
+{% for h in table %}<tr>
+  <td class="n">{{ h.n }}</td><td class="mono">{{ h.ip or '* * *' }}</td>
+  <td>{% if h.net.asn %}<span class="asn">AS{{ h.net.asn }}</span>{% if h.net.prefix %} <span class="dim mono">{{ h.net.prefix }}</span>{% endif %}{% else %}<span class="dim">{{ h.net.name if h.ip else '' }}</span>{% endif %}</td>
+  <td>{{ h.net.name if h.net.asn else '' }}</td>
+  <td class="n {{ 'bad' if h.ip and h.loss > 0 and table[-1].loss > 0 else ('wa' if h.ip and h.loss > 0) }}">{{ '%.0f%%'|format(h.loss) if h.ip else '–' }}</td>
+  <td class="n">{{ h.sent }}</td>
+  {% for k in ('last', 'avg', 'best', 'worst', 'stdev', 'jitter') %}<td class="n">{{ '%.1f'|format(h[k]) if h[k] is not none else '–' }}</td>{% endfor %}
+</tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Latency to the target</h2><div class="ranges">{% for x in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ x }}" aria-pressed="{{ 'true' if x == '24h' else 'false' }}">{{ x }}</button>{% endfor %}</div></div>
+    <div class="fig" data-src="/ui/metrics/probe/{{ probe.id }}/{{ chosen }}" data-unit="ms" data-h="200" data-label="Latency" data-series='[{"key":"avg","color":"var(--s1)"},{"key":"worst","color":"var(--s2)","dash":true},{"key":"jitter","color":"var(--warn)","area":false}]'></div>
+    <div class="plegend"><span><i class="lg" style="background:var(--s1)"></i>Average</span><span><i class="lg" style="background:var(--s2)"></i>Worst</span><span><i class="lg" style="background:var(--warn)"></i>Jitter</span></div></div>
+  <div class="p c6"><div class="ph"><h2>Loss at the target</h2></div>
+    <div class="fig" data-src="/ui/metrics/probe/{{ probe.id }}/{{ chosen }}" data-unit="pct" data-max="100" data-h="200" data-label="Loss" data-series='[{"key":"loss","color":"var(--down)"}]'></div></div>
+</div>
+
+<div class="p"><div class="ph"><h2>Path changes</h2><span class="sub">Compared with the run before</span></div>
+{% if changes %}<div class="scroll"><table><thead><tr><th>When</th><th>Change</th><th>Networks crossed</th><th class="n">Hops</th><th class="n">Latency</th><th></th></tr></thead><tbody>
+{% for c in changes %}<tr><td>{{ c.ts.strftime('%d %b %H:%M') }} <span class="dim">({{ c.ts|ago }})</span></td>
+  <td>{% if c.changed == 'asn' %}<span class="pill warn">Different networks</span>{% else %}<span class="pill unknown">Route changed</span>{% endif %}</td>
+  <td>{{ (c.asns or [])|join(' › ') }}</td><td class="n">{{ c.hop_count }}</td><td class="n">{{ '%.1f ms'|format(c.avg_ms) if c.avg_ms is not none else '–' }}</td>
+  <td><a href="/probes/{{ probe.id }}?result={{ c.id }}">View path</a></td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<p class="dim" style="margin:0">No changes seen. A route change is any hop answering from a different address; a network change is the path crossing different AS numbers, which also raises an alert.</p>{% endif %}
+</div>
+{% endblock %}

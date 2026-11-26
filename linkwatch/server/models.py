@@ -52,6 +52,7 @@ class Poller(Base):
     last_cycle_ms: Mapped[int | None] = mapped_column(Integer)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     integrations: Mapped[list | None] = mapped_column(JSON)    # integration kinds its image supports (None = too old to say)
+    features: Mapped[list | None] = mapped_column(JSON)        # optional tools its image has, e.g. ["mtr"]
 
 
 class EnrollToken(Base):
@@ -399,6 +400,56 @@ class ApiKey(Base):
     scope: Mapped[str] = mapped_column(String(4), default="ro")   # ro | rw
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_used: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class PathProbe(Base):
+    """A hop-by-hop path test (mtr) that one or more pollers run against a target on a schedule."""
+    __tablename__ = "path_probes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    target: Mapped[str] = mapped_column(String(255))
+    protocol: Mapped[str] = mapped_column(String(4), default="icmp")    # icmp | udp | tcp
+    port: Mapped[int | None] = mapped_column(Integer)
+    count: Mapped[int] = mapped_column(Integer, default=10)              # packets per hop per run
+    interval_s: Mapped[int] = mapped_column(Integer, default=300)
+    poller_ids: Mapped[list | None] = mapped_column(JSON)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    loss_pct: Mapped[float | None] = mapped_column(Float)                # alert thresholds; empty = the built-in rule's
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PathResult(Base):
+    """One run of a path probe from one poller. hops: [{n, ip, loss, sent, last, avg, best, worst, stdev, jitter}]."""
+    __tablename__ = "path_results"
+    __table_args__ = (Index("ix_pathres_probe_ts", "probe_id", "poller_id", "ts"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    probe_id: Mapped[int] = mapped_column(ForeignKey("path_probes.id", ondelete="CASCADE"))
+    poller_id: Mapped[int] = mapped_column(Integer)
+    ts: Mapped[datetime] = mapped_column(DateTime)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(String(500))
+    hops: Mapped[list | None] = mapped_column(JSON)
+    reached: Mapped[bool] = mapped_column(Boolean, default=False)
+    hop_count: Mapped[int | None] = mapped_column(Integer)
+    loss_pct: Mapped[float | None] = mapped_column(Float)      # at the target (last hop)
+    avg_ms: Mapped[float | None] = mapped_column(Float)
+    best_ms: Mapped[float | None] = mapped_column(Float)
+    worst_ms: Mapped[float | None] = mapped_column(Float)
+    jitter_ms: Mapped[float | None] = mapped_column(Float)
+    path_hash: Mapped[str | None] = mapped_column(String(16))
+    asns: Mapped[list | None] = mapped_column(JSON)            # AS path, consecutive duplicates removed
+    changed: Mapped[str | None] = mapped_column(String(8))     # route | asn, compared with the previous run
+
+
+class AsnInfo(Base):
+    """Cached origin AS and holder for an address seen on a path (RIPEstat)."""
+    __tablename__ = "asn_info"
+    ip: Mapped[str] = mapped_column(String(45), primary_key=True)
+    asn: Mapped[int | None] = mapped_column(Integer)
+    holder: Mapped[str | None] = mapped_column(String(255))
+    prefix: Mapped[str | None] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ProcessedBatch(Base):

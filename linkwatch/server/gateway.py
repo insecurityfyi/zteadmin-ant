@@ -96,7 +96,9 @@ class Hub:
                 cls = REGISTRY.get(i.kind)
                 if cls and cls.runs_on == "poller":
                     integrations.append({"id": i.id, "kind": i.kind, "config": self.vault.open(i.config_enc)})
-            return {"type": "config", "interval": self.interval(s), "devices": devices, "integrations": integrations}
+            from .paths import poller_probes
+            return {"type": "config", "interval": self.interval(s), "devices": devices, "integrations": integrations,
+                    "probes": poller_probes(s, poller_id)}
 
     async def push_config(self, poller_id: int) -> None:
         ws = self.conns.get(poller_id)
@@ -148,6 +150,12 @@ class Hub:
                 for k, v in fields.items():
                     if v is not None:
                         setattr(p, k, v)
+
+    def _set_features(self, poller_id: int, feats: list[str]) -> None:
+        with self.db.session() as s:
+            p = s.get(Poller, poller_id)
+            if p:
+                p.features = feats
 
     def _ingest(self, poller_id: int, batch: dict) -> None:
         with self.db.session() as s:
@@ -217,8 +225,10 @@ class Hub:
                 t = msg.get("type")
                 if t == "hello":
                     kinds = [str(k)[:32] for k in msg.get("integrations") or []][:50] or None
+                    feats = [str(k)[:32] for k in msg.get("features") or []][:20]
                     await asyncio.to_thread(self._touch, poller.id, version=str(msg.get("version") or "")[:32] or None,
                                             hostname=str(msg.get("hostname") or "")[:255] or None, integrations=kinds)
+                    await asyncio.to_thread(self._set_features, poller.id, feats)
                     await asyncio.to_thread(self._check_support, poller.id, kinds)
                 elif t == "results":
                     await asyncio.to_thread(self._ingest, poller.id, msg)

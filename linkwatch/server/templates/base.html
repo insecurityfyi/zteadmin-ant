@@ -20,6 +20,7 @@
   'ports': '<path d="M6 3v4M12 3v4M18 3v4M4 7h16v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M12 17v4"/>',
   'health': '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   'alerts': '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+  'paths': '<circle cx="5" cy="17" r="2.2"/><circle cx="19" cy="7" r="2.2"/><path d="M7 16.2c3-1 2-6.4 5-7.4s3.5 1.6 5-1"/><path d="M12 8.8v.01M9.6 13v.01"/>',
   'map': '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5l3 8M16 7.5l-3 8M8.5 6h7"/>',
   'integrations': '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
   'pollers': '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
@@ -58,6 +59,7 @@
       <a href="/health?metric=state">Component state</a>
       <a href="/health?metric=storage">Storage</a>
     </div></details>
+    <a class="m {{ 'cur' if sec == 'paths' }}" href="/probes">{{ ic('paths') }}<span class="lb">Paths</span></a>
     <details class="menu {{ 'cur' if sec == 'alerts' }}"{% if side and sec == 'alerts' %} open{% endif %}><summary>{{ ic('alerts') }}<span class="lb">Alerts</span>{% if open_alerts %} <span class="ct">{{ open_alerts }}</span>{% endif %}</summary><div class="dd">
       <a href="/alerts?state=open">Open <span class="n">{{ open_alerts }}</span></a>
       <a href="/alerts?state=ack">Acknowledged</a>

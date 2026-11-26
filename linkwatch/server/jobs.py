@@ -111,6 +111,8 @@ def rollup_and_prune(app_state) -> None:
         for model in (DeviceMetric, PortMetric, IntegrationMetric, SensorMetric):
             s.execute(delete(model).where(model.hourly.is_(False), model.ts < raw_cut))
             s.execute(delete(model).where(model.hourly.is_(True), model.ts < hourly_cut))
+        from .paths import prune
+        prune(s)
     log.info("Rollup done up to %s", hour_end)
 
 

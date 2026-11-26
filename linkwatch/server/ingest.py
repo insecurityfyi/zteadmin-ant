@@ -273,6 +273,7 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
             dev = Device(hostname=str(rec.get("hostname") or ext)[:255], source=integ.kind, integration_id=integ.id,
                          external_id=ext, ping=False, extra={})
             s.add(dev)
+            current[ext] = dev      # so its uplink can be linked on this first sync
         _apply_record(s, dev, integ, rec, ts)
         s.flush()
         if rec.get("ports") and dev.source == integ.kind:   # SNMP-polled boxes keep their SNMP ports
@@ -469,10 +470,11 @@ def _integration_links(s: Session, integ: Integration, records: list[dict], curr
         if dev is None or "uplink_mac" not in ex:
             continue
         up = by_mac.get(str(ex.get("uplink_mac") or "").lower())
-        rows = [{"protocol": integ.kind[:12], "local_port": ex.get("uplink_local_port"), "remote_name": up.hostname if up else ex.get("uplink_name"),
+        proto = (integ.kind + "-mesh")[:12] if ex.get("uplink_wireless") else integ.kind[:12]
+        rows = [{"protocol": proto, "local_port": ex.get("uplink_local_port"), "remote_name": up.hostname if up else ex.get("uplink_name"),
                  "remote_port": (f"port {ex['uplink_port']}" if ex.get("uplink_port") else None), "remote_chassis": ex.get("uplink_mac"),
                  "remote_device_id": up.id if up else None}] if ex.get("uplink_mac") else []
-        update_neighbors(s, dev, rows, (integ.kind[:12],))
+        update_neighbors(s, dev, rows, (integ.kind[:12], (integ.kind + "-mesh")[:12]))
 
 
 def _norm(v) -> str:
@@ -572,4 +574,7 @@ def ingest_batch(s: Session, poller_id: int, batch: dict[str, Any]) -> Alerter |
             integ = s.get(Integration, int(item.get("integration_id") or 0))
             if integ is not None and integ.poller_id == poller_id:
                 ingest_integration(s, alerter, integ, item)
+        elif item.get("kind") == "probe":
+            from .paths import ingest_probe
+            ingest_probe(s, alerter, poller_id, item)
     return alerter

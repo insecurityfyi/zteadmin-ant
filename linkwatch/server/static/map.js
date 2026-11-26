@@ -39,6 +39,14 @@
         n.vx *= 0.5; n.vy *= 0.5;
       });
     }
+    // the forces can push a small map far beyond the view, so Fit would shrink every node: pull free nodes back in
+    const free = nodes.filter(n => !n.fixed);
+    if (free.length > 1) {
+      const xs = free.map(n => n.x), ys = free.map(n => n.y);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const f = Math.min(1, (W - 160) / Math.max(1, x1 - x0), (H - 120) / Math.max(1, y1 - y0));
+      if (f < 1) free.forEach(n => { n.x = W / 2 + (n.x - (x0 + x1) / 2) * f; n.y = H / 2 + (n.y - (y0 + y1) / 2) * f; });
+    }
     return L;
   }
 
@@ -65,10 +73,11 @@
         const color = u == null ? css("--off") : u >= 80 ? css("--down") : u >= 50 ? css("--warn") : css("--up");
         const w = l.speed >= 10000 ? 4 : l.speed >= 1000 ? 2.6 : 1.6;
         const g = el("g", {}, gl);
-        const line = el("line", { stroke: color, "stroke-width": w, "stroke-linecap": "round", opacity: 0.85 }, g);
+        const line = el("line", { stroke: l.mesh ? css("--mute") : color, "stroke-width": l.mesh ? 2 : w, "stroke-linecap": "round", opacity: 0.85,
+          "stroke-dasharray": l.mesh ? "6 5" : "" }, g);
         const hit = el("line", { stroke: "transparent", "stroke-width": 12 }, g);
         const t = el("title", {}, hit);
-        t.textContent = `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${(l.protocol || "").toUpperCase()}${l.speed ? ", " + (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : ""}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps ? " (" + fmtBps(l.bps) + ")" : ""}`;
+        t.textContent = `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${l.mesh ? "Wireless mesh uplink" : (l.protocol || "").toUpperCase()}${l.speed ? ", " + (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : ""}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps ? " (" + fmtBps(l.bps) + ")" : ""}`;
         return { a, b, line, hit };
       }).filter(Boolean);
       const nodes = data.nodes.map(n => {
@@ -76,11 +85,25 @@
         const ext = n.status === "external";
         const r = el("rect", { x: -15, y: -15, width: 30, height: 30, rx: ext ? 15 : 8, fill: css("--panel"), stroke: css(STATUS[n.status] || "--off"),
           "stroke-width": 2.5, "stroke-dasharray": ext ? "4 3" : "" }, g);
-        const ic = el("text", { "text-anchor": "middle", y: 4.5, "font-size": 11, "font-weight": 600, fill: css(STATUS[n.status] || "--off"), "font-family": css("--mono") }, g);
-        ic.textContent = ext ? "?" : (ICON[n.type] || "•");
+        const col = css(STATUS[n.status] || "--off");
+        if (n.ap) {
+          // an access point: round, with wifi arcs
+          r.setAttribute("rx", 15);
+          const ap = el("g", { fill: "none", stroke: col, "stroke-width": 1.8, "stroke-linecap": "round" }, g);
+          el("path", { d: "M-8,-2.5a11.3,11.3 0 0 1 16,0" }, ap);
+          el("path", { d: "M-4.6,1a6.5,6.5 0 0 1 9.2,0" }, ap);
+          el("circle", { cx: 0, cy: 5, r: 1.8, fill: col, stroke: "none" }, g);
+        } else {
+          const ic = el("text", { "text-anchor": "middle", y: 4.5, "font-size": 11, "font-weight": 600, fill: col, "font-family": css("--mono") }, g);
+          ic.textContent = ext ? "?" : (ICON[n.type] || "•");
+        }
         const lbl = el("text", { "text-anchor": "middle", y: 30, "font-size": 11.5, fill: css("--ink"), "font-family": css("--body") }, g);
         lbl.textContent = n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name;
-        const t = el("title", {}, g); t.textContent = `${n.name}\n${n.type || ""}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}`;
+        if (n.ap && n.clients != null) {
+          const c = el("text", { "text-anchor": "middle", y: 43, "font-size": 10.5, fill: css("--mute"), "font-family": css("--body") }, g);
+          c.textContent = n.clients + (n.clients === 1 ? " client" : " clients");
+        }
+        const t = el("title", {}, g); t.textContent = `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}`;
         if (String(n.id) === svg.dataset.focus) r.setAttribute("stroke-width", 5);
         return { n, g };
       });

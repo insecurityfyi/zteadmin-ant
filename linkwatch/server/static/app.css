@@ -274,3 +274,32 @@ pre.cmd{background:var(--rail);color:#d6e3ea;border-radius:8px;padding:12px 14px
 .pager button:disabled{opacity:.35;cursor:default}
 #widgets:has(.widget.tall){grid-auto-flow:row dense}
 @media (min-width:1101px){.widget.tall{grid-row:span 2}}
+
+/* path probes */
+.pathwrap{overflow-x:auto;padding-bottom:4px}
+.pathsvg{display:block;font-family:var(--body)}
+.pathsvg .bt{font-size:12px;font-weight:700}
+.pathsvg .bn{font-size:11.5px;fill:var(--mute)}
+.pathsvg .lk{stroke:var(--mute);stroke-width:2}
+.pathsvg .lk-none{stroke-dasharray:4 4;opacity:.6}
+.pathsvg .dl{font-size:11px;fill:var(--mute);font-weight:600}
+.pathsvg .dl-hi{fill:var(--warn)}
+.pathsvg .c{fill:var(--panel);stroke-width:3}
+.pathsvg .tg{fill:none;stroke-width:1.5;opacity:.6}
+.pathsvg .hn{font-size:13px;font-weight:700;fill:var(--ink)}
+.pathsvg .ip{font-size:12px;fill:var(--ink);font-family:var(--mono,ui-monospace,monospace)}
+.pathsvg .ms{font-size:11.5px;fill:var(--mute)}
+.pathsvg .ls{font-size:11.5px;font-weight:600}
+.pathsvg .src{fill:var(--accent)}
+.pathsvg .srcl{stroke:var(--onAccent);stroke-width:2.2;stroke-linecap:round}
+.pathsvg .h-ok .c,.pathsvg .h-ok .tg{stroke:var(--up)} .pathsvg .h-ok .ls{fill:var(--up)}
+.pathsvg .h-limited .c{stroke:var(--warn);stroke-dasharray:5 3} .pathsvg .h-limited .ls{fill:var(--warn)}
+.pathsvg .h-warn .c,.pathsvg .h-warn .tg{stroke:var(--warn)} .pathsvg .h-warn .ls{fill:var(--warn)}
+.pathsvg .h-bad .c,.pathsvg .h-bad .tg{stroke:var(--down)} .pathsvg .h-bad .ls{fill:var(--down)}
+.pathsvg .h-none .c{stroke:var(--off);stroke-dasharray:3 3} .pathsvg .h-none .hn{fill:var(--mute)} .pathsvg .h-none .ip{fill:var(--mute)}
+.plegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mute);margin-top:8px}
+.plegend span{display:inline-flex;align-items:center;gap:6px}
+.lg{display:inline-block;width:12px;height:12px;border-radius:50%;border:3px solid var(--off);box-sizing:border-box}
+.lg.h-ok{border-color:var(--up)}.lg.h-limited{border-color:var(--warn);border-style:dashed}.lg.h-bad{border-color:var(--down)}.lg.h-none{border-style:dotted}
+.plegend .lg[style]{border:0;height:4px;width:14px;border-radius:2px}
+.asn{font-weight:600;white-space:nowrap}.asn em{font-style:normal;font-weight:400;color:var(--mute)}

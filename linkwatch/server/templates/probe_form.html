@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ probe.name or 'New path probe' }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/probes">Path probes</a>{% if probe.id %} › <a href="/probes/{{ probe.id }}">{{ probe.name }}</a>{% endif %}</div>
+  <h1>{{ 'Edit path probe' if probe.id else 'New path probe' }}</h1></div></div>
+{% if problems %}<div class="flash warn">{% for p in problems %}<div>{{ p }}</div>{% endfor %}</div>{% endif %}
+<div class="grid">
+<div class="p c7">
+<form method="post" action="{{ '/probes/' ~ probe.id ~ '/edit' if probe.id else '/probes/new' }}" class="stack">
+  <div class="row2"><label class="f">Name<input type="text" name="name" required maxlength="120" value="{{ probe.name or '' }}" placeholder="Microsoft 365 from HQ"></label>
+    <label class="f">Target<input type="text" name="target" required maxlength="253" value="{{ probe.target or '' }}" placeholder="outlook.office365.com or 8.8.8.8"></label></div>
+  <div class="row2"><label class="f">Protocol<select name="protocol" id="proto">{% for k, label in protocols.items() %}<option value="{{ k }}" {% if probe.protocol == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <small>TCP and UDP follow the path real application traffic takes through firewalls and load balancers.</small></label>
+    <label class="f" id="portf">Port<input type="number" name="port" min="1" max="65535" value="{{ probe.port or '' }}" placeholder="443"><small>Required for TCP. Optional for UDP.</small></label></div>
+  <div class="row2"><label class="f">Packets per hop<input type="number" name="count" min="1" max="100" value="{{ probe.count or 10 }}"><small>One per second, so 10 takes about 10 seconds.</small></label>
+    <label class="f">Schedule<select name="interval_s">{% for s, label in intervals.items() %}<option value="{{ s }}" {% if probe.interval_s == s %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div>
+  <fieldset class="f"><legend>Run from these pollers</legend>
+    {% for p in pollers %}<label class="chk"><input type="checkbox" name="poller_id" value="{{ p.id }}" {% if p.id in (probe.poller_ids or []) %}checked{% endif %}> {{ p.name }}{% if p.last_seen and 'mtr' not in (p.features or []) %} <span class="tag" style="color:var(--warn);border-color:var(--warn)" title="Update this poller to run path probes">needs update</span>{% endif %}</label>{% else %}<span class="dim">No pollers yet. Add one on the Pollers page first.</span>{% endfor %}
+    <small>Each poller traces its own path, so you can compare sites.</small></fieldset>
+  <div class="row2"><label class="f">Alert when loss at the target is above <span class="help">(%)</span><input type="number" step="any" name="loss_pct" min="0" max="100" value="{{ probe.loss_pct if probe.loss_pct is not none else '' }}" placeholder="Built-in rule (20%)"></label>
+    <label class="f">Alert when latency to the target is above <span class="help">(ms)</span><input type="number" step="any" name="latency_ms" min="1" value="{{ probe.latency_ms if probe.latency_ms is not none else '' }}" placeholder="Built-in rule (150 ms)"></label></div>
+  <label class="chk"><input type="checkbox" name="enabled" {% if probe.enabled %}checked{% endif %}> Enabled</label>
+  <div class="actions"><button class="btn pri" type="submit">Save</button>{% if probe.id %} <a class="btn" href="/probes/{{ probe.id }}">Cancel</a>{% endif %}</div>
+</form>
+{% if probe.id %}<form method="post" action="/probes/{{ probe.id }}/delete" style="margin-top:20px" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn danger sm" type="submit">Delete this probe and its history</button></form>{% endif %}
+</div>
+<div class="p c5"><div class="ph"><h2>How it works</h2></div>
+  <p style="margin-top:0">Each poller runs <code>mtr</code> on the schedule and sends back every hop's loss, latency (last, average, best, worst) and jitter. Linkwatch looks up the network (AS number) and provider for each public hop and caches it for 30 days.</p>
+  <p>The alert thresholds above override the built-in <a href="/alerts#rules">Path loss and Path latency rules</a> for this probe. The rule's poll count still applies. A change in the networks the path crosses raises a Path changed networks alert.</p>
+  <p class="help">Loss at a middle hop that doesn't carry on to later hops usually means that router limits its replies, not that traffic is being dropped. The diagram marks those hops as rate-limited.</p></div>
+</div>
+<script>
+(function(){const p=document.getElementById("proto"),f=document.getElementById("portf");const u=()=>{f.style.display=p.value==="icmp"?"none":"";};p.addEventListener("change",u);u();})();
+</script>
+{% endblock %}
