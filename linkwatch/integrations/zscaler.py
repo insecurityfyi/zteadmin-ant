@@ -11,6 +11,8 @@ production clouds). Paths follow Zscaler's own Python SDK:
 * ZDX   /zdx/v1/apps
 * ZCC   /zcc/papi/public/v1/getDevices
 * ZTB   /ztb/api/v2/Site/   (marked experimental in the SDK as well)
+* AI    POST /zins/graphql (Z-Insights SHADOW_IT), /zia/api/v1/webApplicationRules/AI_ML,
+        /zia/api/v1/cloudApplications/policy?appClass=AI_ML, /zia/api/v1/webDlpRules, /aiguard/v1/...
 """
 from __future__ import annotations
 
@@ -38,14 +40,213 @@ def _epoch(v) -> str | None:
     if n > 1e11:
         n /= 1000
     return datetime.fromtimestamp(n, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-PRODUCTS = ("zia", "zpa", "zdx", "zcc", "ztb")
 
 
-class Zscaler(Integration):
+# Generative AI ---------------------------------------------------------------
+# Zscaler has no dedicated "AI telemetry" API. What OneAPI does expose:
+#  * Z-Insights SHADOW_IT: per-app bytes, users, risk and sanctioned state, with a 24-48 hour delay
+#  * ZIA Cloud App Control rules of type AI_ML: allow / caution / block / isolate, prompt capture
+#  * ZIA's cloud application catalogue for the AI_ML class, and DLP rules naming those apps
+#  * AI Guard: configuration (policies, LLM applications and providers), not detections
+AI_REFRESH_S = 3600
+AI_WINDOW_DAYS = 7
+_AI_CACHE: dict[tuple, tuple[float, dict, list]] = {}
+
+AI_NOT_EXPOSED = [
+    ("Prompts and responses", "Prompt capture is a rule setting; the captured prompts are only viewable in the admin portal."),
+    ("Allowed versus blocked requests per AI app", "Z-Insights web traffic can't be grouped by app, so counts of blocked or cautioned requests aren't available."),
+    ("Top users and departments per AI app", "Only the admin portal's Shadow IT CSV export breaks an app down by user, and it is limited to a few reports an hour."),
+    ("DLP incidents on AI prompts", "The API exposes DLP rules, not the incidents they raise. Send incidents to a SIEM with Nanolog Streaming Service."),
+    ("Isolation sessions", "Only isolation profiles are exposed, not sessions."),
+    ("AI Guard detections", "AI Guard's API lists its configuration and scans content on request; it has no history of detections."),
+]
+
+AI_ACTIONS = {"ALLOW": "allow", "CAUTION": "caution", "DENY": "block", "BLOCK": "block", "ISOLATE": "isolate"}
+
+APPS_QUERY = """query ShadowITApps($startTime: Long!, $endTime: Long!, $limit: Int, $orderBy: [ShadowITAppsOrderBy]) {
+  SHADOW_IT { apps(start_time: $startTime, end_time: $endTime) {
+    entries(limit: $limit, order_by: $orderBy) {
+      application application_category risk_index sanctioned_state data_consumed data_uploaded data_downloaded
+      authenticated_users last_access_time } } } }"""
+
+SUMMARY_QUERY = """query ShadowITSummary($startTime: Long!, $endTime: Long!) {
+  SHADOW_IT { shadow_it_summary(start_time: $startTime, end_time: $endTime) {
+    total_bytes total_apps
+    group_by_app_cat_for_app { obfuscated entries { name total } }
+    group_by_app_cat_for_user_count { obfuscated entries { name total } }
+    group_by_app_cat_for_upload_bytes { obfuscated entries { name total } }
+    group_by_app_cat_for_download_bytes { obfuscated entries { name total } }
+    group_by_app_cat_for_total_bytes { obfuscated entries { name total } } } } }"""
+
+
+def _norm(name: Any) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+
+def _pretty_app(app_id: str) -> str:
+    """CHATGPT_AI -> Chatgpt; used only when the catalogue didn't give a display name."""
+    return re.sub(r"_AI$", "", str(app_id)).replace("_", " ").title()
+
+
+def _action(actions: list) -> str:
+    for a in actions or []:
+        for key, label in AI_ACTIONS.items():
+            if str(a).upper().startswith(key):
+                return label
+    return "other"
+
+
+def _num0(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _names(items) -> list[str]:
+    return [str(i.get("name")) for i in items or [] if isinstance(i, dict) and i.get("name")]
+
+
+class AITelemetry:
+    """The Zscaler integration's AI tab. Mixed into Zscaler, which provides api(), graphql() and _optional()."""
+
+    def _collect_ai(self) -> list[Record]:
+        key = (self.base, str(self.config.get("vanity_domain")), str(self.config.get("client_id")), str(self.config.get("ai_category") or ""))
+        cached = _AI_CACHE.get(key)
+        if cached and time.time() - cached[0] < AI_REFRESH_S:
+            self.data["ai"] = cached[1]
+            self.data["unavailable"].extend(cached[2])
+            return [self._ai_record(cached[1])]
+        before = len(self.data["unavailable"])
+        ai: dict[str, Any] = {"refreshed": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "not_exposed": AI_NOT_EXPOSED}
+
+        catalog = self._optional("AI app catalogue", self._ai_catalog)
+        names = {str(c.get("app")): str(c.get("appName") or _pretty_app(c.get("app"))) for c in catalog or [] if c.get("app")}
+        ai["catalog"] = sorted(set(names.values())) if catalog is not None else None
+        app_name = lambda app_id: names.get(str(app_id)) or _pretty_app(app_id)
+
+        rules = self._optional("AI & ML Cloud App Control rules", lambda: self.api("/zia/api/v1/webApplicationRules/AI_ML"))
+        if rules is not None:
+            ai["rules"] = sorted(({
+                "name": r.get("name"), "order": r.get("order") or r.get("rank") or 0, "enabled": str(r.get("state", "ENABLED")).upper() != "DISABLED",
+                "action": _action(r.get("actions")), "apps": [app_name(a) for a in r.get("applications") or []],
+                "app_ids": [str(a) for a in r.get("applications") or []], "all_apps": not r.get("applications"),
+                "prompt_capture": bool(r.get("promptCaptureEnabled")), "isolation": (r.get("cbiProfile") or {}).get("name"),
+                "time_quota": r.get("timeQuota"), "size_quota": r.get("sizeQuota"),
+                "scope": {k: _names(r.get(k)) for k in ("users", "groups", "departments", "locations") if r.get(k)},
+                "description": r.get("description")} for r in rules if isinstance(r, dict)), key=lambda r: r["order"])
+
+        ai_category = str(self.config.get("ai_category") or "").strip().lower()
+        is_ai_cat = (lambda c: str(c or "").strip().lower() == ai_category) if ai_category else \
+            (lambda c: bool(re.search(r"\b(ai|ml|gen ?ai)\b|artificial|generative|machine learning|llm", str(c or ""), re.IGNORECASE)))
+        known = {_norm(n) for n in names.values()}
+        end = int(time.time() // 86400 * 86400 - 86400) * 1000   # Z-Insights lags a day or more; end at midnight UTC yesterday
+        window = {"startTime": end - AI_WINDOW_DAYS * 86400000, "endTime": end}
+        ai["window"] = {"days": AI_WINDOW_DAYS, "end": time.strftime("%Y-%m-%d", time.gmtime(end / 1000))}
+
+        def shadow_apps():
+            data = self.graphql("ShadowITApps", APPS_QUERY, {**window, "limit": 1000, "orderBy": [{"data_consumed": "DESC"}]})
+            return (((data.get("SHADOW_IT") or {}).get("apps") or {}).get("entries")) or []
+        entries = self._optional("Shadow IT apps (Z-Insights)", shadow_apps)
+        if entries is not None:
+            cats = Counter(str(e.get("application_category") or "Unknown") for e in entries)
+            ai["categories_seen"] = cats.most_common()
+            apps = [e for e in entries if is_ai_cat(e.get("application_category")) or _norm(e.get("application")) in known]
+            ai["matched_categories"] = sorted({str(e.get("application_category")) for e in apps if e.get("application_category")})
+            policy = self._ai_policy_by_app(ai.get("rules"), names)
+            ai["apps"] = [{"name": e.get("application"), "category": e.get("application_category"),
+                           "sanctioned": str(e.get("sanctioned_state") or "").replace("_", " ").lower() or None,
+                           "risk": e.get("risk_index"), "users": int(_num0(e.get("authenticated_users"))),
+                           "bytes": _num0(e.get("data_consumed")), "up": _num0(e.get("data_uploaded")), "down": _num0(e.get("data_downloaded")),
+                           "last_access": _epoch(e.get("last_access_time")), **(policy.get(_norm(e.get("application"))) or policy.get("") or {})}
+                          for e in apps]
+
+        def summary():
+            data = self.graphql("ShadowITSummary", SUMMARY_QUERY, window)
+            return (data.get("SHADOW_IT") or {}).get("shadow_it_summary") or {}
+        summ = self._optional("Shadow IT summary (Z-Insights)", summary)
+        if summ:
+            def cat_total(group: str) -> float:
+                return sum(_num0(e.get("total")) for e in (summ.get(group) or {}).get("entries") or [] if is_ai_cat(e.get("name")))
+            ai["summary"] = {"total_bytes": _num0(summ.get("total_bytes")), "total_apps": int(_num0(summ.get("total_apps"))),
+                             "apps": int(cat_total("group_by_app_cat_for_app")), "users": int(cat_total("group_by_app_cat_for_user_count")),
+                             "up": cat_total("group_by_app_cat_for_upload_bytes"), "down": cat_total("group_by_app_cat_for_download_bytes"),
+                             "bytes": cat_total("group_by_app_cat_for_total_bytes")}
+
+        dlp = self._optional("DLP rules", lambda: self.api("/zia/api/v1/webDlpRules"))
+        if dlp is not None:
+            ai_ids = set(names) | {a for r in ai.get("rules") or [] for a in r["app_ids"]}
+            cats = {"AI_ML_APPS": "AI & ML apps", "GENERAL_AI_ML": "General AI & ML"}
+            out = []
+            for r in dlp if isinstance(dlp, list) else []:
+                apps = [str(a.get("id") if isinstance(a, dict) else a) for a in r.get("cloudApplications") or []]
+                urlcats = [str(c.get("id") if isinstance(c, dict) else c) for c in r.get("urlCategories") or []]
+                hit_apps = [a for a in apps if a in ai_ids or a.endswith("_AI")]
+                hit_cats = [c for c in urlcats if c in cats]
+                if hit_apps or hit_cats:
+                    out.append({"name": r.get("name"), "order": r.get("order") or 0, "action": str(r.get("action") or "").replace("_", " ").lower(),
+                                "enabled": str(r.get("state", "ENABLED")).upper() != "DISABLED",
+                                "apps": [app_name(a) for a in hit_apps], "categories": [cats[c] for c in hit_cats],
+                                "engines": _names(r.get("dlpEngines"))})
+            ai["dlp_rules"] = sorted(out, key=lambda r: r["order"])
+
+        guard: dict[str, Any] = {}
+        for label, path, field in (("AI Guard policies", "/aiguard/v1/detections/policies", "policies"),
+                                   ("AI Guard LLM applications", "/aiguard/v1/llm-applications", "applications"),
+                                   ("AI Guard LLM providers", "/aiguard/v1/llm-providers", "providers")):
+            got = self._optional(label, lambda path=path: self.api(path, {"page": 1, "pageSize": 200}))
+            if got is not None:
+                items = got if isinstance(got, list) else (got.get("records") or got.get("list") or got.get("content") or got.get("data") or [])
+                guard[field] = [str(i.get("name") or i.get("id")) for i in items if isinstance(i, dict)]
+        ai["aiguard"] = guard or None
+
+        if all(ai.get(k) is None for k in ("catalog", "rules", "apps", "summary", "dlp_rules", "aiguard")):
+            raise IntegrationError("None of the AI sources answered. " + "; ".join(self.data["unavailable"][before:])[:400])
+        notes = self.data["unavailable"][before:]
+        _AI_CACHE[key] = (time.time(), ai, list(notes))
+        self.data["ai"] = ai
+        return [self._ai_record(ai)]
+
+    def _ai_catalog(self) -> list[dict]:
+        """ZIA's cloud apps in the AI_ML class. If the filter were ignored we'd get the whole catalogue, so cap it."""
+        apps = self._zia_paged("/zia/api/v1/cloudApplications/policy", extra={"appClass": "AI_ML"}, max_pages=4)
+        if len(apps) >= 2000:
+            raise IntegrationError("the appClass=AI_ML filter wasn't applied, so the catalogue isn't used")
+        return apps
+
+    def _ai_policy_by_app(self, rules: list | None, names: dict[str, str]) -> dict[str, dict]:
+        """Action of the first enabled rule (lowest order) that names each app, or that covers every AI app."""
+        out: dict[str, dict] = {}
+        blanket = None
+        for r in [r for r in rules or [] if r["enabled"]]:
+            if r["all_apps"]:
+                blanket = blanket or r
+            for app_id, name in zip(r["app_ids"], r["apps"]):
+                for k in {_norm(name), _norm(names.get(app_id)), _norm(_pretty_app(app_id))} - {""}:
+                    out.setdefault(k, {"action": r["action"], "rule": r["name"], "prompt_capture": r["prompt_capture"]})
+        if blanket:
+            out[""] = {"action": blanket["action"], "rule": blanket["name"], "prompt_capture": blanket["prompt_capture"]}
+        return out
+
+    def _ai_record(self, ai: dict) -> Record:
+        apps = ai.get("apps") or []
+        unsanctioned = sum(1 for a in apps if (a.get("sanctioned") or "").startswith("unsanc"))
+        users = (ai.get("summary") or {}).get("users") or max((a["users"] for a in apps), default=0)
+        detail = f"{len(apps)} AI apps in use over {AI_WINDOW_DAYS} days, {users} users" if ai.get("apps") is not None else \
+            f"{len(ai.get('rules') or [])} AI & ML rules"
+        return Record(external_id="ai-summary", hostname="Generative AI usage", ip=None, type="Zscaler", platform="ZIA AI & ML apps",
+                      site=None, status="warn" if unsanctioned else "up", detail=detail,
+                      extra={"product": "ai", "apps": len(apps), "unsanctioned": unsanctioned, "rules": len(ai.get("rules") or [])})
+
+
+PRODUCTS = ("zia", "zpa", "zdx", "zcc", "ztb", "ai")
+
+
+class Zscaler(AITelemetry, Integration):
     kind = "zscaler"
     label = "Zscaler"
     runs_on = "server"
-    description = "One OneAPI connection for ZIA, ZPA, ZDX, Client Connector and Zero Trust Branch."
+    description = "One OneAPI connection for ZIA, ZPA, ZDX, Client Connector, Zero Trust Branch and AI app usage."
     fields = [
         Field("vanity_domain", "ZIdentity vanity domain", help="The 'acme' in acme.zslogin.net."),
         Field("client_id", "API client ID"),
@@ -57,6 +258,10 @@ class Zscaler(Integration):
         Field("zdx", "ZDX application scores", "bool", required=False, default=True),
         Field("zcc", "Client Connector device counts", "bool", required=False, default=True),
         Field("ztb", "Zero Trust Branch sites (experimental)", "bool", required=False, default=False),
+        Field("ai", "Generative AI usage and policy", "bool", required=False, default=True,
+              help="AI apps seen by Shadow IT (Z-Insights), AI & ML Cloud App Control rules, DLP rules that cover AI apps, and AI Guard. Refreshed hourly."),
+        Field("ai_category", "Shadow IT category for AI apps", required=False,
+              help="Leave blank to treat any Shadow IT category with AI or ML in its name, and every app in ZIA's AI & ML catalogue, as AI."),
         Field("ztb_api_key", "ZTB API key (optional)", "password", required=False,
               help="If ZTB refuses the OneAPI client: create an API key in the ZTB admin portal and paste it here."),
         Field("ztb_tenant", "ZTB portal address", required=False,
@@ -104,11 +309,14 @@ class Zscaler(Integration):
         return {"Authorization": f"Bearer {self._token}"}
 
     def api(self, path: str, params: dict | None = None) -> Any:
+        return self._request("GET", path, params=params)
+
+    def _request(self, method: str, path: str, params: dict | None = None, json: Any = None) -> Any:
         url = self.base + path
         reauthed = False
         for attempt in range(5):
             try:
-                resp = self.http.get(url, params=params, headers=self._headers())
+                resp = self.http.request(method, url, params=params, json=json, headers=self._headers())
             except httpx.HTTPError as exc:
                 raise IntegrationError(f"Could not reach {self.base}: {exc.__class__.__name__}") from exc
             if resp.status_code == 429 and attempt < 4:
@@ -122,11 +330,20 @@ class Zscaler(Integration):
                 self._token, reauthed = None, True
                 continue
             if resp.status_code in (401, 403):
-                raise IntegrationError(f"GET {path} was refused (HTTP {resp.status_code}). Check the API client's roles for this product.")
+                raise IntegrationError(f"{method} {path} was refused (HTTP {resp.status_code}). Check the API client's roles for this product.")
             if resp.status_code >= 400:
-                raise IntegrationError(f"GET {path} returned HTTP {resp.status_code}")
+                raise IntegrationError(f"{method} {path} returned HTTP {resp.status_code}")
             return resp.json() if resp.content else None
-        raise IntegrationError(f"GET {path} kept returning HTTP 429")
+        raise IntegrationError(f"{method} {path} kept returning HTTP 429")
+
+    def graphql(self, operation: str, query: str, variables: dict) -> dict:
+        """Z-Insights: POST /zins/graphql. GraphQL reports errors in the body with HTTP 200."""
+        body = self._request("POST", "/zins/graphql", json={"query": query, "variables": variables, "operationName": operation}) or {}
+        if body.get("errors"):
+            first = body["errors"][0]
+            msg = first.get("message") if isinstance(first, dict) else str(first)
+            raise IntegrationError(f"Z-Insights {operation}: {str(msg)[:200]}")
+        return body.get("data") or {}
 
     @staticmethod
     def _sleep(seconds: float) -> None:
@@ -193,10 +410,10 @@ class Zscaler(Integration):
             ))
         return out
 
-    def _zia_paged(self, path: str, page_size: int = 500) -> list[dict]:
+    def _zia_paged(self, path: str, page_size: int = 500, extra: dict | None = None, max_pages: int = 49) -> list[dict]:
         items: list[dict] = []
-        for page in range(1, 50):
-            chunk = self.api(path, {"page": page, "pageSize": page_size}) or []
+        for page in range(1, max_pages + 1):
+            chunk = self.api(path, {**(extra or {}), "page": page, "pageSize": page_size}) or []
             items.extend(chunk)
             if len(chunk) < page_size:
                 break
@@ -334,3 +551,4 @@ class Zscaler(Integration):
                 detail=f"Gateway type {s.get('gatewayType') or s.get('gateway_type') or '?'}", extra={"product": "ztb"},
             ))
         return out
+

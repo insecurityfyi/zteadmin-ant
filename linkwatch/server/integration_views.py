@@ -14,7 +14,7 @@ from .models import Device, Integration
 from .web import back, render, st
 
 router = APIRouter(include_in_schema=False)
-ZSCALER_TABS = [("overview", "Overview"), ("zia", "ZIA"), ("zpa", "ZPA"), ("zdx", "ZDX"), ("zcc", "Client Connector"), ("ztb", "Zero Trust Branch")]
+ZSCALER_TABS = [("overview", "Overview"), ("zia", "ZIA"), ("zpa", "ZPA"), ("zdx", "ZDX"), ("zcc", "Client Connector"), ("ztb", "Zero Trust Branch"), ("ai", "AI")]
 
 
 @router.get("/integrations/{iid}/overview", response_class=HTMLResponse)

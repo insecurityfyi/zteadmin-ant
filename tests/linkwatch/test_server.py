@@ -207,7 +207,7 @@ def test_integration_pages(logged_in, app):
             ingest_integration(s, Alerter(s), integ, {"ok": True, "records": RECORDS[kind], "data": copy.deepcopy(data)})
             ids[kind] = integ.id
         keys = {(m.integration_id, m.key) for m in s.scalars(select(IntegrationMetric))}
-    assert {(ids["zscaler"], k) for k in ("objects", "zpa:connectors", "zdx:3", "zdx:average", "zcc:devices", "zia:inventory")} <= keys
+    assert {(ids["zscaler"], k) for k in ("objects", "zpa:connectors", "zdx:3", "zdx:average", "zcc:devices", "zia:inventory", "ai:usage")} <= keys
     assert {(ids["meraki"], "clients"), (ids["meraki"], "uplink:Q2-MX/wan1"), (ids["panos"], "sessions"),
             (ids["fortigate"], "tunnels"), (ids["proxmox"], "guests"), (ids["proxmox"], "storage:pve-01/local-zfs")} <= keys
 
@@ -217,7 +217,8 @@ def test_integration_pages(logged_in, app):
     z = logged_in.get(f"/integrations/{ids['zscaler']}/overview").text
     assert "ZDX average score" in z and "ac-hq-02" in z and "1 optional panel" in z
     for tab, text in [("zia", "HQ Guest"), ("zpa", "UPGRADE_FAILED".lower().replace("_", " ")), ("zdx", "Salesforce"),
-                      ("zcc", "LT-0042"), ("ztb", "No sites")]:
+                      ("zcc", "LT-0042"), ("ztb", "No sites"),
+                      ("ai", "Caution other AI"), ("ai", "512"), ("ai", "Block PII to AI"), ("ai", "DLP incidents on AI prompts")]:
         r = logged_in.get(f"/integrations/{ids['zscaler']}/overview?tab={tab}")
         assert r.status_code == 200 and text in r.text, tab
     assert "dal-mx" in logged_in.get(f"/integrations/{ids['meraki']}/overview").text

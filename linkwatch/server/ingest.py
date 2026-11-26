@@ -336,6 +336,11 @@ def _zscaler_series(d: dict[str, Any]) -> list[Point]:
         sites = ztb.get("sites") or []
         up = sum(1 for x in sites if x.get("status") in ("up", "online", "active", "healthy", "connected"))
         out.append(("ztb:sites", up, len(sites), None))
+    ai = d.get("ai") or {}
+    if ai.get("apps") is not None or ai.get("summary"):
+        apps, summ = ai.get("apps") or [], ai.get("summary") or {}
+        out.append(("ai:usage", summ.get("bytes") or sum(a.get("bytes") or 0 for a in apps),
+                    summ.get("users") or max((a.get("users") or 0 for a in apps), default=0), len(apps)))
     return out
 
 
