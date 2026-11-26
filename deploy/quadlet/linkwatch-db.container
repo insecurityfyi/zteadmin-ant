@@ -1,0 +1,18 @@
+# PostgreSQL for Linkwatch. Rootless Podman under the deploy user, managed by systemd (Quadlet).
+[Unit]
+Description=Linkwatch database (PostgreSQL)
+
+[Container]
+ContainerName=linkwatch-db
+Image=docker.io/library/postgres:16-alpine
+Network=linkwatch.network
+Volume=linkwatch-db.volume:/var/lib/postgresql/data
+EnvironmentFile=%h/.config/linkwatch/db.env
+HealthCmd=pg_isready -U linkwatch -d linkwatch
+HealthInterval=30s
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

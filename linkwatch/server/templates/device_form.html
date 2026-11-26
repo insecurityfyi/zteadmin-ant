@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit ' ~ device.hostname if device else 'Add device' }}{% endblock %}
+{% block content %}
+{% set v = form or {} %}
+{% set api_only = device and device.source not in ('snmp','ping') %}
+<div class="head"><div><div class="crumb"><a href="/devices">Devices</a></div><h1>{{ 'Edit ' ~ device.hostname if device else 'Add a device' }}</h1>
+  <p>{% if api_only %}This device comes from the {{ device.integration.name if device.integration else 'integration' }} integration, so only its site and whether it is monitored can be changed here.{% else %}The poller you choose must be able to reach the device's address over SNMP (UDP 161) and ping.{% endif %}</p></div></div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+<div class="p">
+<form method="post" class="stack">
+  {% if not api_only %}
+  <div class="row2">
+    <label class="f">Hostname<input type="text" name="hostname" id="hostname" required value="{{ v.hostname or (device.hostname if device else '') }}"></label>
+    <label class="f">IP address or DNS name<input type="text" name="ip" id="ip" required value="{{ v.ip or (device.ip if device else '') }}"></label>
+  </div>
+  <div class="row2">
+    <label class="f">Type<select name="type" id="type">{% for t in types %}<option {% if t == (v.type or (device.type if device else 'Switch')) %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="f">Site<input type="text" name="site" id="site" list="sites" value="{{ v.site or (device.site.name if device and device.site else '') }}"><small>Pick an existing site or type a new one.</small></label>
+  </div>
+  <div class="row2">
+    <label class="f">Poller<select name="poller_id" id="poller_id" required>{% if not pollers %}<option value="">Install a poller first</option>{% endif %}{% for p in pollers %}<option value="{{ p.id }}" {% if (v.poller_id|string) == (p.id|string) or (device and device.poller_id == p.id) %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+    <label class="f">SNMP credentials<select name="snmp_profile_id" id="snmp_profile_id"><option value="">None (ping only)</option>{% for p in profiles %}<option value="{{ p.id }}" {% if (v.snmp_profile_id|string) == (p.id|string) or (device and device.snmp_profile_id == p.id) %}selected{% endif %}>{{ p.name }} (v{{ p.version }})</option>{% endfor %}</select><small><a href="/settings#snmp">Manage SNMP credentials</a></small></label>
+  </div>
+  <label class="chk"><input type="checkbox" name="ping" id="ping" {% if (device.ping if device else True) %}checked{% endif %}> Ping it every cycle</label>
+  {% else %}
+  <label class="f">Site<input type="text" name="site" id="site" list="sites" value="{{ device.site.name if device.site else '' }}"></label>
+  {% endif %}
+  {% if device %}<label class="chk"><input type="checkbox" name="disabled" id="disabled" {% if device.disabled %}checked{% endif %}> Pause monitoring and alerts for this device</label>{% endif %}
+  <datalist id="sites">{% for s in site_names %}<option value="{{ s }}">{% endfor %}</datalist>
+  <div class="actions"><button class="btn pri" type="submit">{{ 'Save' if device else 'Add device' }}</button><a class="btn" href="{{ '/devices/' ~ device.id if device else '/devices' }}">Cancel</a></div>
+</form>
+{% if device %}
+<form method="post" action="/devices/{{ device.id }}/delete" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px" onsubmit="return this.querySelector('[name=confirm]').checked">
+  <label class="chk"><input type="checkbox" name="confirm" id="confirm"> Delete {{ device.hostname }} and all of its graphs and alert history</label>
+  <button class="btn danger" type="submit" style="margin-top:8px">Delete device</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}

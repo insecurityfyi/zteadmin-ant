@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Settings</h1><p>SNMP credentials, where alerts are sent, API keys and the polling interval. Every secret here is stored encrypted.</p></div></div>
+<div class="grid">
+  <div class="p c7" id="snmp"><div class="ph"><h2>SNMP credentials</h2><span class="sub">Shared by many devices; sent to pollers only over their encrypted connection</span></div>
+    {% if profiles %}<div class="scroll"><table><thead><tr><th>Name</th><th>Version</th><th class="n">Devices</th><th></th></tr></thead><tbody>
+    {% for p in profiles %}<tr><td><b>{{ p.name }}</b></td><td>v{{ p.version }}</td><td class="n">{{ usage.get(p.id, 0) }}</td>
+      <td><form class="inline" method="post" action="/settings/snmp/{{ p.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form></td></tr>{% endfor %}
+    </tbody></table></div>{% endif %}
+    <details {% if not profiles %}open{% endif %} style="margin-top:12px"><summary class="btn" style="display:inline-flex">Add SNMP credentials</summary>
+    <form method="post" action="/settings/snmp" class="stack" style="margin-top:12px" autocomplete="off">
+      <div class="row2"><label class="f">Name<input type="text" name="name" id="snmp_name" required placeholder="campus-v3"></label>
+        <label class="f">Version<select name="version" id="snmp_version"><option value="3">SNMPv3 (recommended)</option><option value="2c">SNMPv2c</option></select></label></div>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv2c</legend>
+        <label class="f">Community<input type="password" name="community" id="snmp_community"></label></fieldset>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv3</legend>
+        <div class="row2"><label class="f">Username<input type="text" name="username" id="snmp_user"></label>
+          <label class="f">Security level<select name="level" id="snmp_level"><option>authPriv</option><option>authNoPriv</option><option>noAuthNoPriv</option></select></label></div>
+        <div class="row2"><label class="f">Auth protocol<select name="auth_protocol" id="snmp_auth">{% for a in auth_protocols %}<option>{{ a }}</option>{% endfor %}</select></label>
+          <label class="f">Auth passphrase<input type="password" name="auth_key" id="snmp_authkey"></label></div>
+        <div class="row2"><label class="f">Privacy protocol<select name="priv_protocol" id="snmp_priv">{% for a in priv_protocols %}<option>{{ a }}</option>{% endfor %}</select></label>
+          <label class="f">Privacy passphrase<input type="password" name="priv_key" id="snmp_privkey"></label></div></fieldset>
+      <label class="f">UDP port <span class="help">(optional, default 161)</span><input type="number" name="port" id="snmp_port" min="1" max="65535"></label>
+      <div><button class="btn pri" type="submit">Save credentials</button></div>
+    </form></details>
+  </div>
+  <div class="p c5"><div class="ph"><h2>Polling</h2></div>
+    <form method="post" action="/settings/interval" class="stack">
+      <label class="f">Poll every (seconds)<input type="number" name="interval" id="interval" min="60" max="3600" step="60" value="{{ interval }}"><small>300 seconds suits about 150 devices on one poller. Graph history is kept at full detail for 7 days, then as hourly averages for a year.</small></label>
+      <div><button class="btn" type="submit">Save</button></div></form></div>
+
+  <div class="p c7" id="transports"><div class="ph"><h2>Where alerts are sent</h2></div>
+    {% if transports %}<div class="scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Minimum severity</th><th>Last result</th><th></th></tr></thead><tbody>
+    {% for t in transports %}<tr><td><b>{{ t.name }}</b></td><td>{{ transport_kinds[t.kind][0] }}</td><td>{{ {'crit':'Critical','warn':'Warning','info':'Info'}[t.min_severity] }}</td><td class="dim">{{ t.last_result or '–' }}</td>
+      <td class="nw"><form class="inline" method="post" action="/settings/transports/{{ t.id }}/test"><button class="btn sm" type="submit">Send test</button></form>
+        <form class="inline" method="post" action="/settings/transports/{{ t.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form></td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="margin-top:0">No notification targets yet. Alerts still show in the app.</p>{% endif %}
+    <details style="margin-top:12px"><summary class="btn" style="display:inline-flex">Add a target</summary>
+    <form method="post" action="/settings/transports" class="stack" style="margin-top:12px" autocomplete="off">
+      <div class="row2"><label class="f">Type<select name="kind" id="t_kind">{% for k, v in transport_kinds.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}</select></label>
+        <label class="f">Name<input type="text" name="name" id="t_name" placeholder="NOC email"></label></div>
+      <label class="f">Webhook URL <span class="help">(Teams, Slack or generic)</span><input type="url" name="url" id="t_url" placeholder="https://..."></label>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">Email only</legend>
+        <div class="row2"><label class="f">SMTP server<input type="text" name="host" id="t_host" placeholder="smtp.office365.com"></label><label class="f">Port<input type="number" name="port" id="t_port" value="587"></label></div>
+        <div class="row2"><label class="f">Username<input type="text" name="username" id="t_user"></label><label class="f">Password<input type="password" name="password" id="t_pass"></label></div>
+        <div class="row2"><label class="f">From<input type="text" name="sender" id="t_from" placeholder="linkwatch@perrego.net"></label><label class="f">To (comma separated)<input type="text" name="recipients" id="t_to"></label></div>
+        <label class="chk"><input type="checkbox" name="starttls" id="t_tls" checked> Use STARTTLS</label></fieldset>
+      <label class="f">Send alerts of at least<select name="min_severity" id="t_sev"><option value="warn">Warning</option><option value="crit">Critical</option><option value="info">Info</option></select></label>
+      <div><button class="btn pri" type="submit">Add target</button></div></form></details></div>
+
+  <div class="p c5" id="api"><div class="ph"><h2>REST API keys</h2><a class="sub" href="/api/docs">API reference</a></div>
+    {% if new_key %}<p style="margin-top:0">Copy this key now; it is not shown again:</p><div class="secret">{{ new_key }}</div>{% endif %}
+    {% if keys %}<div class="scroll"><table><thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Last used</th><th></th></tr></thead><tbody>
+    {% for k in keys %}<tr><td>{{ k.name }}</td><td class="mono">{{ k.prefix }}…</td><td>{{ 'Read and write' if k.scope == 'rw' else 'Read only' }}</td><td class="dim">{{ k.last_used|ago }}</td>
+      <td><form class="inline" method="post" action="/settings/apikeys/{{ k.id }}/delete"><button class="btn sm danger" type="submit">Revoke</button></form></td></tr>{% endfor %}
+    </tbody></table></div>{% endif %}
+    <form method="post" action="/settings/apikeys" class="stack" style="margin-top:12px">
+      <div class="row2"><label class="f">Name<input type="text" name="name" id="k_name" required placeholder="Grafana"></label>
+        <label class="f">Scope<select name="scope" id="k_scope"><option value="ro">Read only</option><option value="rw">Read and write</option></select></label></div>
+      <div><button class="btn" type="submit">Create key</button></div></form></div>
+</div>
+{% endblock %}

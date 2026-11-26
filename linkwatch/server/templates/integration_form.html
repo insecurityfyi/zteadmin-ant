@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ integ.name if integ else 'Add ' ~ cls.label }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a></div><h1>{{ integ.name if integ else 'Add ' ~ cls.label }}</h1><p>{{ cls.description }}</p></div>
+  {% if integ %}<div class="actions">
+    <form class="inline" method="post" action="/integrations/{{ integ.id }}/test"><button class="btn" type="submit">Test</button></form>
+    <form class="inline" method="post" action="/integrations/{{ integ.id }}/sync"><button class="btn" type="submit">Sync now</button></form></div>{% endif %}</div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{% if test_result %}<div class="flash {{ test_result[0] }}" role="status">{{ test_result[1] }}</div>{% endif %}
+{% if integ %}
+<div class="p"><dl class="kv">
+  <dt>Status</dt><dd><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(integ.status, 'd-off') }}"></span> {{ {'ok':'Connected','partial':'Partly working','error':'Failing','never':'Not synced yet'}[integ.status] }}, last sync {{ integ.last_sync|ago }}</dd>
+  {% if integ.last_error %}<dt>Problem</dt><dd class="{{ 'bad' if integ.status == 'error' else 'wa' }}">{{ integ.last_error }}</dd>{% endif %}
+  <dt>Objects</dt><dd>{{ integ.object_count }}</dd>
+  <dt>Runs</dt><dd>{{ 'On poller ' ~ integ.poller.name if integ.poller else ('On a poller (none chosen)' if cls.runs_on == 'poller' else 'On this server') }}</dd>
+</dl></div>
+{% endif %}
+<div class="grid">
+<div class="p {{ 'c6' if integ else '' }}">
+<form method="post" action="{{ '/integrations/' ~ integ.id if integ else '/integrations/new' }}" class="stack" autocomplete="off">
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <label class="f">Name<input type="text" name="name" id="name" value="{{ integ.name if integ else (name or cls.label) }}"></label>
+  {% if cls.runs_on == 'poller' %}
+  <label class="f">Poller that can reach it<select name="poller_id" id="poller_id" required>{% if not pollers %}<option value="">Install a poller first</option>{% endif %}{% for p in pollers %}<option value="{{ p.id }}" {% if integ and integ.poller_id == p.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+  {% endif %}
+  {% for f in cls.fields %}
+    {% if f.kind == 'bool' %}
+      <label class="chk"><input type="checkbox" name="{{ f.name }}" id="f_{{ f.name }}" {% if values.get(f.name) %}checked{% endif %}> {{ f.label }}{% if f.help %} <span class="help">{{ f.help }}</span>{% endif %}</label>
+    {% else %}
+      <label class="f">{{ f.label }}{% if not f.required %} <span class="help">(optional)</span>{% endif %}
+        <input type="{{ 'password' if f.kind == 'password' else 'text' }}" name="{{ f.name }}" id="f_{{ f.name }}" value="{{ values.get(f.name, '') if f.kind != 'password' or not integ else '' }}" {% if f.kind == 'password' and integ %}placeholder="{{ values.get(f.name) or 'Not set' }} (leave blank to keep)"{% endif %} {% if f.required and not (f.kind == 'password' and integ) %}required{% endif %}>
+        {% if f.help %}<small>{{ f.help }}</small>{% endif %}</label>
+    {% endif %}
+  {% endfor %}
+  {% if integ %}<label class="chk"><input type="checkbox" name="enabled" id="enabled" {% if integ.enabled %}checked{% endif %}> Enabled</label>{% endif %}
+  <div class="actions"><button class="btn pri" type="submit">Save</button><a class="btn" href="/integrations">Cancel</a></div>
+</form>
+{% if integ %}
+<form method="post" action="/integrations/{{ integ.id }}/delete" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px" onsubmit="return this.querySelector('[name=c]').checked">
+  <label class="chk"><input type="checkbox" name="c"> Delete this integration and the devices it created</label>
+  <button class="btn danger" type="submit" style="margin-top:8px">Delete</button></form>
+{% endif %}
+</div>
+{% if integ %}
+<div class="p c6"><div class="ph"><h2>Objects from this integration</h2><span class="sub">{{ objects|length }}</span></div>
+  {% if objects %}<div class="scroll"><table><thead><tr><th></th><th>Name</th><th>Type</th><th>Details</th></tr></thead><tbody>
+  {% for d in objects %}<tr class="click" onclick="location.href='/devices/{{ d.id }}'"><td><span class="dot d-{{ d.status }}"></span></td><td><a class="row" href="/devices/{{ d.id }}">{{ d.hostname }}</a></td><td class="dim">{{ d.platform or d.type }}</td><td class="dim">{{ d.detail or '' }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="dim" style="margin:0">Nothing synced yet.</p>{% endif %}</div>
+{% endif %}
+</div>
+{% endblock %}

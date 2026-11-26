@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Linkwatch{% endblock %} · Linkwatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<script src="/static/charts.js?v={{ version }}" defer></script>
+</head>
+<body>
+<div class="app">
+  <nav class="rail" aria-label="Sections">
+    <a class="brand" href="/"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="#0d7c8c"/><path d="M5 15h4l2-6 4 10 2-4h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Linkwatch</span></a>
+    {% set n = nav %}
+    <a class="nav" href="/" {% if n == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+    <a class="nav" href="/devices" {% if n.startswith('device') %}aria-current="page"{% endif %}>Devices</a>
+    <a class="nav" href="/alerts" {% if n == 'alerts' %}aria-current="page"{% endif %}>Alerts {% if open_alerts %}<span class="ct">{{ open_alerts }}</span>{% endif %}</a>
+    <div class="grp">Collection</div>
+    <a class="nav" href="/pollers" {% if n == 'pollers' %}aria-current="page"{% endif %}>Pollers</a>
+    <a class="nav" href="/integrations" {% if n.startswith('integration') %}aria-current="page"{% endif %}>Integrations</a>
+    <a class="nav" href="/settings" {% if n == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    <form method="post" action="/logout"><button class="btn sm" type="submit" style="background:transparent;color:var(--railInk);border-color:#ffffff30">Sign out</button></form>
+    <div class="ver">v{{ version }}</div>
+  </nav>
+  <div class="main">
+    <header class="top">
+      <form method="get" action="/devices" role="search" style="display:contents"><input type="search" name="q" placeholder="Search hostname, IP, platform, serial" aria-label="Search devices" value="{{ q|default('') }}"></form>
+      <span class="sp"></span>
+      <a class="chip" href="/pollers"><span class="dot {% if pollers_total and pollers_connected >= pollers_total %}d-up{% elif pollers_connected %}d-warn{% else %}d-down{% endif %}"></span>{{ pollers_connected }} of {{ pollers_total }} poller{{ '' if pollers_total == 1 else 's' }} connected</a>
+    </header>
+    <div class="content">
+      {% for kind, msg in flashes %}<div class="flash {{ kind }}" role="status">{{ msg }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+</body>
+</html>

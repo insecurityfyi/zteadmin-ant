@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Pollers{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Pollers</h1><p>A poller runs on your local network, polls devices over SNMP, ping and local APIs, and sends results out to this server over HTTPS. Nothing connects in to your network.</p></div>
+  <form method="post" action="/pollers/token"><button class="btn pri" type="submit">Add poller</button></form></div>
+{% if new_token %}
+<div class="p" id="install"><div class="ph"><h2>Install the new poller</h2><span class="sub">This token is shown once, works once, and expires in 24 hours</span></div>
+  <p style="margin-top:0">On any Linux machine on the LAN with Podman or Docker (a small VM, an LXC container on Proxmox, or a Raspberry Pi), run:</p>
+<pre class="cmd">podman run -d --name linkwatch-poller --restart=always \
+  -e LW_SERVER={{ public_url }} \
+  -e LW_ENROLL_TOKEN={{ new_token }} \
+  -e LW_POLLER_NAME=poller-hq-01 \
+  -v linkwatch-poller:/var/lib/linkwatch \
+  ghcr.io/insecurityfyi/linkwatch-poller:latest</pre>
+  <p class="help">Replace <code>podman</code> with <code>docker</code> if that is what the machine has. The first start enrolls the poller and saves its own key in the volume; after that the token is no longer needed. See <code>docs/poller.md</code> for a systemd setup.</p>
+</div>
+{% endif %}
+{% if pollers %}
+<div class="grid">
+{% for p in pollers %}
+  {% set live = p.id in connected %}
+  <div class="p c6"><div class="ph" style="margin-bottom:8px"><div><h2 style="display:flex;align-items:center;gap:8px"><span class="dot {{ 'd-up' if live else ('d-off' if p.revoked or not p.last_seen else 'd-down') }}"></span>{{ p.name }}</h2>
+      <div class="sub">{{ 'Revoked' if p.revoked else ('Connected' if live else ('Waiting for first connection' if not p.last_seen else 'Offline, last seen ' ~ (p.last_seen|ago))) }}</div></div>
+      {% if p.version %}<span class="tag">v{{ p.version }}</span>{% endif %}</div>
+    <div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:12px">
+      <div class="kpi"><span>Devices</span><b>{{ counts.get(p.id, 0) }}</b></div>
+      <div class="kpi"><span>Local APIs</span><b>{{ integ_counts.get(p.id, 0) }}</b></div>
+      <div class="kpi"><span>Last cycle</span><b>{{ ((p.last_cycle_ms or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if (p.last_cycle_ms or 0) > interval * 1000 else '' }}">of {{ interval }} s</em></div>
+    </div>
+    <dl class="kv"><dt>Host</dt><dd>{{ p.hostname or '–' }}</dd><dt>Connects from</dt><dd class="mono">{{ p.last_ip or '–' }}</dd><dt>Last heard</dt><dd>{{ p.last_seen|ago }}</dd><dt>Enrolled</dt><dd>{{ p.created_at.strftime('%d %b %Y') }}</dd></dl>
+    <div class="actions" style="margin-top:12px">
+      {% if not p.revoked %}<form class="inline" method="post" action="/pollers/{{ p.id }}/revoke" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn sm danger" type="submit">Revoke</button></form>
+      {% else %}<form class="inline" method="post" action="/pollers/{{ p.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form>{% endif %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% elif not new_token %}
+<div class="p empty-state"><h2>No pollers yet</h2><p>Press Add poller to get a one-time install command.</p></div>
+{% endif %}
+{% endblock %}

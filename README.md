@@ -1,4 +1,62 @@
-# zteadmin-ant: Zscaler Toolbox
+# zteadmin-ant
+
+Two things live in this repository:
+
+* **Linkwatch** (`linkwatch/`): self-hosted network monitoring with
+  outbound-only remote pollers. Runs on the CentOS Stream 9 VPS at
+  `utilz.perrego.net` and deploys from GitHub on every push to `main`.
+* **Zscaler Toolbox, ZIA module** (`app/`): the earlier ZIA console. Its
+  OneAPI work now also powers Linkwatch's Zscaler integration.
+
+## Linkwatch
+
+| Area | What it does |
+| --- | --- |
+| Dashboard | Devices up and down by site, open alerts, busiest ports, highest CPU, traffic graph |
+| Devices | SNMP v2c/v3 and ping: system info, CPU, memory, every interface with traffic, errors and utilization, graphs for 6 h to 1 year. CSV import for bulk adds. |
+| Alerts | Device down, platform-reported problems, high CPU and memory, port down, port errors, bandwidth, failing integrations, offline pollers. Email, Teams, Slack or webhook. |
+| Pollers | Run on your LAN and only connect out (WebSocket over HTTPS). Results are buffered on disk if the link drops. Enrolled with a one-time token and revocable. |
+| Integrations | **Zscaler** over OneAPI (ZIA locations and tunnels, ZPA App Connectors, ZDX app scores, Client Connector fleet, Zero Trust Branch sites), **Cisco Meraki** (cloud); **Palo Alto PAN-OS**, **Fortinet FortiGate**, **UniFi**, **Proxmox VE** (called by a poller, inside your network). A Proxmox node that's also polled over SNMP shows as one device with both data sets. |
+| REST API | `/api/v1` with read-only or read-write keys; reference at `/api/docs` |
+
+```
+linkwatch/server        FastAPI web app, PostgreSQL (SQLite for local runs), alerting
+linkwatch/poller        the LAN poller (pysnmp, ping, local APIs, spool)
+linkwatch/integrations  one module per platform, shared by server and poller
+deploy/                 Quadlet units, nginx site, deploy.sh, bootstrap-centos9.sh
+docs/                   install-centos9.md (VPS walkthrough, firewalld), poller.md
+```
+
+**Install on the VPS:** follow [docs/install-centos9.md](docs/install-centos9.md).
+**Install a poller:** [docs/poller.md](docs/poller.md).
+
+### Run it locally
+
+```sh
+python -m venv .venv && . .venv/bin/activate
+pip install -r linkwatch/requirements-dev.txt
+export LW_SECRET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+export LW_ADMIN_PASSWORD=changeme
+uvicorn --factory linkwatch.server.app:create_app --port 8080       # http://localhost:8080
+# in another shell, after creating a token on the Pollers page:
+LW_SERVER=http://localhost:8080 LW_ENROLL_TOKEN=enr_... LW_DATA_DIR=./data/poller python -m linkwatch.poller
+python -m pytest -q tests/linkwatch
+```
+
+### Server settings (environment)
+
+| Variable | Default | |
+| --- | --- | --- |
+| `LW_SECRET_KEY` | (required) | Fernet key; encrypts stored credentials and signs sessions |
+| `LW_ADMIN_PASSWORD` | (required to sign in) | Web UI password |
+| `LW_DATABASE_URL` | `sqlite:///./data/linkwatch.db` | `postgresql+psycopg://user:pass@host/db` in production |
+| `LW_PUBLIC_URL` | `http://localhost:8080` | Used in alert links and the poller install command |
+| `LW_POLL_INTERVAL` | `300` | Seconds; can also be changed in Settings |
+| `LW_RAW_DAYS` / `LW_HOURLY_DAYS` | `7` / `365` | Retention of 5-minute samples and hourly averages |
+
+---
+
+## Zscaler Toolbox (ZIA module)
 
 A self-hosted console for Zscaler admins. It is being built one module at a
 time; this first module covers **ZIA**. ZPA and ZDX come next.

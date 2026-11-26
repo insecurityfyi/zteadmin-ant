@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Integrations</h1><p>Platforms read over their APIs. Cloud APIs are called from this server; on-prem APIs are called by a poller so they stay inside your network.</p></div></div>
+{% if integrations %}
+<div class="ints">
+{% for i in integrations %}{% set cls = registry.get(i.kind) %}
+  <a class="int" href="/integrations/{{ i.id }}">
+    <div><h3>{{ i.name }}</h3><div class="sub"><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(i.status, 'd-off') }}"></span> {{ {'ok':'Connected','partial':'Partly working','error':'Failing','never':'Not synced yet'}[i.status] }}{% if not i.enabled %} · paused{% endif %}</div></div>
+    <p>{{ cls.label if cls else i.kind }} · {{ 'via ' ~ i.poller.name if i.poller else 'from the server' }}</p>
+    {% if i.last_error %}<p class="{{ 'bad' if i.status == 'error' else 'wa' }}">{{ i.last_error[:160] }}</p>{% endif %}
+    <div class="meta"><span>{{ i.object_count }} objects</span><span>{{ i.last_sync|ago }}</span></div>
+  </a>
+{% endfor %}
+</div>
+{% endif %}
+<div class="p"><div class="ph"><h2>Add an integration</h2></div>
+  <div class="ints">
+  {% for kind, cls in registry.items() %}
+    <a class="int" href="/integrations/new?kind={{ kind }}"><h3>{{ cls.label }}</h3><p>{{ cls.description }}</p>
+      <div class="meta"><span>{{ 'Runs on a poller' if cls.runs_on == 'poller' else 'Runs on the server' }}</span><span>Add</span></div></a>
+  {% endfor %}
+  </div></div>
+{% endblock %}
