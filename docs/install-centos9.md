@@ -410,6 +410,7 @@ small VM or LXC container on Proxmox works well.
 
 ```sh
 podman run -d --name linkwatch-poller --restart=always \
+  --cap-add=NET_RAW \
   -e LW_SERVER=https://utilz.perrego.net \
   -e LW_ENROLL_TOKEN=enr_xxxxxxxx \
   -e LW_POLLER_NAME=poller-hq-01 \

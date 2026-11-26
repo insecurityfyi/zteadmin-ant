@@ -93,3 +93,21 @@ def test_discover_message_queues_result_when_offline(tmp_path, monkeypatch):
     asyncio.run(go())
     assert p.outbox[0] == {"type": "discovery_result", "job_id": 5, "scanned": 2, "total": 2, "found": [{"ip": "192.0.2.1", "rtt_ms": 1.0}]}
     assert p.outbox[1]["job_id"] == 6 and "not an IPv4" in p.outbox[1]["error"]
+
+
+def test_ping_without_icmp_permission_returns_none(monkeypatch):
+    import linkwatch.poller.ping as pg
+
+    async def denied(*a, **kw):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(pg.asyncio, "create_subprocess_exec", denied)
+    assert asyncio.run(pg.ping("192.0.2.1")) is None
+
+    class Proc:
+        async def communicate(self):
+            return b"ping: socket: Address family not supported by protocol\n", None
+
+    async def no_socket(*a, **kw):
+        return Proc()
+    monkeypatch.setattr(pg.asyncio, "create_subprocess_exec", no_socket)
+    assert asyncio.run(pg.ping("192.0.2.1")) is None
