@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+import httpx
+
 from .base import Field, Integration, IntegrationError, Record
 
 BASE = "https://api.meraki.com/api/v1"
@@ -27,16 +29,25 @@ class Meraki(Integration):
         return key[6:] if key.lower().startswith("bearer") else key
 
     def _get(self, url: str, **kw):
-        key = self._key()
+        # Bearer only: Meraki rejects newer keys sent in X-Cisco-Meraki-API-Key. Redirects to a regional
+        # shard are followed by hand so the Authorization header is re-sent (httpx drops it across hosts).
+        headers = {"Authorization": f"Bearer {self._key()}", "Accept": "application/json"}
         try:
-            return super()._get(url, follow_redirects=True, **kw, headers={
-                # Meraki's own header survives redirects to regional shards (httpx drops Authorization on those).
-                "X-Cisco-Meraki-API-Key": key, "Authorization": f"Bearer {key}", "Accept": "application/json"})
+            for _ in range(5):
+                resp = super()._get(url, headers=headers, **kw)
+                loc = resp.headers.get("Location") if resp.status_code in (301, 302, 303, 307, 308) else None
+                if not loc:
+                    return resp
+                target = httpx.URL(url).join(loc)
+                if target.scheme != "https" or not (target.host == "meraki.com" or target.host.endswith(".meraki.com")):
+                    raise IntegrationError(f"Meraki redirected to an unexpected host: {target.host}")
+                url, kw = str(target), {k: v for k, v in kw.items() if k != "params"}
+            raise IntegrationError("Too many redirects from the Meraki API")
         except IntegrationError as exc:
             if "rejected the credentials" in str(exc):
                 raise IntegrationError(
-                    f"{exc}. Meraki says the API key is invalid: check it was copied whole, that API access is "
-                    "enabled under Organization > Settings, and that the key's admin still exists") from None
+                    f"{exc}. Meraki refused the API key: check it was copied whole, that API access is enabled under "
+                    "Organization > Settings, and that the server's IP is allowed if the organization restricts API access by IP") from None
             raise
 
     def _paged(self, path: str, params: dict | None = None) -> list[dict]:

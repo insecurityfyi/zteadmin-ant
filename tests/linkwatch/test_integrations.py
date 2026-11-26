@@ -90,7 +90,7 @@ def test_meraki_key_cleanup_headers_and_401_hint():
     respx.get("https://api.meraki.com/api/v1/organizations").mock(side_effect=orgs)
     with pytest.raises(IntegrationError, match="HTTP 401.*API access is enabled"):
         build("meraki", {"api_key": " Bearer abc123\n "}).collect()
-    assert seen["x-cisco-meraki-api-key"] == "abc123" and seen["authorization"] == "Bearer abc123"
+    assert seen["authorization"] == "Bearer abc123" and "x-cisco-meraki-api-key" not in seen
 
 
 @respx.mock
@@ -99,7 +99,11 @@ def test_meraki_follows_shard_redirect_with_key():
         return_value=httpx.Response(307, headers={"Location": "https://n42.meraki.com/api/v1/organizations"}))
     shard = respx.get("https://n42.meraki.com/api/v1/organizations").mock(return_value=httpx.Response(200, json=[{"id": "7"}]))
     assert build("meraki", {"api_key": "k"}).org_id() == "7"
-    assert shard.calls.last.request.headers["x-cisco-meraki-api-key"] == "k"
+    assert shard.calls.last.request.headers["authorization"] == "Bearer k"
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(
+        return_value=httpx.Response(302, headers={"Location": "https://evil.example/steal"}))
+    with pytest.raises(IntegrationError, match="unexpected host"):
+        build("meraki", {"api_key": "k"}).org_id()
 
 
 @respx.mock
