@@ -7,6 +7,13 @@ newer ``integration/v1`` API leaves out:
   ports with byte counters, radios, SSIDs per AP and the WAN links
 * ``stat/sta``     connected clients: SSID, AP or switch port, signal, link
   rate, current download/upload rate and totals
+
+Each client is also marked directly attached or not. A Wi-Fi client associated
+to a UniFi AP is direct. A wired client is direct only when it is the one MAC
+seen on an access port of a UniFi switch: not an uplink, not a port another UniFi
+device hangs off, and no other LLDP neighbour on it. Everything else (MACs
+learned through a downstream switch, a hub or a phone's PC port, or seen only by
+the gateway) is kept but marked with the reason.
 * ``rest/wlanconf`` the configured SSIDs (so idle ones show up too)
 * ``stat/health``  WAN/ISP summary and internet latency
 
@@ -142,6 +149,7 @@ class UniFi(Integration):
         aps: list[dict] = []
         wans: list[dict] = []
         ssids: dict[str, dict] = {}
+        switch_ports: list[dict] = []
         health: dict[str, Any] = {}
         sites = self._sites()
         multi = len(sites) > 1
@@ -160,8 +168,9 @@ class UniFi(Integration):
                         "name": name, "site": sname, "enabled": bool(w.get("enabled", True)), "security": w.get("security"),
                         "band": w.get("wlan_band"), "vlan": w.get("vlan") if w.get("vlan_enabled") else None,
                         "guest": bool(w.get("is_guest")), "clients": 0, "down_bps": 0.0, "up_bps": 0.0, "aps": set()})
-            for c in self._api(f"/s/{sid}/stat/sta"):
-                clients.append(self._client(c, sname, names))
+            site_clients = [self._client(c, sname, names) for c in self._api(f"/s/{sid}/stat/sta")]
+            switch_ports.extend(attachment(devices, site_clients, sname, names))
+            clients.extend(site_clients)
             for h in self._safe(f"/s/{sid}/stat/health"):
                 sub = h.get("subsystem")
                 if sub == "wan" and not health.get("isp"):
@@ -199,6 +208,8 @@ class UniFi(Integration):
         self.data = {
             "type": "unifi",
             "summary": {"clients": len(clients), "wireless": wireless, "wired": len(clients) - wireless,
+                        "direct": sum(1 for c in clients if c.get("direct")),
+                        "direct_wired": sum(1 for c in clients if c.get("direct") and c["wired"]),
                         "guests": sum(1 for c in clients if c.get("guest")),
                         "aps": len(aps), "aps_up": sum(1 for a in aps if a["status"] == "up"),
                         "down_bps": sum(w.get("down_bps") or 0 for w in wans if w.get("up") is not False),
@@ -208,6 +219,7 @@ class UniFi(Integration):
             "ssids": sorted(ssids.values(), key=lambda s: (-s["clients"], s["name"])),
             "aps": sorted(aps, key=lambda a: -a["clients"]),
             "clients": clients[:MAX_CLIENTS],
+            "switch_ports": switch_ports,
         }
         if len(clients) > MAX_CLIENTS:
             self.errors.append(f"Only the {MAX_CLIENTS} busiest of {len(clients)} clients are kept")
@@ -328,7 +340,7 @@ class UniFi(Integration):
             "ip": c.get("ip") or c.get("last_ip"), "site": site, "wired": wired, "guest": bool(c.get("is_guest")),
             "vendor": c.get("oui"), "network": c.get("network"), "vlan": c.get("vlan"),
             "ssid": None if wired else c.get("essid"), "ap_mac": c.get("ap_mac"), "ap": names.get(c.get("ap_mac")) if c.get("ap_mac") else None,
-            "switch": names.get(sw, sw) if sw else None, "switch_port": c.get("sw_port"),
+            "switch": names.get(sw, sw) if sw else None, "switch_mac": sw, "switch_port": c.get("sw_port"),
             "band": BAND.get(c.get("radio"), c.get("radio")), "channel": c.get("channel"), "proto": c.get("radio_proto"),
             "signal": _num(c.get("signal")), "rssi": _num(c.get("rssi")), "noise": _num(c.get("noise")),
             "satisfaction": _num(c.get("satisfaction")),
@@ -339,3 +351,87 @@ class UniFi(Integration):
             "up_bytes": _num(c.get("wired-rx_bytes") if wired else c.get("rx_bytes")),
             "uptime_s": c.get("uptime"),
         }
+
+
+def _mac(v: Any) -> str:
+    return str(v or "").strip().lower()
+
+
+def attachment(devices: list[dict], clients: list[dict], site: str, names: dict) -> list[dict]:
+    """Marks each client direct or not (sets ``direct``, ``attach`` and ``attach_note``) and returns one row per switch port.
+
+    ``attach`` is one of: wifi, port (direct), uplink, unifi, shared, neighbour, gateway (not direct).
+    """
+    by_mac = {_mac(d.get("mac")): d for d in devices}
+    # ports that lead to another UniFi device: that device reports which port of which switch it hangs off
+    downlinks: dict[tuple[str, int], str] = {}
+    for d in devices:
+        up = d.get("uplink") or {}
+        if up.get("uplink_mac") and up.get("uplink_remote_port") is not None:
+            try:
+                downlinks[(_mac(up["uplink_mac"]), int(up["uplink_remote_port"]))] = str(d.get("name") or d.get("mac"))
+            except (TypeError, ValueError):
+                pass
+    on_port: dict[tuple[str, int], list[dict]] = {}
+    for c in clients:
+        if c["wired"] and c.get("switch_mac") and c.get("switch_port") is not None:
+            try:
+                on_port.setdefault((_mac(c["switch_mac"]), int(c["switch_port"])), []).append(c)
+            except (TypeError, ValueError):
+                pass
+
+    info: dict[tuple[str, int], dict] = {}
+    rows: list[dict] = []
+    for d in devices:
+        dmac = _mac(d.get("mac"))
+        lldp: dict[int, list[dict]] = {}
+        for n in d.get("lldp_table") or []:
+            try:
+                lldp.setdefault(int(n.get("local_port_idx")), []).append(n)
+            except (TypeError, ValueError):
+                continue
+        for p in d.get("port_table") or []:
+            if p.get("port_idx") is None:
+                continue
+            idx = int(p["port_idx"])
+            key = (dmac, idx)
+            here = on_port.get(key, [])
+            macs = {_mac(c["mac"]) for c in here}
+            others = [n for n in lldp.get(idx, []) if _mac(n.get("chassis_id")) not in macs]
+            neighbour = next((str(n.get("system_name") or n.get("chassis_name") or n.get("chassis_id") or "") for n in others), None)
+            if p.get("is_uplink"):
+                role, note = "uplink", "Uplink port"
+            elif key in downlinks:
+                role, note = "unifi", f"Port to {downlinks[key]}"
+            elif others:
+                role, note = "neighbour", f"LLDP neighbour {neighbour}"
+            elif len(here) > 1:
+                role, note = "shared", f"{len(here)} MACs on this port: a switch, hub or phone passthrough"
+            elif here:
+                role, note = "client", ""
+            else:
+                role, note = ("empty" if p.get("up") else "down"), ""
+            info[key] = {"role": role, "note": note}
+            if d.get("type") in ("usw", "udm", "uxg", "ugw") or here or p.get("is_uplink"):
+                alias = p.get("name") if p.get("name") and p.get("name") != f"Port {idx}" else ""
+                rows.append({"switch": names.get(d.get("mac")) or d.get("name") or d.get("mac"), "switch_mac": d.get("mac"), "site": site,
+                             "port": idx, "name": alias, "up": bool(p.get("up")), "enabled": p.get("enable", True) is not False,
+                             "speed_mbps": int(p["speed"]) if p.get("up") and p.get("speed") else None,
+                             "poe_w": _num(p.get("poe_power")) or None, "role": role, "note": note, "neighbour": neighbour,
+                             "clients": [{"mac": c["mac"], "name": c["name"], "ip": c.get("ip")} for c in here[:8]], "client_count": len(here)})
+
+    for c in clients:
+        if not c["wired"]:
+            c["attach"], c["attach_note"] = ("wifi", "") if c.get("ap_mac") else ("unknown", "No access point reported")
+        elif not c.get("switch_mac") or c.get("switch_port") is None:
+            c["attach"], c["attach_note"] = "gateway", "Seen by the gateway only, not on a UniFi switch port"
+        else:
+            try:
+                key = (_mac(c["switch_mac"]), int(c["switch_port"]))
+            except (TypeError, ValueError):
+                key = ("", 0)
+            role = info.get(key, {"role": "client" if key[0] in by_mac else "gateway", "note": ""})
+            c["attach"] = "port" if role["role"] == "client" else role["role"]
+            c["attach_note"] = role["note"] or ("" if c["attach"] == "port" else "Switch port not reported")
+        c["direct"] = c["attach"] in ("wifi", "port")
+    return rows
