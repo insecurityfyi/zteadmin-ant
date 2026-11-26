@@ -86,6 +86,17 @@ def fmt_speed(mbps) -> str:
     return f"{mbps // 1000}G" if mbps >= 1000 and mbps % 1000 == 0 else f"{mbps}M"
 
 
+def fmt_bytes(v) -> str:
+    if v is None:
+        return "–"
+    v = float(v)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if v < 1000 or unit == "TB":
+            return f"{v:.0f} {unit}" if unit == "B" or v >= 100 else f"{v:.1f} {unit}"
+        v /= 1000
+    return f"{v:.1f} TB"
+
+
 def flash(request: Request, message: str, kind: str = "ok") -> None:
     request.session.setdefault("flash", []).append([kind, message])
 
@@ -98,7 +109,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     notifier = Notifier(db, vault, config.public_url)
     hub = Hub(db, vault, notifier, config.poll_interval)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
-    templates.env.filters.update(bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed,
+    templates.env.filters.update(bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
                                  num=lambda n: f"{int(n or 0):,}",
                                  pct=lambda v: "–" if v is None else f"{v:.0f}%")
     templates.env.globals.update(version=__version__, public_url=config.public_url)
@@ -217,8 +228,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     from .admin import router as admin_router
     from .api import router as api_router
+    from .unifi_views import router as unifi_router
     from .web import router as web_router
     app.include_router(api_router)
     app.include_router(web_router)
+    app.include_router(unifi_router)
     app.include_router(admin_router)
     return app

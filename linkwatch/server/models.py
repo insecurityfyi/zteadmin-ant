@@ -86,6 +86,7 @@ class Integration(Base):
     status: Mapped[str] = mapped_column(String(16), default="never")   # never | ok | partial | error
     last_error: Mapped[str | None] = mapped_column(Text)
     object_count: Mapped[int] = mapped_column(Integer, default=0)
+    data: Mapped[dict | None] = mapped_column(JSON)    # latest extra payload (UniFi clients, SSIDs, WAN)
     poller: Mapped[Poller | None] = relationship()
 
 
@@ -243,6 +244,24 @@ class PortMetric(Base):
     out_bps: Mapped[float | None] = mapped_column(Float)
     in_err: Mapped[float | None] = mapped_column(Float)
     out_err: Mapped[float | None] = mapped_column(Float)
+
+
+class IntegrationMetric(Base):
+    """Time series an integration reports beyond devices and ports, e.g. "wan:WAN1", "ssid:Office", "client:<mac>".
+
+    a / b / c depend on the key: for wan, ssid, ap and client keys a = download b/s, b = upload b/s;
+    c = latency ms (wan), clients (ssid, ap) or signal dBm (client). For "clients": a = total, b = wireless, c = wired.
+    """
+    __tablename__ = "integration_metrics"
+    __table_args__ = (Index("ix_intmet_key_ts", "integration_id", "key", "ts"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    integration_id: Mapped[int] = mapped_column(ForeignKey("integrations.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(String(160))
+    ts: Mapped[datetime] = mapped_column(DateTime)
+    hourly: Mapped[bool] = mapped_column(Boolean, default=False)
+    a: Mapped[float | None] = mapped_column(Float)
+    b: Mapped[float | None] = mapped_column(Float)
+    c: Mapped[float | None] = mapped_column(Float)
 
 
 class AlertRule(Base):

@@ -194,15 +194,91 @@ def test_proxmox_nodes_and_guests():
     assert respx.calls[0].request.headers["Authorization"] == "PVEAPIToken=mon@pve!lw=x"
 
 
+UNIFI = "https://192.168.1.1/proxy/network/api"
+UNIFI_DEVICES = [
+    {"_id": "1", "mac": "aa:aa:aa:00:00:01", "name": "ap-lobby", "type": "uap", "model": "U7PRO", "state": 1, "ip": "192.168.1.20",
+     "version": "7.0.66", "uptime": 86400, "num_sta": 2, "satisfaction": 97, "system-stats": {"cpu": "12.5", "mem": "40.1"},
+     "radio_table": [{"name": "wifi0", "radio": "ng", "channel": 6}, {"name": "wifi1", "radio": "na", "channel": 36}],
+     "radio_table_stats": [{"name": "wifi0", "channel": 6, "num_sta": 1, "cu_total": 35}, {"name": "wifi1", "channel": 36, "num_sta": 1, "cu_total": 12}],
+     "vap_table": [{"essid": "Office"}, {"essid": "Guest"}],
+     "port_table": [{"port_idx": 1, "name": "Port 1", "up": True, "enable": True, "speed": 2500, "rx_bytes": 1000, "tx_bytes": 5000}]},
+    {"_id": "2", "mac": "aa:aa:aa:00:00:02", "name": "sw-core", "type": "usw", "model": "USW24P", "state": 0, "num_sta": 1,
+     "port_table": [{"port_idx": 1, "up": True, "speed": 1000, "rx_bytes": 10, "tx_bytes": 20, "poe_power": "4.20"},
+                    {"port_idx": 2, "name": "printer", "up": False, "enable": True}]},
+    {"_id": "3", "mac": "aa:aa:aa:00:00:03", "name": "udm", "type": "udm", "model": "UDMPRO", "state": 1, "serial": "X1",
+     "wan1": {"up": True, "ip": "203.0.113.5", "rx_bytes-r": 1_250_000, "tx_bytes-r": 125_000, "speed": 1000},
+     "wan2": {"up": False, "ip": "", "enable": True}},
+]
+UNIFI_CLIENTS = [
+    {"mac": "cc:00:00:00:00:01", "hostname": "laptop", "ip": "192.168.1.50", "essid": "Office", "ap_mac": "aa:aa:aa:00:00:01",
+     "radio": "na", "channel": 36, "signal": -55, "tx_rate": 866000, "rx_rate": 650000, "tx_bytes-r": 500_000, "rx_bytes-r": 50_000,
+     "tx_bytes": 9_000_000, "rx_bytes": 1_000_000, "uptime": 3600, "satisfaction": 95, "oui": "Apple"},
+    {"mac": "cc:00:00:00:00:02", "name": "phone", "essid": "Guest", "is_guest": True, "ap_mac": "aa:aa:aa:00:00:01", "radio": "ng",
+     "signal": -78, "tx_bytes-r": 1000, "rx_bytes-r": 2000},
+    {"mac": "cc:00:00:00:00:03", "hostname": "nas", "is_wired": True, "sw_mac": "aa:aa:aa:00:00:02", "sw_port": 5,
+     "wired-tx_bytes-r": 10_000, "wired-rx_bytes-r": 20_000, "tx_bytes-r": 1, "rx_bytes-r": 1},
+]
+
+
+def mock_unifi(base=UNIFI):
+    ok = lambda data: httpx.Response(200, json={"meta": {"rc": "ok"}, "data": data})  # noqa: E731
+    respx.get(f"{base}/self/sites").mock(return_value=ok([{"name": "default", "desc": "Default"}]))
+    respx.get(f"{base}/s/default/stat/device").mock(return_value=ok(UNIFI_DEVICES))
+    respx.get(f"{base}/s/default/stat/sta").mock(return_value=ok(UNIFI_CLIENTS))
+    respx.get(f"{base}/s/default/rest/wlanconf").mock(return_value=ok([
+        {"name": "Office", "enabled": True, "security": "wpapsk", "vlan_enabled": True, "vlan": "20"},
+        {"name": "Guest", "is_guest": True}, {"name": "IoT", "enabled": False}]))
+    respx.get(f"{base}/s/default/stat/health").mock(return_value=ok([
+        {"subsystem": "wan", "status": "ok", "isp_name": "Fiber Co", "wan_ip": "203.0.113.5"},
+        {"subsystem": "www", "status": "ok", "latency": 9, "xput_down": 940.2, "xput_up": 880.1}]))
+
+
 @respx.mock
-def test_unifi_devices():
-    base = "https://192.168.1.1/proxy/network/integration/v1"
-    respx.get(f"{base}/sites").mock(return_value=httpx.Response(200, json={"data": [{"id": "s1", "name": "Default"}]}))
-    respx.get(f"{base}/sites/s1/devices").mock(return_value=httpx.Response(200, json={"totalCount": 2, "data": [
-        {"id": "d1", "name": "ap-lobby", "model": "U7 Pro", "state": "ONLINE", "features": ["accessPoint"], "ipAddress": "192.168.1.20"},
-        {"id": "d2", "name": "sw-core", "state": "OFFLINE", "features": ["switching"]}]}))
-    recs = build("unifi", {"host": "192.168.1.1", "api_key": "k"}).collect()
-    assert [(r["type"], r["status"]) for r in recs] == [("Wireless", "up"), ("Switch", "down")]
+def test_unifi_devices_clients_ssids_wan():
+    mock_unifi()
+    client = build("unifi", {"host": "192.168.1.1", "api_key": "k"})
+    recs = client.collect()
+    assert respx.calls[0].request.headers["X-API-KEY"] == "k"
+    ap, sw, gw = recs
+    assert (ap["type"], ap["status"], ap["cpu"], ap["mem"]) == ("Wireless", "up", 12.5, 40.1)
+    assert "5 GHz ch 36" in ap["extra"]["radios"] and ap["ports"][0]["speed_mbps"] == 2500
+    assert (sw["type"], sw["status"]) == ("Switch", "down")
+    assert sw["ports"][1] == {**sw["ports"][1], "alias": "printer", "oper": "down", "speed_mbps": None}
+    assert "PoE 4.20 W" in sw["ports"][0]["alias"]
+    assert (gw["type"], gw["status"]) == ("Router", "warn") and gw["detail"].startswith("WAN2 down")
+
+    data = client.data
+    s = data["summary"]
+    assert (s["clients"], s["wireless"], s["wired"], s["guests"], s["aps"], s["aps_up"]) == (3, 2, 1, 1, 1, 1)
+    assert s["down_bps"] == 10_000_000 and s["up_bps"] == 1_000_000      # only the WAN that is up
+    assert s["isp"] == "Fiber Co" and s["latency_ms"] == 9
+    by = {x["name"]: x for x in data["ssids"]}
+    assert by["Office"]["clients"] == 1 and by["Office"]["down_bps"] == 4_000_000 and by["Office"]["vlan"] == "20"
+    assert by["IoT"]["clients"] == 0 and by["IoT"]["enabled"] is False
+    laptop = data["clients"][0]
+    assert (laptop["name"], laptop["ap"], laptop["band"], laptop["signal"], laptop["tx_rate_mbps"]) == ("laptop", "ap-lobby", "5 GHz", -55, 866.0)
+    nas = next(c for c in data["clients"] if c["wired"])
+    assert (nas["switch"], nas["switch_port"], nas["down_bps"], nas["ssid"]) == ("sw-core", 5, 80_000, None)
+    assert data["aps"][0]["down_bps"] == 4_008_000 and data["aps"][0]["ssids"] == ["Guest", "Office"]
+    assert "3 clients" in client.test()
+
+
+@respx.mock
+def test_unifi_username_login_on_classic_controller():
+    respx.post("https://10.0.0.5:8443/api/auth/login").mock(return_value=httpx.Response(404))
+    respx.post("https://10.0.0.5:8443/api/login").mock(return_value=httpx.Response(200, json={"meta": {"rc": "ok"}}))
+    mock_unifi("https://10.0.0.5:8443/api")
+    recs = build("unifi", {"host": "10.0.0.5:8443", "username": "ro", "password": "pw", "site": "Default"}).collect()
+    assert len(recs) == 3
+
+
+@respx.mock
+def test_unifi_bad_key_explains_where_to_create_one():
+    respx.get(f"{UNIFI}/self/sites").mock(return_value=httpx.Response(401))
+    with pytest.raises(IntegrationError, match="Control Plane > Integrations"):
+        build("unifi", {"host": "192.168.1.1", "api_key": "bad"}).collect()
+    with pytest.raises(IntegrationError, match="API key, or a local username"):
+        build("unifi", {"host": "192.168.1.1"})
 
 
 @respx.mock

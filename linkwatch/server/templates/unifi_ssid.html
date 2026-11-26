@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_unifi_macros.html" import ranges, bw_chart, client_rows, client_head, table_js %}
+{% block title %}{{ ssid.name }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/unifi?i={{ integ.id }}">Wi-Fi &amp; clients</a> / SSIDs</div>
+  <h1>{{ ssid.name }}</h1>
+  <p>{{ ssid.clients }} client{{ '' if ssid.clients == 1 else 's' }} · {{ ssid.down_bps|bps }} down, {{ ssid.up_bps|bps }} up now{% if ssid.security %} · {{ ssid.security }}{% endif %}{% if ssid.vlan %} · VLAN {{ ssid.vlan }}{% endif %}{% if not ssid.enabled %} · <span class="wa">disabled</span>{% endif %}</p></div>
+  {{ ranges() }}</div>
+<div class="grid">
+  <div class="p c8"><div class="ph"><h2>Bandwidth</h2><span class="sub">sum of its clients, b/s</span></div>{{ bw_chart(integ, ssid.series, 220, 'SSID bandwidth') }}</div>
+  <div class="p c4"><div class="ph"><h2>Clients</h2></div>
+    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ ssid.series|urlencode }}" data-unit="num" data-h="220" data-label="Clients" data-series='[{"key":"c","color":"var(--s1)"}]'></div></div>
+  <div class="p"><div class="ph"><h2>Broadcast by</h2></div>
+    {% for a in aps %}<span class="tag" style="margin:0 6px 6px 0">{% if device_ids.get(a.mac) %}<a href="/devices/{{ device_ids[a.mac] }}">{{ a.name }}</a>{% else %}{{ a.name }}{% endif %}</span>{% else %}<span class="dim">No access point reports this SSID right now.</span>{% endfor %}</div>
+  <div class="p" data-clients><div class="ph"><h2>Clients on {{ ssid.name }} <span class="sub" data-count>{{ clients|length }}</span></h2>
+    <input type="search" placeholder="Filter" aria-label="Filter clients" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></div>
+    <div class="scroll"><table>{{ client_head() }}<tbody>{{ client_rows(clients, integ.id) }}</tbody></table></div></div>
+</div>
+{{ table_js() }}
+{% endblock %}

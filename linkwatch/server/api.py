@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from .gateway import EnrollError
-from .models import Alert, ApiKey, Device, DeviceMetric, Port, PortMetric, utcnow
+from .models import Alert, ApiKey, Device, DeviceMetric, IntegrationMetric, Port, PortMetric, utcnow
 from .security import sha256
 
 router = APIRouter()
@@ -197,3 +197,36 @@ def device_metrics_ui(device_id: int, request: Request, range: str = "24h"):
 @router.get("/ui/metrics/port/{port_id}", include_in_schema=False)
 def port_metrics_ui(port_id: int, request: Request, range: str = "24h"):
     return _port_series(request, port_id, range)
+
+
+def _integration_series(request: Request, integration_id: int, key: str, rng: str) -> dict[str, list]:
+    since, hourly = _window(rng)
+    with lw(request).db.session() as s:
+        rows = s.execute(select(IntegrationMetric.ts, IntegrationMetric.a, IntegrationMetric.b, IntegrationMetric.c)
+                         .where(IntegrationMetric.integration_id == integration_id, IntegrationMetric.key == key,
+                                IntegrationMetric.hourly.is_(hourly), IntegrationMetric.ts >= since)
+                         .order_by(IntegrationMetric.ts)).all()
+    return {"ts": [r[0].isoformat() + "Z" for r in rows], "a": [r[1] for r in rows], "b": [r[2] for r in rows],
+            "c": [r[3] for r in rows]}
+
+
+@router.get("/ui/metrics/integration/{integration_id}/{key:path}", include_in_schema=False)
+def integration_metrics_ui(integration_id: int, key: str, request: Request, range: str = "24h"):
+    return _integration_series(request, integration_id, key, range)
+
+
+@router.get("/api/v1/integrations/{integration_id}/metrics", tags=["integrations"])
+def integration_metrics_api(integration_id: int, key: str, request: Request, range: str = "24h", _: ApiKey = Depends(api_key)):
+    """Series such as clients, wan:total, ssid:<name>, ap:<mac>, client:<mac>. a = down b/s, b = up b/s (clients: a = total)."""
+    return _integration_series(request, integration_id, key, range)
+
+
+@router.get("/api/v1/integrations/{integration_id}/data", tags=["integrations"])
+def integration_data_api(integration_id: int, request: Request, _: ApiKey = Depends(api_key)):
+    """Latest snapshot an integration reported beyond devices (UniFi: summary, wans, ssids, aps, clients)."""
+    from .models import Integration
+    with lw(request).db.session() as s:
+        integ = s.get(Integration, integration_id)
+        if integ is None:
+            raise HTTPException(404, "No such integration")
+        return integ.data or {}

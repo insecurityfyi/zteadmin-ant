@@ -135,3 +135,4 @@ pre.cmd{background:var(--rail);color:#d6e3ea;border-radius:8px;padding:12px 14px
   .content,.top{padding-left:16px;padding-right:16px}
 }
 .btn:disabled,.btn[disabled]{opacity:.45;cursor:not-allowed}
+.nw{white-space:nowrap}

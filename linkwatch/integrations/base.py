@@ -34,6 +34,7 @@ class Record(TypedDict, total=False):
     serial: str | None
     detail: str               # one line shown in the UI
     extra: dict[str, Any]
+    ports: list[dict[str, Any]]   # optional, same shape as SNMP ports (ifindex, name, in_octets...)
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,9 @@ class Integration:
 
     def collect(self) -> list[Record]:  # pragma: no cover - abstract
         raise NotImplementedError
+
+    # Optional extra payload beyond device records (UniFi clients, SSIDs, WAN...). Set by collect().
+    data: dict[str, Any] | None = None
 
     def test(self) -> str:
         records = self.collect()

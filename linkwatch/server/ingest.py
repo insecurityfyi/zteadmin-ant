@@ -1,6 +1,7 @@
 """Turn poller and integration results into device state, metrics and alerts."""
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .alerts import Alerter
-from .models import Device, DeviceMetric, Integration, Port, PortMetric, ProcessedBatch, Site, utcnow
+from .models import Device, DeviceMetric, Integration, IntegrationMetric, Port, PortMetric, ProcessedBatch, Site, utcnow
 
 COUNTER32 = 2**32
 
@@ -172,6 +173,8 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
             s.add(dev)
         _apply_record(s, dev, integ, rec, ts)
         s.flush()
+        if rec.get("ports") and dev.source == integ.kind:   # SNMP-polled boxes keep their SNMP ports
+            _update_ports(s, dev, rec["ports"], float(item.get("ts") or time.time()), ts)
         if dev.cpu is not None or dev.mem is not None:
             s.add(DeviceMetric(device_id=dev.id, ts=ts, cpu=dev.cpu, mem=dev.mem))
         alerter.evaluate_device(dev)
@@ -180,6 +183,46 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
         if ext not in seen and dev.source == integ.kind and dev.status != "unknown":
             set_status(dev, "unknown", f"No longer reported by {integ.name}")
             alerter.evaluate_device(dev)
+    if item.get("data"):
+        ingest_integration_data(s, integ, item["data"], ts)
+
+
+MAX_CLIENT_SERIES = 1000
+
+
+def integration_series(data: dict[str, Any]) -> list[tuple[str, float | None, float | None, float | None]]:
+    """Time-series points from an integration's extra payload (see IntegrationMetric for what a/b/c mean)."""
+    out: list[tuple[str, float | None, float | None, float | None]] = []
+    summ = data.get("summary") or {}
+    if "clients" in summ:
+        out.append(("clients", summ.get("clients"), summ.get("wireless"), summ.get("wired")))
+    if data.get("wans"):
+        out.append(("wan:total", summ.get("down_bps"), summ.get("up_bps"), summ.get("latency_ms")))
+    for w in data.get("wans") or []:
+        w["series"] = f"wan:{w['device']}/{w.get('name')}" if w.get("device") else f"wan:{w.get('name')}"
+        out.append((w["series"], w.get("down_bps"), w.get("up_bps"), None))
+    multi = len(summ.get("sites") or []) > 1
+    for x in data.get("ssids") or []:
+        x["series"] = f"ssid:{x.get('site')} / {x.get('name')}" if multi else f"ssid:{x.get('name')}"
+        out.append((x["series"], x.get("down_bps"), x.get("up_bps"), x.get("clients")))
+    for x in data.get("aps") or []:
+        if x.get("mac"):
+            x["series"] = f"ap:{x['mac']}"
+            out.append((x["series"], x.get("down_bps"), x.get("up_bps"), x.get("clients")))
+    for x in (data.get("clients") or [])[:MAX_CLIENT_SERIES]:
+        if x.get("mac"):
+            x["series"] = f"client:{x['mac']}"
+            out.append((x["series"], x.get("down_bps"), x.get("up_bps"), x.get("signal")))
+    return out
+
+
+def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:
+    if not isinstance(data, dict):
+        return
+    points = integration_series(data)      # also tags each item with its series key
+    integ.data = {**data, "ts": ts.isoformat() + "Z"}
+    for key, a, b, c in points:
+        s.add(IntegrationMetric(integration_id=integ.id, key=key[:160], ts=ts, a=a, b=b, c=c))
 
 
 def _apply_record(s: Session, dev: Device, integ: Integration, rec: dict, ts: datetime) -> None:

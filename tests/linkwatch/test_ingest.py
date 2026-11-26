@@ -128,3 +128,56 @@ def test_integration_failure_opens_alert(tmp_path):
         al = Alerter(s)
         ingest_integration(s, al, integ, {"ok": False, "error": "rejected the credentials"})
         assert integ.status == "error" and al.events[0].title == "Integration failing: Meraki"
+
+
+def test_unifi_data_ports_and_series(tmp_path):
+    import respx
+    from linkwatch.integrations import build
+    from linkwatch.server.models import IntegrationMetric, Port
+    from tests.linkwatch.test_integrations import mock_unifi
+
+    with respx.mock:
+        mock_unifi()
+        client = build("unifi", {"host": "192.168.1.1", "api_key": "k"})
+        records = client.collect()
+    db = make_db(tmp_path)
+    with db.session() as s:
+        s.add(Integration(id=5, kind="unifi", name="UniFi", config_enc="-", poller_id=1))
+    t0 = time.time() - 600
+    for i, ts in enumerate((t0, t0 + 300)):
+        recs = [dict(r, ports=[dict(p, in_octets=(p["in_octets"] or 0) + i * 37_500, out_octets=p["out_octets"]) for p in r.get("ports", [])])
+                for r in records]
+        with db.session() as s:
+            ingest_batch(s, 1, batch({"kind": "integration", "integration_id": 5, "ts": ts, "ok": True, "records": recs,
+                                      "data": client.data}))
+    with db.session() as s:
+        integ = s.get(Integration, 5)
+        assert integ.data["summary"]["clients"] == 3 and integ.data["ts"].endswith("Z")
+        assert integ.data["clients"][0]["series"] == "client:cc:00:00:00:00:01"
+        ap = s.scalar(select(Device).where(Device.external_id == "aa:aa:aa:00:00:01"))
+        port = s.scalar(select(Port).where(Port.device_id == ap.id))
+        assert port.speed_mbps == 2500 and round(port.in_bps) == 1000          # 37,500 bytes in 300 s
+        keys = {m.key for m in s.scalars(select(IntegrationMetric))}
+        assert {"clients", "wan:total", "wan:udm/WAN1", "ssid:Office", "ssid:IoT", "ap:aa:aa:aa:00:00:01",
+                "client:cc:00:00:00:00:03"} <= keys
+        office = s.scalars(select(IntegrationMetric).where(IntegrationMetric.key == "ssid:Office")).all()
+        assert len(office) == 2 and office[0].a == 4_000_000 and office[0].c == 1
+
+
+def test_unifi_rollup(tmp_path):
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from linkwatch.server.jobs import rollup_and_prune
+    from linkwatch.server.models import IntegrationMetric, utcnow
+    db = make_db(tmp_path)
+    hour = utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    with db.session() as s:
+        s.add(Integration(id=5, kind="unifi", name="UniFi", config_enc="-"))
+        s.flush()
+        for m, v in ((5, 10.0), (35, 30.0)):
+            s.add(IntegrationMetric(integration_id=5, key="ssid:Office", ts=hour + timedelta(minutes=m), a=v, b=v, c=2))
+    cfg = SimpleNamespace(raw_days=7, hourly_days=365)
+    rollup_and_prune(SimpleNamespace(config=cfg, db=db))
+    with db.session() as s:
+        hourly = s.scalars(select(IntegrationMetric).where(IntegrationMetric.hourly.is_(True))).all()
+        assert [(h.key, h.a, h.c) for h in hourly] == [("ssid:Office", 20.0, 2)]

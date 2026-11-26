@@ -261,11 +261,13 @@ class Poller:
         def work():
             client = build(integ["kind"], integ["config"])
             try:
-                return client.collect(), list(getattr(client, "errors", []) or [])
+                return client.collect(), list(getattr(client, "errors", []) or []), getattr(client, "data", None)
             finally:
                 client.close()
         try:
-            item["records"], item["warnings"] = await asyncio.to_thread(work)
+            item["records"], item["warnings"], data = await asyncio.to_thread(work)
+            if data:
+                item["data"] = data
             item["ok"] = True
         except IntegrationError as exc:
             item["error"] = str(exc)
