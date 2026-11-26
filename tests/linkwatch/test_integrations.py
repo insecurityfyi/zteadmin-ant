@@ -33,7 +33,7 @@ def test_zscaler_oneapi_collects_all_products():
         {"id": 3, "name": "Outlook", "score": 82, "total_users": 40}, {"id": 4, "name": "Teams", "score": 21}]))
     respx.get("https://api.zsapi.net/zcc/papi/public/v1/getDevices").mock(return_value=httpx.Response(200, json=[
         {"agentVersion": "4.5", "osVersion": "Windows 11"}, {"agentVersion": "4.5", "osVersion": "macOS 15"}]))
-    z = build("zscaler", {"vanity_domain": "acme", "client_id": "id", "client_secret": "s", "zpa_customer_id": "999"})
+    z = build("zscaler", {"vanity_domain": "acme", "client_id": "id", "client_secret": "s", "zpa_customer_id": "999", "ai": False})
     recs = {r["external_id"]: r for r in z.collect()}
     assert token.call_count == 1                     # token cached across calls
     assert recs["zpa-ac-a1"]["status"] == "up" and recs["zpa-ac-a2"]["status"] == "down"
@@ -54,6 +54,119 @@ def test_zscaler_product_failure_is_partial():
                           "zia": False, "zpa": False, "zdx": True, "zcc": True})
     recs = z.collect()
     assert len(recs) == 1 and "ZDX" in z.errors[0]
+
+
+AI_ONLY = {"vanity_domain": "acme", "client_id": "ai-id", "client_secret": "s", "zia": False, "zpa": False, "zdx": False, "zcc": False}
+
+
+@pytest.fixture
+def ai_cache():
+    from linkwatch.integrations import zscaler
+    zscaler._AI_CACHE.clear()
+    yield zscaler._AI_CACHE
+    zscaler._AI_CACHE.clear()
+
+
+@respx.mock
+def test_zscaler_ai_telemetry(ai_cache):
+    respx.post("https://acme.zslogin.net/oauth2/v1/token").mock(return_value=httpx.Response(200, json={"access_token": "t", "expires_in": 3600}))
+    catalog = respx.get("https://api.zsapi.net/zia/api/v1/cloudApplications/policy").mock(return_value=httpx.Response(200, json=[
+        {"app": "CHATGPT_AI", "appName": "ChatGPT"}, {"app": "GOOGLE_GEMINI", "appName": "Google Gemini"}, {"app": "DEEPSEEK", "appName": "DeepSeek"}]))
+    respx.get("https://api.zsapi.net/zia/api/v1/webApplicationRules/AI_ML").mock(return_value=httpx.Response(200, json=[
+        {"id": 2, "name": "Block DeepSeek", "order": 1, "state": "ENABLED", "actions": ["DENY_AI_ML_WEB_USE"], "applications": ["DEEPSEEK"]},
+        {"id": 3, "name": "ChatGPT for staff", "order": 2, "actions": ["ALLOW_AI_ML_WEB_USE"], "applications": ["CHATGPT_AI"],
+         "promptCaptureEnabled": True, "groups": [{"id": 9, "name": "Staff"}]},
+        {"id": 4, "name": "Everything else", "order": 3, "actions": ["CAUTION_AI_ML_WEB_USE"], "applications": []},
+        {"id": 5, "name": "Old", "order": 4, "state": "DISABLED", "actions": ["ISOLATE_AI_ML_WEB_USE"], "applications": ["CHATGPT_AI"],
+         "cbiProfile": {"id": "x", "name": "Isolate AI"}}]))
+    apps = {"data": {"SHADOW_IT": {"apps": {"entries": [
+        {"application": "ChatGPT", "application_category": "AI & ML Applications", "risk_index": 3, "sanctioned_state": "SANCTIONED",
+         "data_consumed": 5e9, "data_uploaded": 1e9, "data_downloaded": 4e9, "authenticated_users": 120, "last_access_time": 1795000000000},
+        {"application": "Google Gemini", "application_category": "Collaboration", "risk_index": 2, "sanctioned_state": "UNSANCTIONED",
+         "data_consumed": 2e8, "authenticated_users": 15},
+        {"application": "Perplexity", "application_category": "AI & ML Applications", "sanctioned_state": "UNSANCTIONED",
+         "data_consumed": 1e8, "authenticated_users": 9},
+        {"application": "Dropbox", "application_category": "File Sharing", "data_consumed": 9e9, "authenticated_users": 300}]}}}}
+    summary = {"data": {"SHADOW_IT": {"shadow_it_summary": {"total_bytes": 2e10, "total_apps": 80,
+        "group_by_app_cat_for_app": {"entries": [{"name": "AI & ML Applications", "total": 2}, {"name": "File Sharing", "total": 9}]},
+        "group_by_app_cat_for_user_count": {"entries": [{"name": "AI & ML Applications", "total": 130}]},
+        "group_by_app_cat_for_upload_bytes": {"entries": [{"name": "AI & ML Applications", "total": 1.1e9}]},
+        "group_by_app_cat_for_download_bytes": {"entries": [{"name": "AI & ML Applications", "total": 4e9}]},
+        "group_by_app_cat_for_total_bytes": {"entries": [{"name": "AI & ML Applications", "total": 5.1e9}, {"name": "File Sharing", "total": 9e9}]}}}}}
+    gql = respx.post("https://api.zsapi.net/zins/graphql").mock(
+        side_effect=lambda req: httpx.Response(200, json=apps if json.loads(req.content)["operationName"] == "ShadowITApps" else summary))
+    respx.get("https://api.zsapi.net/zia/api/v1/webDlpRules").mock(return_value=httpx.Response(200, json=[
+        {"id": 1, "name": "PII to AI", "order": 1, "action": "BLOCK", "cloudApplications": ["CHATGPT_AI"], "dlpEngines": [{"id": 1, "name": "PII"}]},
+        {"id": 2, "name": "AI category", "order": 2, "action": "ALLOW", "urlCategories": ["GENERAL_AI_ML"]},
+        {"id": 3, "name": "Unrelated", "cloudApplications": ["DROPBOX"]}]))
+    respx.get("https://api.zsapi.net/aiguard/v1/detections/policies").mock(return_value=httpx.Response(200, json=[{"id": 1, "name": "Default"}]))
+    respx.get("https://api.zsapi.net/aiguard/v1/llm-applications").mock(return_value=httpx.Response(403))
+    respx.get("https://api.zsapi.net/aiguard/v1/llm-providers").mock(return_value=httpx.Response(200, json={"records": [{"name": "OpenAI"}]}))
+
+    z = build("zscaler", AI_ONLY)
+    recs = z.collect()
+    assert z.errors == [] and z.data["products"]["ai"] == {"ok": True, "objects": 1}
+    assert recs[0]["external_id"] == "ai-summary" and recs[0]["status"] == "warn" and "3 AI apps" in recs[0]["detail"]
+    assert catalog.calls.last.request.url.params["appClass"] == "AI_ML"
+    body = json.loads(gql.calls[0].request.content)
+    assert body["variables"]["orderBy"] == [{"data_consumed": "DESC"}] and body["variables"]["endTime"] % 86400000 == 0
+    ai = z.data["ai"]
+    by = {a["name"]: a for a in ai["apps"]}
+    assert set(by) == {"ChatGPT", "Google Gemini", "Perplexity"}           # category match, or in ZIA's AI catalogue
+    assert by["ChatGPT"]["action"] == "allow" and by["ChatGPT"]["prompt_capture"] and by["ChatGPT"]["up"] == 1e9
+    assert by["Perplexity"]["action"] == "caution" and by["Perplexity"]["rule"] == "Everything else"   # the rule for all AI apps
+    assert by["Google Gemini"]["sanctioned"] == "unsanctioned"
+    assert ai["summary"]["users"] == 130 and ai["summary"]["bytes"] == 5.1e9 and ai["matched_categories"] == ["AI & ML Applications", "Collaboration"]
+    assert [r["action"] for r in ai["rules"]] == ["block", "allow", "caution", "isolate"] and ai["rules"][1]["scope"] == {"groups": ["Staff"]}
+    assert ai["rules"][3]["isolation"] == "Isolate AI" and not ai["rules"][3]["enabled"]
+    assert [(r["name"], r["apps"], r["categories"]) for r in ai["dlp_rules"]] == [("PII to AI", ["ChatGPT"], []), ("AI category", [], ["General AI & ML"])]
+    assert ai["aiguard"] == {"policies": ["Default"], "providers": ["OpenAI"]}
+    assert any("AI Guard LLM applications" in u for u in z.data["unavailable"])
+    assert any(what.startswith("DLP incidents") for what, _ in ai["not_exposed"])
+
+    # the next poll within the hour reuses the result instead of asking again
+    calls = gql.call_count
+    z2 = build("zscaler", AI_ONLY)
+    z2.collect()
+    assert gql.call_count == calls and z2.data["ai"]["apps"] == ai["apps"]
+    assert any("AI Guard LLM applications" in u for u in z2.data["unavailable"])
+
+    from linkwatch.server.ingest import integration_series
+    assert ("ai:usage", 5.1e9, 130, 3) in integration_series(z.data)
+
+
+@respx.mock
+def test_zscaler_ai_partial_and_failures(ai_cache):
+    respx.post("https://acme.zslogin.net/oauth2/v1/token").mock(return_value=httpx.Response(200, json={"access_token": "t", "expires_in": 3600}))
+    # Z-Insights answers GraphQL errors with HTTP 200; the category can be named in the settings
+    respx.post("https://api.zsapi.net/zins/graphql").mock(return_value=httpx.Response(200, json={"errors": [{"message": "Not authorized"}]}))
+    respx.get("https://api.zsapi.net/zia/api/v1/webApplicationRules/AI_ML").mock(return_value=httpx.Response(200, json=[]))
+    respx.route(host="api.zsapi.net").mock(return_value=httpx.Response(403))
+    z = build("zscaler", AI_ONLY)
+    z.collect()
+    assert z.data["ai"]["rules"] == [] and "apps" not in z.data["ai"] and z.errors == []
+    assert any("Z-Insights ShadowITApps: Not authorized" in u for u in z.data["unavailable"])
+
+    ai_cache.clear()
+    respx.routes.clear()
+    respx.post("https://acme.zslogin.net/oauth2/v1/token").mock(return_value=httpx.Response(200, json={"access_token": "t", "expires_in": 3600}))
+    respx.route(host="api.zsapi.net").mock(return_value=httpx.Response(403))
+    z = build("zscaler", AI_ONLY)
+    with pytest.raises(IntegrationError, match="AI: None of the AI sources answered"):
+        z.collect()
+    assert not ai_cache                              # failures aren't cached
+
+
+def test_zscaler_ai_category_override(ai_cache):
+    from linkwatch.integrations.zscaler import Zscaler
+    z = Zscaler({**AI_ONLY, "ai_category": "Generative AI"})
+    z.api = lambda path, params=None: [] if "cloudApplications" in path or "webApplicationRules" in path or "webDlp" in path else None
+    z.graphql = lambda op, q, v: {"SHADOW_IT": {"apps": {"entries": [
+        {"application": "Claude", "application_category": "Generative AI", "data_consumed": 10},
+        {"application": "Mailchimp", "application_category": "AI-powered marketing", "data_consumed": 5}]}}} if op == "ShadowITApps" else {}
+    z.collect()
+    assert [a["name"] for a in z.data["ai"]["apps"]] == ["Claude"]
+    assert z.data["ai"]["categories_seen"] == [("Generative AI", 1), ("AI-powered marketing", 1)]
 
 
 @respx.mock

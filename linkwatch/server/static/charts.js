@@ -9,6 +9,7 @@
     bps: v => { const u = ["b/s", "k", "M", "G", "T"]; let i = 0; while (v >= 1000 && i < 4) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + (i ? u[i] : " " + u[0]); },
     num: v => String(Math.round(v)),
     dbm: v => Math.round(v) + " dBm",
+    bytes: v => { const u = ["B", "kB", "MB", "GB", "TB", "PB"]; let i = 0; while (v >= 1000 && i < 5) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + " " + u[i]; },
   };
 
   function draw(host, data, series, opts) {
