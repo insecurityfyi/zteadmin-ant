@@ -16,7 +16,7 @@
 <div class="p empty-state"><h2>No UniFi data yet</h2><p>The poller reads UniFi once per poll interval. Open the <a href="/integrations/{{ integ.id }}">integration</a> and press Sync now, or check it for an error.</p></div>
 {% else %}
 <div class="kpis">
-  <div class="kpi"><span>Clients</span><b>{{ summary.clients|num }}</b><em>{{ summary.wireless|num }} Wi-Fi · {{ summary.wired|num }} wired{% if summary.guests %} · {{ summary.guests }} guest{{ '' if summary.guests == 1 else 's' }}{% endif %}</em></div>
+  <div class="kpi"><span>Clients</span><b>{{ summary.clients|num }}</b><em>{% if summary.direct is defined %}{{ summary.direct|num }} directly attached · {% endif %}{{ summary.wireless|num }} Wi-Fi · {{ summary.wired|num }} wired{% if summary.guests %} · {{ summary.guests }} guest{{ '' if summary.guests == 1 else 's' }}{% endif %}</em></div>
   <div class="kpi"><span>Access points up</span><b>{{ summary.aps_up }} / {{ summary.aps }}</b>{% if summary.aps_up < summary.aps %}<em class="bad">{{ summary.aps - summary.aps_up }} not up</em>{% else %}<em class="okc">all up</em>{% endif %}</div>
   <div class="kpi"><span>Internet now (down / up)</span><b>{{ summary.down_bps|bps }}</b><em>up {{ summary.up_bps|bps }}</em></div>
   <div class="kpi"><span>Internet latency</span><b>{{ (summary.latency_ms|round|int ~ ' ms') if summary.latency_ms is not none else '–' }}</b><em>{% if summary.speedtest_down %}last speed test {{ summary.speedtest_down|round|int }} / {{ (summary.speedtest_up or 0)|round|int }} Mb/s{% else %}{{ summary.internet_status or '' }}{% endif %}</em></div>
@@ -53,11 +53,45 @@
     {% else %}<tr><td colspan="7" class="dim">No access points reported.</td></tr>{% endfor %}
     </tbody></table></div></div>
 
+  {% set has_direct = data.clients and data.clients[0].direct is defined %}
   <div class="p" data-clients><div class="ph"><h2>Clients <span class="sub" data-count>{{ data.clients|length }}</span></h2>
     <div class="filters"><input type="search" placeholder="Name, IP, MAC, SSID, AP" aria-label="Filter clients" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      {% if has_direct %}<span role="group" aria-label="Attachment" style="margin-right:10px"><button class="fbtn" type="button" data-direct-set="direct" aria-pressed="true" title="Wi-Fi clients on a UniFi AP, and wired clients that are the only device on a UniFi switch access port">Directly attached</button><button class="fbtn" type="button" data-direct-set="all" aria-pressed="false" title="Also MACs learned through uplinks, downstream switches, LLDP neighbours or the gateway">All MACs</button></span>{% endif %}
       <button class="fbtn" type="button" data-kind-set="all" aria-pressed="true">All</button><button class="fbtn" type="button" data-kind-set="wifi" aria-pressed="false">Wi-Fi</button><button class="fbtn" type="button" data-kind-set="wired" aria-pressed="false">Wired</button></div></div>
     <div class="scroll"><table>{{ client_head() }}<tbody>{{ client_rows(data.clients, integ.id) }}</tbody></table></div>
     {% if not data.clients %}<p class="dim">No clients connected.</p>{% endif %}</div>
+
+  {% if data.switch_ports %}
+  {% set roles = {'client': ('Client', ''), 'shared': ('Shared', 'wa'), 'uplink': ('Uplink', 'dim'), 'unifi': ('UniFi device', 'dim'), 'neighbour': ('Neighbour', 'dim'), 'empty': ('No client', 'dim'), 'down': ('Down', 'dim')} %}
+  <div class="p" data-ports><div class="ph"><h2>Switch ports</h2><span class="sub">what is plugged into each port</span>
+    <div class="filters"><input type="search" placeholder="Switch, port, client, MAC" aria-label="Filter switch ports" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+      <button class="fbtn" type="button" data-role-set="client" aria-pressed="true">Direct clients</button><button class="fbtn" type="button" data-role-set="used" aria-pressed="false">In use</button><button class="fbtn" type="button" data-role-set="all" aria-pressed="false">All ports</button></div></div>
+    <div class="scroll" style="max-height:620px;overflow:auto"><table><thead><tr><th>Switch</th><th class="n">Port</th><th>Link</th><th class="n">PoE</th><th>Connected</th><th>Client</th></tr></thead><tbody>
+    {% for p in data.switch_ports %}{% set r = roles.get(p.role, (p.role, 'dim')) %}
+      <tr data-role="{{ p.role }}" data-q="{{ ([p.switch, 'port ' ~ p.port, p.name, p.neighbour] + p.clients|map(attribute='name')|list + p.clients|map(attribute='mac')|list + p.clients|map(attribute='ip')|list)|select|join(' ')|lower }}">
+        <td class="nw">{% if device_ids.get(p.switch_mac) %}<a class="row" href="/devices/{{ device_ids[p.switch_mac] }}">{{ p.switch }}</a>{% else %}{{ p.switch }}{% endif %}</td>
+        <td class="n">{{ p.port }}{% if p.name %}<div class="dim" style="font-size:12px">{{ p.name }}</div>{% endif %}</td>
+        <td class="nw">{% if p.up %}<span class="dot d-up"></span> {{ p.speed_mbps|speed }}{% elif not p.enabled %}<span class="dim">disabled</span>{% else %}<span class="dot d-off"></span> <span class="dim">down</span>{% endif %}</td>
+        <td class="n">{{ (p.poe_w|round(1) ~ ' W') if p.poe_w else '' }}</td>
+        <td class="{{ r[1] }}" title="{{ p.note }}">{{ r[0] }}</td>
+        <td style="font-size:13px">{% if p.role == 'client' %}{% set c = p.clients[0] %}<a href="/unifi/{{ integ.id }}/clients/{{ c.mac }}">{{ c.name }}</a> <span class="dim mono">{{ c.ip or c.mac }}</span>
+          {% elif p.clients %}<span class="dim">{{ p.note }}:</span> {% for c in p.clients %}<a href="/unifi/{{ integ.id }}/clients/{{ c.mac }}">{{ c.name }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if p.client_count > p.clients|length %} <span class="dim">+{{ p.client_count - p.clients|length }} more</span>{% endif %}
+          {% else %}<span class="dim">{{ p.note }}</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <p class="dim" style="font-size:12px;margin:8px 0 0">A port counts as a direct client when exactly one MAC is learned on it and it isn't an uplink, a port to another UniFi device, or a port with an LLDP neighbour other than that client.</p></div>
+  <script>
+  document.querySelectorAll("[data-ports]").forEach(box => {
+    const q = box.querySelector("input[type=search]"); let role = "client";
+    const apply = () => { const t = q.value.trim().toLowerCase();
+      box.querySelectorAll("tbody tr").forEach(r => { const rr = r.dataset.role;
+        r.hidden = !((role === "all" || (role === "client" ? rr === "client" : !["empty", "down"].includes(rr))) && (!t || r.dataset.q.includes(t))); }); };
+    q.addEventListener("input", apply);
+    box.querySelectorAll("[data-role-set]").forEach(b => b.addEventListener("click", () => {
+      role = b.dataset.roleSet; box.querySelectorAll("[data-role-set]").forEach(o => o.setAttribute("aria-pressed", o === b)); apply(); }));
+    apply();
+  });
+  </script>
+  {% endif %}
 </div>
 {{ table_js() }}
 {% endif %}

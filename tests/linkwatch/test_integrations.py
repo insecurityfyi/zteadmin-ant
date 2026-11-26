@@ -444,3 +444,46 @@ def test_sonicwall_bad_login_and_logout_after_errors():
     respx.get(url__startswith=f"{base}/").mock(return_value=httpx.Response(500))
     recs = build("sonicwall", {"host": "fw.lan:8443", "username": "x", "password": "y"}).collect()
     assert logout.called and recs[0]["external_id"] == "fw.lan:8443" and recs[0]["ip"] == "fw.lan"
+
+
+def test_unifi_direct_attachment():
+    from linkwatch.integrations.unifi import UniFi, attachment
+    sw, sw2 = "aa:aa:aa:00:00:10", "aa:aa:aa:00:00:11"
+    devices = [
+        {"mac": sw, "name": "sw-core", "type": "usw",
+         "port_table": [{"port_idx": 1, "up": True, "speed": 1000, "poe_power": "5.10"},      # desk PC
+                        {"port_idx": 2, "up": True, "speed": 1000},                           # PC behind a desk phone
+                        {"port_idx": 3, "up": True, "speed": 10000, "is_uplink": True},       # to the gateway
+                        {"port_idx": 4, "up": True, "speed": 1000},                           # to sw-floor2
+                        {"port_idx": 5, "up": True, "speed": 1000},                           # unmanaged switch with LLDP
+                        {"port_idx": 6, "up": True, "speed": 1000},                           # an LLDP-speaking printer
+                        {"port_idx": 7, "up": False}],
+         "lldp_table": [{"local_port_idx": 5, "chassis_id": "dd:00:00:00:00:99", "system_name": "netgear-closet"},
+                        {"local_port_idx": 6, "chassis_id": "CC:00:00:00:00:06", "system_name": "printer"}]},
+        {"mac": sw2, "name": "sw-floor2", "type": "usw", "uplink": {"uplink_mac": sw, "uplink_remote_port": 4},
+         "port_table": [{"port_idx": 1, "up": True, "speed": 1000}]},
+    ]
+    names = {d["mac"]: d["name"] for d in devices}
+    raw = [{"mac": "cc:00:00:00:00:01", "hostname": "desk-pc", "is_wired": True, "sw_mac": sw, "sw_port": 1, "ip": "10.0.0.11"},
+           {"mac": "cc:00:00:00:00:02", "hostname": "phone", "is_wired": True, "sw_mac": sw, "sw_port": 2},
+           {"mac": "cc:00:00:00:00:03", "hostname": "pc-behind-phone", "is_wired": True, "sw_mac": sw, "sw_port": 2},
+           {"mac": "cc:00:00:00:00:04", "hostname": "via-uplink", "is_wired": True, "sw_mac": sw, "sw_port": 3},
+           {"mac": "cc:00:00:00:00:05", "hostname": "via-floor2-port", "is_wired": True, "sw_mac": sw, "sw_port": 4},
+           {"mac": "cc:00:00:00:00:06", "hostname": "printer", "is_wired": True, "sw_mac": sw, "sw_port": 6},
+           {"mac": "cc:00:00:00:00:07", "hostname": "behind-netgear", "is_wired": True, "sw_mac": sw, "sw_port": 5},
+           {"mac": "cc:00:00:00:00:08", "hostname": "floor2-pc", "is_wired": True, "sw_mac": sw2, "sw_port": 1},
+           {"mac": "cc:00:00:00:00:09", "hostname": "gw-only", "is_wired": True},
+           {"mac": "cc:00:00:00:00:0a", "hostname": "laptop", "essid": "Office", "ap_mac": "aa:aa:aa:00:00:01"}]
+    clients = [UniFi._client(c, "HQ", names) for c in raw]
+    rows = attachment(devices, clients, "HQ", names)
+    by = {c["name"]: (c["direct"], c["attach"]) for c in clients}
+    assert by == {"desk-pc": (True, "port"), "phone": (False, "shared"), "pc-behind-phone": (False, "shared"),
+                  "via-uplink": (False, "uplink"), "via-floor2-port": (False, "unifi"), "printer": (True, "port"),
+                  "behind-netgear": (False, "neighbour"), "floor2-pc": (True, "port"), "gw-only": (False, "gateway"),
+                  "laptop": (True, "wifi")}
+    note = {c["name"]: c["attach_note"] for c in clients}
+    assert note["via-floor2-port"] == "Port to sw-floor2" and note["behind-netgear"] == "LLDP neighbour netgear-closet"
+    ports = {(r["switch"], r["port"]): r for r in rows}
+    assert ports[("sw-core", 1)]["role"] == "client" and ports[("sw-core", 1)]["clients"] == [{"mac": "cc:00:00:00:00:01", "name": "desk-pc", "ip": "10.0.0.11"}]
+    assert ports[("sw-core", 1)]["poe_w"] == 5.1 and ports[("sw-core", 2)]["client_count"] == 2
+    assert [ports[("sw-core", i)]["role"] for i in range(1, 8)] == ["client", "shared", "uplink", "unifi", "neighbour", "client", "down"]

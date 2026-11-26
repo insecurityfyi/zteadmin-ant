@@ -10,6 +10,25 @@ UCG, Cloud Key Gen2+, UniFi OS Server) or a self-hosted controller. It collects:
   port), band, channel, signal, link rate, current download/upload, session
   totals, connected time and UniFi's experience score. Each client has its own
   bandwidth and signal graphs.
+- **Directly attached clients:** the client list opens on **Directly attached**.
+  Press **All MACs** to see every client. A client counts as directly attached when:
+  - it is a Wi-Fi client associated to a UniFi AP, or
+  - it is a wired client that is the only MAC on a UniFi switch port, and that port
+    is not an uplink, not a port another UniFi device hangs off, and has no LLDP
+    neighbour other than the client itself.
+
+  Anything else is still listed under All MACs, with a tag saying why it isn't
+  direct:
+  - behind an uplink;
+  - behind a UniFi device;
+  - shared port: several MACs on one port, which means an unmanaged switch, a hub,
+    or a PC plugged into a desk phone (the phone counts as not direct too);
+  - behind a neighbour;
+  - learned by the gateway: the client isn't on any UniFi switch port.
+- **Switch ports:** every port on each UniFi switch and gateway, showing what's
+  plugged in. That's the client's name and IP, or "uplink", "port to <UniFi
+  device>", "LLDP neighbour <name>", or the MACs sharing the port. You can filter
+  to Direct clients, In use or All ports.
 - **SSIDs:** client count and bandwidth per SSID (summed from its clients), with graphs.
 - **Internet:** throughput per WAN link and in total, ISP, WAN IP, latency and the
   last speed test.

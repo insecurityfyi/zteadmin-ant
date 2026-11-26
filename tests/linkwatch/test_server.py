@@ -176,6 +176,7 @@ def test_unifi_pages(logged_in, app):
     page = logged_in.get("/unifi").text
     assert "Wi-Fi &amp; clients" in page and "laptop" in page and "Fiber Co" in page and "ap-lobby" in page
     assert f'href="/unifi/{iid}/ssids/Office"' in page
+    assert 'data-direct-set="direct"' in page and "3 directly attached" in page and "Switch ports" in page and 'data-direct="yes"' in page
     r = logged_in.get(f"/unifi/{iid}/clients/cc:00:00:00:00:01")
     assert r.status_code == 200 and "-55 dBm" in r.text and "Apple" in r.text
     assert logged_in.get(f"/unifi/{iid}/clients/ee:ee:ee:ee:ee:ee").status_code == 200      # gone, history only

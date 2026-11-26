@@ -20,6 +20,7 @@
       <dt>Signal</dt><dd>{{ signal(c.signal) }}{% if c.noise is not none %} <span class="dim">noise {{ c.noise|int }} dBm</span>{% endif %}</dd>
     {% else %}
       <dt>Switch</dt><dd>{{ c.switch or '–' }}{% if c.switch_port %} port {{ c.switch_port }}{% endif %}</dd>
+      {% if c.direct is defined %}<dt>Attachment</dt><dd>{% if c.direct %}<span class="okc">Directly attached</span>{% else %}Not direct: {{ c.attach_note }}{% endif %}</dd>{% endif %}
     {% endif %}
     {% if c.tx_rate_mbps %}<dt>Link rate</dt><dd>{{ c.tx_rate_mbps }} Mb/s tx, {{ c.rx_rate_mbps or '–' }} Mb/s rx</dd>{% endif %}
     <dt>Now</dt><dd>{{ c.down_bps|bps }} down, {{ c.up_bps|bps }} up</dd>
