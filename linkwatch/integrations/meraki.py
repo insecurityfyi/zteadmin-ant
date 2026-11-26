@@ -21,6 +21,24 @@ class Meraki(Integration):
         Field("org_id", "Organization ID", required=False, help="Leave blank to use the first organization the key can see."),
     ]
 
+    def _key(self) -> str:
+        """The key as pasted, minus whitespace/newlines and a stray "Bearer " prefix."""
+        key = re.sub(r"\s+", "", str(self.config.get("api_key") or ""))
+        return key[6:] if key.lower().startswith("bearer") else key
+
+    def _get(self, url: str, **kw):
+        key = self._key()
+        try:
+            return super()._get(url, follow_redirects=True, **kw, headers={
+                # Meraki's own header survives redirects to regional shards (httpx drops Authorization on those).
+                "X-Cisco-Meraki-API-Key": key, "Authorization": f"Bearer {key}", "Accept": "application/json"})
+        except IntegrationError as exc:
+            if "rejected the credentials" in str(exc):
+                raise IntegrationError(
+                    f"{exc}. Meraki says the API key is invalid: check it was copied whole, that API access is "
+                    "enabled under Organization > Settings, and that the key's admin still exists") from None
+            raise
+
     def _paged(self, path: str, params: dict | None = None) -> list[dict]:
         url: str | None = BASE + path
         items: list[dict] = []
@@ -28,7 +46,7 @@ class Meraki(Integration):
         for _ in range(50):
             if not url:
                 break
-            resp = self._get(url, params=params, headers={"Authorization": f"Bearer {self.config['api_key']}"})
+            resp = self._get(url, params=params)
             body = resp.json()
             items.extend(body if isinstance(body, list) else [body])
             m = re.search(r'<([^>]+)>;\s*rel=next', resp.headers.get("Link", ""))

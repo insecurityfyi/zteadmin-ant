@@ -80,6 +80,28 @@ def test_meraki_paginates_and_maps_status():
         ("br02-sw01", "up", "Switch", "Branch 02"), ("br02-ap03", "down", "Wireless", "Branch 02")]
 
 
+@respx.mock
+def test_meraki_key_cleanup_headers_and_401_hint():
+    seen = {}
+
+    def orgs(request):
+        seen.update(request.headers)
+        return httpx.Response(401, json={"errors": ["Invalid API key"]})
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(side_effect=orgs)
+    with pytest.raises(IntegrationError, match="HTTP 401.*API access is enabled"):
+        build("meraki", {"api_key": " Bearer abc123\n "}).collect()
+    assert seen["x-cisco-meraki-api-key"] == "abc123" and seen["authorization"] == "Bearer abc123"
+
+
+@respx.mock
+def test_meraki_follows_shard_redirect_with_key():
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(
+        return_value=httpx.Response(307, headers={"Location": "https://n42.meraki.com/api/v1/organizations"}))
+    shard = respx.get("https://n42.meraki.com/api/v1/organizations").mock(return_value=httpx.Response(200, json=[{"id": "7"}]))
+    assert build("meraki", {"api_key": "k"}).org_id() == "7"
+    assert shard.calls.last.request.headers["x-cisco-meraki-api-key"] == "k"
+
+
 PAN_INFO = """<response status="success"><result><system><hostname>dc-pa440</hostname><ip-address>10.50.0.1</ip-address>
 <model>PA-440</model><serial>0123456789</serial><sw-version>11.1.2</sw-version><uptime>12 days, 3:04:05</uptime></system></result></response>"""
 PAN_RES = """<response status="success"><result><![CDATA[top - 10:00:00 up 12 days
