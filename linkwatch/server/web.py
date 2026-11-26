@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from ..common.discovery import TargetError, expand_targets, guess_type
 from ..integrations import REGISTRY, IntegrationError, build
 from .app import flash
 from .db import set_setting
@@ -19,6 +20,7 @@ from .models import (
     AlertRule,
     ApiKey,
     Device,
+    DiscoveryJob,
     EnrollToken,
     Integration,
     Poller,
@@ -212,6 +214,92 @@ async def device_import(request: Request, file: UploadFile = File(...), poller_i
     push_poller(request, poller_id)
     flash(request, f"Imported {added} devices" + (f", skipped {skipped} (missing IP or already present)" if skipped else "") + ".")
     return back("/devices")
+
+
+# ------------------------------------------------------------------ discovery
+@router.get("/discovery", response_class=HTMLResponse)
+def discovery_page(request: Request):
+    with st(request).db.session() as s:
+        ctx = _device_form_ctx(s)
+        ctx["jobs"] = s.scalars(select(DiscoveryJob).options(selectinload(DiscoveryJob.poller))
+                                .order_by(DiscoveryJob.id.desc()).limit(15)).all()
+    ctx["connected"] = set(st(request).hub.conns)
+    return render(request, "discovery.html", ctx)
+
+
+@router.post("/discovery")
+async def discovery_start(request: Request):
+    form = await request.form()
+    targets = str(form.get("targets") or "").strip()
+    try:
+        hosts = expand_targets(targets)
+    except TargetError as exc:
+        flash(request, str(exc), "warn")
+        return back("/discovery")
+    try:
+        poller_id = int(form.get("poller_id") or 0)
+    except ValueError:
+        poller_id = 0
+    profile_ids = [int(v) for v in form.getlist("profile_id") if str(v).isdigit()]
+    with st(request).db.session() as s:
+        if not s.get(Poller, poller_id):
+            flash(request, "Choose a poller.", "warn")
+            return back("/discovery")
+        profiles = [p for pid in profile_ids if (p := s.get(SnmpProfile, pid))]
+        job = DiscoveryJob(poller_id=poller_id, targets=targets[:5000], profile_ids=[p.id for p in profiles], total=len(hosts), results=[])
+        s.add(job)
+        s.flush()
+        msg = {"type": "discover", "job_id": job.id, "targets": targets,
+               "profiles": [{"id": p.id, "creds": st(request).vault.open(p.config_enc)} for p in profiles]}
+        if not st(request).hub.send_soon(poller_id, msg):
+            job.status, job.error, job.finished_at = "failed", "The poller is not connected.", utcnow()
+            flash(request, "That poller is not connected right now, so the scan could not start.", "warn")
+        jid = job.id
+    return back(f"/discovery/{jid}")
+
+
+@router.get("/discovery/{jid}", response_class=HTMLResponse)
+def discovery_job(request: Request, jid: int):
+    with st(request).db.session() as s:
+        job = s.get(DiscoveryJob, jid, options=[selectinload(DiscoveryJob.poller)])
+        if job is None:
+            raise HTTPException(404)
+        ips = [r["ip"] for r in job.results or []]
+        known = {ip: did for ip, did in s.execute(select(Device.ip, Device.id).where(Device.ip.in_(ips)))} if ips else {}
+        names = {p.id: p.name for p in s.scalars(select(SnmpProfile))}
+        rows = [r | {"known": known.get(r["ip"]), "type": guess_type(r.get("sys_descr"), r.get("sys_object_id")),
+                     "profile": names.get(r.get("profile_id"))} for r in job.results or []]
+        ctx = _device_form_ctx(s)
+    ctx |= {"job": job, "rows": rows, "new_count": sum(1 for r in rows if not r["known"])}
+    return render(request, "discovery_job.html", ctx)
+
+
+@router.post("/discovery/{jid}/add")
+async def discovery_add(request: Request, jid: int):
+    form = await request.form()
+    chosen = set(form.getlist("ip"))
+    with st(request).db.session() as s:
+        job = s.get(DiscoveryJob, jid)
+        if job is None:
+            raise HTTPException(404)
+        existing = set(s.scalars(select(Device.ip).where(Device.ip.is_not(None))))
+        site = site_by_name(s, str(form.get("site") or "").strip() or None)
+        added = 0
+        for r in job.results or []:
+            ip = r.get("ip")
+            if ip not in chosen or ip in existing:
+                continue
+            kind = str(form.get(f"type_{ip}") or "") or guess_type(r.get("sys_descr"), r.get("sys_object_id"))
+            prof = r.get("profile_id") if r.get("profile_id") and s.get(SnmpProfile, r["profile_id"]) else None
+            s.add(Device(hostname=(r.get("sys_name") or ip)[:255], ip=ip, type=kind if kind in DEVICE_TYPES else "Network",
+                         site_id=site.id if site else None, poller_id=job.poller_id, snmp_profile_id=prof, ping=True,
+                         source="snmp" if prof else "ping", sys_descr=r.get("sys_descr"), extra={}))
+            existing.add(ip)
+            added += 1
+        poller_id = job.poller_id
+    push_poller(request, poller_id)
+    flash(request, f"Added {added} device{'s' if added != 1 else ''}. They are polled on the next cycle." if added else "Nothing new was selected.")
+    return back("/devices" if added else f"/discovery/{jid}")
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)

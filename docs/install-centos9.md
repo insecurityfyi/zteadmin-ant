@@ -424,7 +424,7 @@ running it under systemd and for updating it.
 Then:
 
 1. **Settings → SNMP credentials:** add your v3 user (or v2c community).
-2. **Devices → Import CSV** (or **Add device**) for your roughly 150 devices.
+2. **Discovery:** scan your subnets from the poller (ping + SNMP with your saved credentials) and add what it finds in bulk. Or use **Devices → Import CSV** / **Add device**.
 3. **Integrations:** add Zscaler (OneAPI), Meraki, PAN-OS, FortiGate, UniFi
    and Proxmox. Cloud APIs run on the server; PAN-OS, FortiGate, UniFi and
    Proxmox run on the poller you choose.

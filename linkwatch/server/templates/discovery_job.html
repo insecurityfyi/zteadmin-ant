@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Scan results{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/discovery">Discovery</a></div><h1>Scan of {{ job.targets|truncate(50) }}</h1>
+  <p>Poller {{ job.poller.name if job.poller else '–' }}, started {{ job.created_at|ago }}.</p></div></div>
+{% if job.status in ('queued', 'running') %}
+<div class="p"><p style="margin:0"><b>Scanning…</b> {{ job.scanned }} of {{ job.total }} addresses checked. This page refreshes by itself.</p>
+  <progress max="{{ job.total or 1 }}" value="{{ job.scanned }}" style="width:100%;margin-top:10px"></progress></div>
+<script>setTimeout(function () { location.reload(); }, 3000);</script>
+{% elif job.status == 'failed' %}
+<div class="p"><p style="margin:0"><b>The scan failed:</b> {{ job.error }}</p></div>
+{% elif not rows %}
+<div class="p empty-state"><h2>Nothing answered</h2><p>No address replied to ping or SNMP. Check that the poller can reach that network and that the devices allow SNMP from the poller's IP.</p></div>
+{% else %}
+<form method="post" action="/discovery/{{ job.id }}/add" class="p">
+  <div class="ph"><h2>{{ rows|length }} found, {{ new_count }} not monitored yet</h2>
+    <label class="chk"><input type="checkbox" id="all" checked onclick="document.querySelectorAll('input[name=ip]:not(:disabled)').forEach(function (c) { c.checked = this.checked; }, this)"> Select all new</label></div>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>IP address</th><th>Name</th><th>Description</th><th>SNMP</th><th class="n">Ping</th><th>Type</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr>
+        <td><input type="checkbox" name="ip" value="{{ r.ip }}" aria-label="Add {{ r.ip }}" {% if r.known %}disabled{% else %}checked{% endif %}></td>
+        <td class="mono nw">{{ r.ip }}</td>
+        <td class="nw">{% if r.known %}<a href="/devices/{{ r.known }}">{{ r.sys_name or r.ip }}</a> <span class="tag">monitored</span>{% else %}{{ r.sys_name or '' }}{% endif %}</td>
+        <td class="dim">{{ (r.sys_descr or '')|truncate(70) }}</td>
+        <td>{{ r.profile or '–' }}</td>
+        <td class="n">{{ '%.1f ms'|format(r.rtt_ms) if r.rtt_ms is not none else '–' }}</td>
+        <td>{% if not r.known %}<select name="type_{{ r.ip }}" aria-label="Type for {{ r.ip }}" style="width:auto">{% for t in types %}<option {% if t == r.type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>{% endif %}</td>
+      </tr>{% endfor %}
+    </tbody></table></div>
+  <div class="row2" style="margin-top:16px">
+    <label class="f">Site for the added devices<input type="text" name="site" id="site" list="sites" placeholder="Optional, e.g. HQ"><datalist id="sites">{% for n in site_names %}<option value="{{ n }}">{% endfor %}</datalist></label>
+  </div>
+  <div class="actions"><button class="btn pri" type="submit" {% if not new_count %}disabled{% endif %}>Add selected devices</button>
+    <span class="dim">Devices that answered SNMP are polled with the credentials that worked; the rest are ping-only.</span></div>
+</form>
+{% endif %}
+{% endblock %}

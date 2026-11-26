@@ -16,6 +16,7 @@
     {% set n = nav %}
     <a class="nav" href="/" {% if n == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
     <a class="nav" href="/devices" {% if n.startswith('device') %}aria-current="page"{% endif %}>Devices</a>
+    <a class="nav" href="/discovery" {% if n == 'discovery' %}aria-current="page"{% endif %}>Discovery</a>
     <a class="nav" href="/alerts" {% if n == 'alerts' %}aria-current="page"{% endif %}>Alerts {% if open_alerts %}<span class="ct">{{ open_alerts }}</span>{% endif %}</a>
     <div class="grp">Collection</div>
     <a class="nav" href="/pollers" {% if n == 'pollers' %}aria-current="page"{% endif %}>Pollers</a>

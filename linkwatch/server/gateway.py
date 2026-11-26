@@ -13,7 +13,7 @@ from sqlalchemy import select
 from ..integrations import REGISTRY
 from .db import get_setting
 from .ingest import ingest_batch
-from .models import Device, EnrollToken, Integration, Poller, utcnow
+from .models import Device, DiscoveryJob, EnrollToken, Integration, Poller, utcnow
 from .security import new_secret, sha256
 
 log = logging.getLogger("linkwatch.gateway")
@@ -124,6 +124,31 @@ class Hub:
         if alerter:
             self.notifier.dispatch(alerter.events)
 
+    def _discovery(self, poller_id: int, msg: dict) -> None:
+        with self.db.session() as s:
+            job = s.get(DiscoveryJob, int(msg.get("job_id") or 0))
+            if job is None or job.poller_id != poller_id or job.status in ("done", "failed"):
+                return
+            job.total = int(msg.get("total") or job.total or 0)
+            job.scanned = int(msg.get("scanned") or 0)
+            if msg.get("type") == "discovery_progress":
+                job.status = "running"
+                return
+            if msg.get("error"):
+                job.status, job.error = "failed", str(msg["error"])[:1000]
+            else:
+                job.status = "done"
+                clean = []
+                for r in (msg.get("found") or [])[:5000]:
+                    if not isinstance(r, dict) or not r.get("ip"):
+                        continue
+                    clean.append({k: (str(r.get(k))[:500] if r.get(k) is not None else None)
+                                  for k in ("ip", "sys_name", "sys_descr", "sys_object_id")}
+                                 | {"rtt_ms": r.get("rtt_ms") if isinstance(r.get("rtt_ms"), (int, float)) else None,
+                                    "profile_id": r.get("profile_id") if isinstance(r.get("profile_id"), int) else None})
+                job.results = clean
+            job.finished_at = utcnow()
+
     async def serve(self, ws: WebSocket, poller: Poller, client_ip: str | None) -> None:
         self.loop = asyncio.get_running_loop()
         old = self.conns.get(poller.id)
@@ -146,6 +171,8 @@ class Hub:
                 elif t == "results":
                     await asyncio.to_thread(self._ingest, poller.id, msg)
                     await ws.send_text(json.dumps({"type": "ack", "batch_id": msg.get("batch_id")}))
+                elif t in ("discovery_progress", "discovery_result"):
+                    await asyncio.to_thread(self._discovery, poller.id, msg)
                 elif t == "pong":
                     await asyncio.to_thread(self._touch, poller.id)
         except (WebSocketDisconnect, RuntimeError):

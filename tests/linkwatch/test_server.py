@@ -21,7 +21,7 @@ def test_wrong_password_and_lockout(client):
 
 def test_every_page_renders(logged_in):
     for path in ["/", "/devices", "/alerts", "/pollers", "/integrations", "/settings", "/devices/new", "/devices/import",
-                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox"]:
+                 "/integrations/new?kind=zscaler", "/integrations/new?kind=proxmox", "/discovery"]:
         r = logged_in.get(path)
         assert r.status_code == 200, path
 
@@ -108,3 +108,44 @@ def test_csv_import(logged_in):
     r = logged_in.post("/devices/import", data={"poller_id": str(ident["poller_id"]), "snmp_profile_id": ""},
                        files={"file": ("d.csv", csv, "text/csv")})
     assert "Imported 2 devices" in r.text
+
+
+def test_discovery_scan_and_bulk_add(logged_in, app):
+    ident = enroll(logged_in)
+    logged_in.post("/settings/snmp", data={"name": "lab", "version": "2c", "community": "public"})
+    logged_in.post("/devices/new", data={"hostname": "old-sw", "ip": "10.9.0.1", "type": "Switch",
+                                         "poller_id": str(ident["poller_id"]), "snmp_profile_id": "", "ping": "on"})
+    assert "at most 4096" in logged_in.post("/discovery", data={"targets": "10.0.0.0/16", "poller_id": ident["poller_id"]}).text
+    assert logged_in.get("/discovery").status_code == 200
+
+    with logged_in.websocket_connect("/api/poller/ws", headers={"Authorization": f"Bearer {ident['key']}"}) as ws:
+        json.loads(ws.receive_text())   # config
+        r = logged_in.post("/discovery", data={"targets": "10.9.0.0/29", "poller_id": ident["poller_id"], "profile_id": "1"})
+        assert r.status_code == 200 and "Scanning" in r.text
+        msg = json.loads(ws.receive_text())
+        assert msg["type"] == "discover" and msg["targets"] == "10.9.0.0/29"
+        assert msg["profiles"] == [{"id": 1, "creds": {"version": "2c", "community": "public"}}]
+        job = msg["job_id"]
+        ws.send_text(json.dumps({"type": "discovery_result", "job_id": job, "scanned": 6, "total": 6, "found": [
+            {"ip": "10.9.0.1", "rtt_ms": 0.4},
+            {"ip": "10.9.0.2", "rtt_ms": 0.6, "profile_id": 1, "sys_name": "core-fw", "sys_descr": "Palo Alto Networks PA-440 series firewall"},
+            {"ip": "10.9.0.3", "rtt_ms": 1.2}]}))
+        ws.send_text(json.dumps({"type": "results", "batch_id": "barrier", "items": []}))
+        assert json.loads(ws.receive_text())["type"] == "ack"
+
+    page = logged_in.get(f"/discovery/{job}").text
+    assert "3 found, 2 not monitored yet" in page and "core-fw" in page and "monitored" in page
+    r = logged_in.post(f"/discovery/{job}/add", data={"ip": ["10.9.0.1", "10.9.0.2", "10.9.0.3"], "type_10.9.0.3": "Printer", "site": "Lab"})
+    assert "Added 2 devices" in r.text
+    with app.state.lw.db.session() as s:
+        fw = s.scalar(select(Device).where(Device.ip == "10.9.0.2"))
+        pr = s.scalar(select(Device).where(Device.ip == "10.9.0.3"))
+        assert (fw.hostname, fw.type, fw.snmp_profile_id, fw.source, fw.site.name) == ("core-fw", "Firewall", 1, "snmp", "Lab")
+        assert (pr.hostname, pr.type, pr.snmp_profile_id, pr.source) == ("10.9.0.3", "Printer", None, "ping")
+        assert len(s.scalars(select(Device).where(Device.ip == "10.9.0.1")).all()) == 1
+
+
+def test_discovery_needs_connected_poller(logged_in):
+    ident = enroll(logged_in)
+    r = logged_in.post("/discovery", data={"targets": "10.9.0.0/30", "poller_id": ident["poller_id"]})
+    assert "not connected" in r.text
