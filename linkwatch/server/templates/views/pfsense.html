@@ -1,0 +1,60 @@
+{# Shared by pfSense and VyOS (views/vyos.html includes this). #}
+{% from "_iv.html" import chart, legend, dot, filter_box, meter, yesno %}
+{% set sy = data.system or {} %}
+{% set fw = (devices|list or [none])[0] %}
+{% set is_pf = integ.kind == 'pfsense' %}
+{% set gws = data.gateways or [] %}
+{% set tun = data.tunnels or [] %}
+{% set st = data.states or {} %}
+{% set ct = data.conntrack or {} %}
+{% set has_states = st.get('current') is not none or ct.get('entries') is not none %}
+{% set src = 'pfSense REST API' if is_pf else 'VyOS API' %}
+<div class="kpis">
+  <div class="kpi"><span>CPU</span><b>{{ fw.cpu|pct if fw and fw.cpu is not none else '–' }}</b><em>{% if fw and fw.mem is not none %}memory {{ fw.mem|pct }}{% elif not is_pf %}load average{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>Gateways up</span><b class="{{ 'bad' if gws|selectattr('state','equalto','down')|list else '' }}">{% if gws %}{{ gws|selectattr('state','equalto','up')|list|length }} / {{ gws|length }}{% else %}–{% endif %}</b><em>{{ (gws|selectattr('selected')|map(attribute='gateway')|first or gws[0].name) if gws else 'not reported' }}</em></div>
+  <div class="kpi"><span>{{ 'Firewall states' if is_pf else 'Connections tracked' }}</span><b>{% if st.get('current') is not none %}{{ st.current|num }}{% elif ct.get('entries') is not none %}{{ ct.entries|num }}{% else %}–{% endif %}</b><em>{% if st.get('max') %}of {{ st.max|num }} maximum{% elif ct.get('entries') is not none %}conntrack{% else %}not reported{% endif %}</em></div>
+  <div class="kpi"><span>Tunnels up</span><b>{% if tun %}{{ tun|selectattr('up')|list|length }} / {{ tun|length }}{% else %}–{% endif %}</b><em>IPsec, OpenVPN, WireGuard</em></div>
+  <div class="kpi"><span>VPN users</span><b>{{ (data.vpn_users or [])|length if data.vpn_users is defined else '–' }}</b><em>OpenVPN, connected now</em></div>
+</div>
+<div class="grid">
+  <div class="p {{ 'c6' if has_states else 'c12' }}"><div class="ph"><h2>System</h2>{% if fw %}<a class="sub" href="/devices/{{ fw.id }}?tab=graphs">graphs</a>{% endif %}</div>
+    <dl class="kv">
+      {% for k, label in [('hostname','Host name'),('version','Version'),('patch','Patch'),('release','Release train'),('platform','Platform'),('model','Hardware'),('vendor','Vendor'),('serial','Serial'),('netgate_id','Netgate ID'),('cpu_model','CPU'),('uptime','Uptime')] if sy.get(k) %}<dt>{{ label }}</dt><dd>{{ sy.get(k) }}</dd>{% endfor %}
+      {% if sy.load %}<dt>Load</dt><dd>{% if sy.load is mapping %}{% for m in sy.load.keys()|map('int')|sort %}{% set v = sy.load[m|string] %}{{ v }}% ({{ m }} min){{ ', ' if not loop.last }}{% endfor %}{% else %}{{ sy.load|join(', ') }}{% endif %}</dd>{% endif %}
+      {% if sy.disk is not none and sy.disk is defined %}<dt>Disk</dt><dd>{{ meter(sy.disk) }}</dd>{% endif %}
+      {% if sy.swap is not none and sy.swap is defined %}<dt>Swap</dt><dd>{{ meter(sy.swap, 50, 80) }}</dd>{% endif %}
+      {% if sy.mbuf is not none and sy.mbuf is defined %}<dt>MBUF</dt><dd>{{ meter(sy.mbuf) }}</dd>{% endif %}
+      {% if sy.temp_c %}<dt>Temperature</dt><dd>{{ sy.temp_c }} °C</dd>{% endif %}
+      {% if data.carp %}<dt>CARP</dt><dd>{{ 'maintenance mode' if data.carp.maintenance else 'enabled' if data.carp.enabled else 'disabled' }}{% for v in data.carp.vips %}{{ ', ' if loop.first else ', ' }}{{ v.interface }} {{ v.ip }} <b>{{ v.status }}</b>{% endfor %}</dd>{% endif %}
+      {% if fw %}<dt>Data from</dt><dd>{{ src ~ ' and SNMP' if fw.source in ('snmp','ping') else src ~ ' only' }}{% if fw.ports %}, <a href="/devices/{{ fw.id }}?tab=ports">{{ fw.ports|length }} interfaces with traffic</a>{% endif %}</dd>{% endif %}</dl>
+    {% if fw and fw.source not in ('snmp','ping') %}<p class="help" style="margin:12px 0 0">Add this {{ 'firewall' if is_pf else 'router' }} as an SNMP device too (same IP) for traffic graphs that don't depend on the API, sensors and LLDP neighbours; Linkwatch merges the two.</p>{% endif %}</div>
+  {% if has_states %}<div class="p c6"><div class="ph"><h2>{{ 'Firewall states' if is_pf else 'Connection tracking' }}</h2></div>{{ legend([('Current', 'var(--s1)')] + ([('Maximum', 'var(--s4)')] if st.max else [])) }}{{ chart(integ.id, 'states', [{"key":"a","color":"var(--s1)"}] + ([{"key":"b","color":"var(--s4)","dash":true}] if st.max else []), 'num', 170, 'States') }}</div>{% endif %}
+  {% if gws %}<div class="p c12"><div class="ph"><h2>Gateways and WAN</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Gateway</th>{% if is_pf %}<th>Monitor IP</th><th>Source</th><th class="n">Delay</th><th class="n">Jitter</th><th class="n">Loss</th><th>Status</th>{% else %}<th>Next hop</th><th>Protocol</th><th>Selected</th>{% endif %}</tr></thead><tbody>
+    {% for g in gws %}<tr><td>{{ dot(true if g.state == 'up' else (false if g.state == 'down' else none)) }}</td><td><b>{{ g.name }}</b></td>
+      {% if is_pf %}<td class="mono">{{ g.monitor or '' }}</td><td class="mono">{{ g.source or '' }}</td><td class="n">{{ '%.1f ms'|format(g.delay_ms) if g.delay_ms is not none else '' }}</td><td class="n">{{ '%.1f ms'|format(g.stddev_ms) if g.stddev_ms is not none else '' }}</td><td class="n {{ 'bad' if (g.loss_pct or 0) >= 5 else '' }}">{{ '%.1f%%'|format(g.loss_pct) if g.loss_pct is not none else '' }}</td><td class="dim">{{ g.status or '' }}{% if g.substatus and g.substatus != 'none' %} ({{ g.substatus }}){% endif %}</td>
+      {% else %}<td class="mono">{{ g.gateway }}</td><td class="dim">{{ g.protocol or '' }}</td><td>{{ yesno(g.selected) }}</td>{% endif %}</tr>{% endfor %}</tbody></table></div>
+    {% if is_pf %}<div class="grid" style="margin-top:12px">{% for g in gws if g.series %}<div class="c6"><h3 style="margin:0 0 6px;font-size:14px">{{ g.name }}</h3>{{ legend([('Delay (ms)', 'var(--s1)'), ('Loss (%)', 'var(--s3)')]) }}{{ chart(integ.id, g.series, [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s3)"}], 'num', 140, g.name) }}</div>{% endfor %}</div>{% endif %}</div>{% endif %}
+  {% if tun %}<div class="p {{ 'c6' if data.vpn_users or data.services else 'c12' }}"><div class="ph"><h2>VPN tunnels</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Tunnel</th><th>Type</th><th>Peer</th><th>State</th><th class="n">In</th><th class="n">Out</th></tr></thead><tbody>
+    {% for t in tun %}<tr><td>{{ dot(t.up) }}</td><td><b>{{ t.name or '' }}</b></td><td class="dim">{{ t.kind }}</td><td class="mono">{{ t.remote or '' }}</td><td class="dim">{{ t.state or '' }}{% if t.children %} ({{ t.children_up }}/{{ t.children }} child SAs){% endif %}</td><td class="n">{{ t.in_bytes|bytes if t.in_bytes else '' }}</td><td class="n">{{ t.out_bytes|bytes if t.out_bytes else '' }}</td></tr>{% endfor %}</tbody></table></div>
+    {{ legend([('Up', 'var(--s1)'), ('Configured', 'var(--s4)')]) }}{{ chart(integ.id, 'tunnels', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s4)","dash":true}], 'num', 120, 'Tunnels') }}</div>{% endif %}
+  {% if data.vpn_users %}<div class="p c6"><div class="ph"><h2>OpenVPN users</h2>{{ filter_box('rt-vpn') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="rt-vpn"><thead><tr><th>User</th><th>From</th><th>Tunnel IP</th><th>Server</th><th>Since</th></tr></thead><tbody>
+    {% for u in data.vpn_users %}<tr data-q="{{ [u.user, u.remote, u.tunnel_ip]|select|join(' ')|lower }}"><td><b>{{ u.user or '?' }}</b></td><td class="mono">{{ u.remote or '' }}</td><td class="mono">{{ u.tunnel_ip or '' }}</td><td class="dim">{{ u.server or '' }}</td><td class="dim">{{ u.since or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.services %}<div class="p c6"><div class="ph"><h2>Services</h2></div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table><thead><tr><th></th><th>Service</th><th>Description</th><th>Enabled</th></tr></thead><tbody>
+    {% for x in data.services|sort(attribute='name') %}<tr><td>{{ dot(x.running) }}</td><td class="mono">{{ x.name }}</td><td class="dim">{{ x.description or '' }}</td><td>{{ yesno(x.enabled) }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.interfaces %}<div class="p c12"><div class="ph"><h2>Interfaces</h2>{{ filter_box('rt-if') }}</div>
+    <div class="scroll" style="max-height:480px;overflow:auto"><table id="rt-if"><thead><tr><th></th><th>Interface</th><th>Device</th><th>Description</th><th>Addresses</th><th>MAC</th><th class="n">In</th><th class="n">Out</th><th class="n">Errors</th></tr></thead><tbody>
+    {% for i in data.interfaces %}{% set addrs = i.addresses if i.addresses is defined else ([i.ip ~ ('/' ~ i.subnet if i.subnet else '')] if i.ip else []) %}
+      <tr data-q="{{ [i.name, i.device, i.description, addrs|join(' ')]|select|join(' ')|lower }}"><td>{{ dot(true if i.state == 'up' or i.status == 'up' else (none if i.state == 'admin down' or i.enabled == false else false)) }}</td>
+      <td><b>{{ i.name }}</b>{% if i.wan %} <span class="tag">WAN</span>{% endif %}{% if i.dhcp %} <span class="tag">DHCP</span>{% endif %}</td><td class="mono">{{ i.device or i.type or '' }}</td><td class="dim">{{ i.description or i.media or '' }}</td>
+      <td class="mono">{{ addrs|join(', ') }}</td><td class="mono dim">{{ i.mac or '' }}</td><td class="n">{{ i.in_bytes|bytes if i.in_bytes else '' }}</td><td class="n">{{ i.out_bytes|bytes if i.out_bytes else '' }}</td>
+      <td class="n {{ 'bad' if (i.in_errors or 0) + (i.out_errors or 0) > 0 else '' }}">{{ ((i.in_errors or 0) + (i.out_errors or 0))|int if i.in_errors is not none or i.out_errors is not none else '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if data.leases %}<div class="p c12"><div class="ph"><h2>DHCP leases</h2>{{ filter_box('rt-dhcp', 'Filter by IP, MAC or name') }}</div>
+    {{ legend([('Active', 'var(--s1)'), ('All', 'var(--s4)')]) }}{{ chart(integ.id, 'leases', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s4)","dash":true}], 'num', 120, 'Leases') }}
+    <div class="scroll" style="max-height:480px;overflow:auto;margin-top:10px"><table id="rt-dhcp"><thead><tr><th>IP</th><th>MAC</th><th>Host name</th><th>{{ 'Interface' if is_pf else 'Pool' }}</th><th>State</th><th>Expires</th></tr></thead><tbody>
+    {% for l in data.leases %}<tr data-q="{{ [l.ip, l.mac, l.hostname, l.descr]|select|join(' ')|lower }}"><td class="mono">{{ l.ip or '' }}</td><td class="mono">{{ l.mac or '' }}</td><td>{{ l.hostname or l.descr or '' }}</td><td class="dim">{{ l.interface or '' }}</td><td class="dim">{{ l.state or '' }}{% if l.online %} · {{ l.online }}{% endif %}</td><td class="dim">{{ l.ends or l.remaining or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+</div>
+{% if data.not_offered %}<p class="help">Not offered by this {{ 'package version' if is_pf else 'VyOS version' }}: {{ data.not_offered|join(', ') }}.</p>{% endif %}

@@ -5,13 +5,15 @@ from .base import Field, Integration, IntegrationError, Record
 from .fortigate import FortiGate
 from .meraki import Meraki
 from .panos import PanOS
+from .pfsense import PfSense
 from .proxmox import Proxmox
 from .sonicwall import SonicWall
 from .unifi import UniFi
+from .vyos import VyOS
 from .zscaler import Zscaler
 
 REGISTRY: dict[str, type[Integration]] = {
-    cls.kind: cls for cls in (Zscaler, Meraki, PanOS, FortiGate, SonicWall, UniFi, Proxmox)
+    cls.kind: cls for cls in (Zscaler, Meraki, PanOS, FortiGate, SonicWall, PfSense, VyOS, UniFi, Proxmox)
 }
 
 

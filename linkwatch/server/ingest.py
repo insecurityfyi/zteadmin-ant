@@ -385,6 +385,26 @@ def _sonicwall_series(d: dict[str, Any]) -> list[Point]:
     return out
 
 
+def _router_series(d: dict[str, Any]) -> list[Point]:
+    """pfSense and VyOS: firewall states, tunnels, VPN users, DHCP leases and per-gateway latency and loss."""
+    out: list[Point] = []
+    st = d.get("states") or d.get("conntrack") or {}
+    if st.get("current") is not None or st.get("entries") is not None:
+        out.append(("states", _num(st.get("current", st.get("entries"))), _num(st.get("max")), None))
+    if d.get("tunnels") is not None:
+        t = d["tunnels"]
+        out.append(("tunnels", sum(1 for x in t if x.get("up")), len(t), None))
+    if "vpn_users" in d:
+        out.append(("vpn:users", len(d["vpn_users"]), None, None))
+    if "leases" in d:
+        out.append(("leases", sum(1 for x in d["leases"] if str(x.get("state") or "active").lower() == "active"), len(d["leases"]), None))
+    for g in d.get("gateways") or []:
+        if g.get("name") and (g.get("delay_ms") is not None or g.get("loss_pct") is not None):
+            g["series"] = f"gw:{g['name']}"
+            out.append((g["series"], _num(g.get("delay_ms")), _num(g.get("loss_pct")), _num(g.get("stddev_ms"))))
+    return out
+
+
 def _proxmox_series(d: dict[str, Any]) -> list[Point]:
     g = d.get("guests") or {}
     out: list[Point] = [("guests", _num(g.get("running")), _num(g.get("total")), None)]
@@ -421,7 +441,7 @@ def _unifi_series(data: dict[str, Any]) -> list[Point]:
 
 
 SERIES = {"zscaler": _zscaler_series, "meraki": _meraki_series, "panos": _panos_series, "fortigate": _fortigate_series,
-          "sonicwall": _sonicwall_series, "proxmox": _proxmox_series, "unifi": _unifi_series}
+          "sonicwall": _sonicwall_series, "pfsense": _router_series, "vyos": _router_series, "proxmox": _proxmox_series, "unifi": _unifi_series}
 
 
 def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:

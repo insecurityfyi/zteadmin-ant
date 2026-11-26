@@ -41,8 +41,8 @@
       if (cur.length) segs.push(cur);
       segs.forEach(seg => {
         const d = seg.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L");
-        if (s.area !== false) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": .12 }));
-        svg.append(el("path", { d: "M" + d, fill: "none", stroke: s.color, "stroke-width": 1.6, "stroke-linejoin": "round" }));
+        if (s.area !== false && !s.dash) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": .12 }));
+        svg.append(el("path", { d: "M" + d, fill: "none", stroke: s.color, "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-dasharray": s.dash ? "4 3" : "" }));
       });
       const last = segs.length ? segs[segs.length - 1].slice(-1)[0] : null;
       if (last) svg.append(el("circle", { cx: last[0], cy: last[1], r: 3, fill: s.color }));
