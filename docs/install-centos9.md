@@ -334,8 +334,52 @@ Other forms:
 | --- | --- |
 | `update.sh --force` | Rebuild and restart even if the code didn't change |
 | `update.sh 1a2b3c4d5e6f` | Deploy that exact commit, e.g. to go back to an older version (run plain `update.sh` later to return to `main`) |
+| `update.sh --skip-ci` | Deploy even if GitHub's tests haven't passed on that commit |
 
-If the repository is private, `git fetch` needs a credential. Add a
+### 9a. Automatic deploys
+
+```sh
+~/zteadmin-ant/deploy/enable-auto-update.sh        # turn on
+~/zteadmin-ant/deploy/enable-auto-update.sh off    # turn off
+journalctl --user -u linkwatch-update -f           # watch it
+```
+
+A systemd timer runs `update.sh --auto` every 5 minutes. It deploys a new
+commit on `main` only when all of these hold:
+
+* the commit is a fast-forward of what's deployed (a force-pushed or rewritten
+  `main` stops it until you look),
+* the `pytest` check on GitHub passed for that exact commit (it waits while
+  the tests are still running),
+* nobody has edited files in `~/zteadmin-ant` on the VPS,
+* it didn't already fail its health check. A failed commit is rolled back and
+  not retried until a newer commit arrives or you run `update.sh` by hand.
+
+### 9b. Protect `main` on GitHub
+
+Automatic deploys trust whatever lands on `main`, so make GitHub enforce how
+it gets there. In **zteadmin-ant → Settings → Branches → Add branch ruleset**
+(or *Add rule*), target `main` and turn on:
+
+* **Require a pull request before merging**,
+* **Require status checks to pass**, and add `pytest`,
+* **Block force pushes** and **Restrict deletions**.
+
+Then every change reaches the VPS only through a reviewed pull request whose
+tests passed. The repository is public, so the VPS fetches over HTTPS with no
+credentials and nothing on the VPS can write to GitHub.
+
+### 9c. Admin password
+
+The password is in `~/.config/linkwatch/linkwatch.env`:
+
+```sh
+grep LW_ADMIN_PASSWORD ~/.config/linkwatch/linkwatch.env    # show it
+~/zteadmin-ant/deploy/reset-password.sh                     # set a new random one and restart
+~/zteadmin-ant/deploy/reset-password.sh 'your-own-password' # or choose it (12+ characters)
+```
+
+If you ever make the repository private, `git fetch` needs a credential. Add a
 read-only deploy key: on the VPS run
 `ssh-keygen -t ed25519 -f ~/.ssh/github_ro -N ""`, paste `~/.ssh/github_ro.pub`
 into **GitHub → zteadmin-ant → Settings → Deploy keys** (leave *Allow write
@@ -395,8 +439,9 @@ Then:
 | --- | --- |
 | Logs | `journalctl --user -u linkwatch-web -f` |
 | Update to the latest code | `~/zteadmin-ant/deploy/update.sh` |
+| Automatic updates on/off | `~/zteadmin-ant/deploy/enable-auto-update.sh` / `... off` |
+| Reset admin password | `~/zteadmin-ant/deploy/reset-password.sh` |
 | Restart | `systemctl --user restart linkwatch-web` |
-| Change admin password | edit `~/.config/linkwatch/linkwatch.env`, then restart |
 | Roll back by hand | `podman tag ghcr.io/insecurityfyi/linkwatch:previous ghcr.io/insecurityfyi/linkwatch:current && systemctl --user restart linkwatch-web` |
 | Database backup | `podman exec linkwatch-db pg_dump -U linkwatch linkwatch \| gzip > ~/linkwatch-$(date +%F).sql.gz` |
 | Restore | `gunzip -c backup.sql.gz \| podman exec -i linkwatch-db psql -U linkwatch linkwatch` |
