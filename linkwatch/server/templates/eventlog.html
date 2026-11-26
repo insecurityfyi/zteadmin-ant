@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_g.html" import event_rows %}
+{% block title %}Event log{% endblock %}
+{% block content %}
+{% macro qs(over) %}{% set a = {'q': q, 'kind': kind, 'severity': severity, 'device': device} %}{% set _ = a.update(over) %}?{% for k, v in a.items() if v %}{{ k }}={{ v|urlencode }}{{ '&' if not loop.last }}{% endfor %}{% endmacro %}
+<div class="head"><div><h1>Event log{% if dev %}: {{ dev.hostname }}{% endif %}</h1><p>Device and port status changes, alerts, poller connections, integration problems and configuration changes. Kept for 180 days.</p></div></div>
+<div class="p">
+  <div class="ph"><div class="filters">
+    {% for k, label in [('', 'Everything'), ('device', 'Devices'), ('port', 'Ports'), ('alert', 'Alerts'), ('poller', 'Pollers'), ('integration', 'Integrations'), ('config', 'Changes')] %}<a class="fbtn" href="{{ qs({'kind': k, 'page': ''}) }}" aria-pressed="{{ 'true' if kind == k else 'false' }}">{{ label }}</a>{% endfor %}
+    <form method="get" class="filters" style="margin-left:6px"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="device" value="{{ device }}">
+      <select name="severity" aria-label="Severity" onchange="this.form.submit()" style="width:auto"><option value="">Any severity</option>{% for k, label in [('crit','Critical'),('warn','Warning'),('ok','Recovered'),('info','Info')] %}<option value="{{ k }}" {% if severity == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <input type="search" name="q" value="{{ q }}" placeholder="Search events or devices" aria-label="Search events" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></form>
+  </div><span class="sub">{{ total|num }} event{{ '' if total == 1 else 's' }}</span></div>
+  {% if events %}{{ event_rows(events, true) }}
+  {% if pages > 1 %}<div class="pager"><span class="sub">Page {{ page }} of {{ pages }}</span>
+    {% if page > 1 %}<a class="btn sm" href="{{ qs({'page': page - 1}) }}">Newer</a>{% endif %}
+    {% if page < pages %}<a class="btn sm" href="{{ qs({'page': page + 1}) }}">Older</a>{% endif %}</div>{% endif %}
+  {% else %}<div class="empty-state"><h2>No events</h2><p>Events are recorded from now on as devices change state.</p></div>{% endif %}
+</div>
+{% endblock %}

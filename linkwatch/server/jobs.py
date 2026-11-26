@@ -118,9 +118,10 @@ def run_scheduled_discovery(app_state) -> None:
 
 
 def prune_audit(app_state) -> None:
-    from .models import AuditEvent
+    from .models import AuditEvent, Event
     with app_state.db.session() as s:
         s.execute(delete(AuditEvent).where(AuditEvent.at < utcnow() - timedelta(days=365)))
+        s.execute(delete(Event).where(Event.at < utcnow() - timedelta(days=180)))
 
 
 async def background(app_state) -> None:

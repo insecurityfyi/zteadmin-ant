@@ -13,7 +13,9 @@ def lw_config(tmp_path):
 
 @pytest.fixture
 def app(lw_config):
+    from linkwatch.server import api
     from linkwatch.server.app import create_app
+    api._enroll_attempts.clear()      # the per-IP enrollment limit is process-wide; every test starts fresh
     return create_app(lw_config)
 
 

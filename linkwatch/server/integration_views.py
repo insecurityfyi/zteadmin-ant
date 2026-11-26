@@ -26,13 +26,15 @@ def integration_overview(request: Request, iid: int, tab: str = "overview"):
         if integ.kind == "unifi":
             return back(f"/unifi?i={iid}")
         devices = s.scalars(select(Device).where(Device.integration_id == iid)
-                            .options(selectinload(Device.site)).order_by(Device.type, Device.hostname).limit(2000)).all()
+                            .options(selectinload(Device.site), selectinload(Device.ports), selectinload(Device.poller))
+                            .order_by(Device.type, Device.hostname).limit(2000)).all()
     data: dict[str, Any] = integ.data or {}
     ts = data.get("ts")
     counts = {k: sum(1 for d in devices if d.status == k) for k in ("up", "warn", "down", "off", "unknown")}
     ctx: dict[str, Any] = {"integ": integ, "cls": REGISTRY.get(integ.kind), "data": data, "devices": devices, "counts": counts,
                            "data_ts": datetime.fromisoformat(ts.rstrip("Z")) if ts else None, "nav_iid": iid,
-                           "device_by_ext": {d.external_id: d for d in devices}}
+                           "device_by_ext": {d.external_id: d for d in devices},
+                           "snmp_merged": sum(1 for d in devices if d.source in ("snmp", "ping"))}
     if integ.kind == "zscaler":
         products = data.get("products") or {}
         tabs = [(k, label) for k, label in ZSCALER_TABS if k == "overview" or k in products]

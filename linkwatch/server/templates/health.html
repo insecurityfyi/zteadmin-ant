@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_g.html" import graph, ranges, meter %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Health</h1><p>{{ sub }}. {{ rows|length }} device{{ '' if rows|length == 1 else 's' }} report it{% if missing %}, {{ missing }} don't{% endif %}.</p></div></div>
+<nav class="tabs" aria-label="Health readings">{% for k, m in metrics.items() %}<a href="?metric={{ k }}" {% if k == metric %}aria-current="page"{% endif %}>{{ m[0] }}</a>{% endfor %}</nav>
+{% if rows %}
+<div class="grid">
+  <div class="p c5"><div class="ph"><h2>{{ title }}</h2><span class="sub">{% if avg is not none %}average {{ (avg|round(1) ~ ' ms') if unit == 'ms' else (avg|round|int ~ '%') }}{% endif %}</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Device</th><th>Now</th></tr></thead><tbody>
+    {% for d in rows %}{% set v = values[loop.index0] %}<tr class="click" onclick="location.href='/devices/{{ d.id }}?tab=health'">
+      <td><span class="dot d-{{ d.status }}"></span></td><td class="nw"><a class="row" href="/devices/{{ d.id }}?tab=health">{{ d.hostname }}</a> <span class="dim">{{ d.site.name if d.site else '' }}</span></td>
+      <td class="nw">{% if unit == 'ms' %}<span class="mono {{ 'wa' if v > 100 else '' }}">{{ v|round(1) }} ms</span>{% elif metric == 'loss' %}{{ meter(v, 1, 20) }}{% else %}{{ meter(v) }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  <div class="p c7"><div class="ph"><h2>Top {{ [rows|length, 8]|min }}</h2>{{ ranges(opts=['6h','24h','7d','30d']) }}</div>
+    <div class="grid" style="gap:16px">{% for d in rows[:8] %}<div class="c6"><div class="ph" style="margin-bottom:4px"><h3><a href="/devices/{{ d.id }}?tab=health" style="color:inherit">{{ d.hostname }}</a></h3></div>
+      {{ graph('/ui/metrics/device/' ~ d.id, [{"key": key, "color": "var(--down)" if metric == 'loss' else "var(--s1)", "area": unit != 'ms'}], unit, 120, d.hostname, 100 if unit == 'pct' else none) }}</div>{% endfor %}</div></div>
+</div>
+{% else %}<div class="p empty-state"><h2>No readings yet</h2><p>{{ 'CPU and memory come from SNMP devices and some integrations.' if metric in ('cpu','mem') else 'Latency and loss come from ping on your pollers.' }}</p></div>{% endif %}
+{% endblock %}

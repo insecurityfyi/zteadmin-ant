@@ -12,6 +12,8 @@ from .app import flash
 from .models import AuditEvent, Device, Integration, Poller, User, utcnow
 from .security import hash_password, verify_password
 from .users import MIN_PASSWORD, ROLES, USERNAME, active_admins, audit, password_problem
+from .db import set_setting
+from .themes import THEMES, site_theme
 from .web import back, render, st
 
 router = APIRouter(include_in_schema=False)
@@ -34,10 +36,25 @@ def admin_page(request: Request, audit_q: str = ""):
                   "pollers": s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0,
                   "integrations": s.scalar(select(func.count(Integration.id))) or 0}
         dialect = s.bind.dialect.name
+        theme = site_theme(s)
     system = {"version": __version__, "python": platform.python_version(), "database": dialect,
               "public_url": st(request).config.public_url}
     return render(request, "admin.html", {"users": users, "events": events, "roles": ROLES, "audit_q": audit_q,
-                                          "counts": counts, "system": system, "min_password": MIN_PASSWORD})
+                                          "counts": counts, "system": system, "min_password": MIN_PASSWORD,
+                                          "themes": THEMES, "site_theme": theme})
+
+
+@router.post("/admin/theme")
+async def admin_theme(request: Request):
+    form = await request.form()
+    theme = str(form.get("theme") or "auto")
+    if theme not in THEMES:
+        theme = "auto"
+    with st(request).db.session() as s:
+        set_setting(s, "theme", theme)
+        audit(s, request.state.user.username, ip_of(request), "changed the site theme", theme)
+    flash(request, f"Site theme set to {THEMES[theme].split(' (')[0]}. Users who picked their own theme keep it.")
+    return back("/admin#appearance")
 
 
 @router.post("/admin/users")
@@ -159,7 +176,21 @@ async def user_delete(request: Request, uid: int):
 # ------------------------------------------------------------------ own account (every role)
 @router.get("/account", response_class=HTMLResponse)
 def account_page(request: Request):
-    return render(request, "account.html", {"roles": ROLES, "min_password": MIN_PASSWORD})
+    with st(request).db.session() as s:
+        default = site_theme(s)
+    return render(request, "account.html", {"roles": ROLES, "min_password": MIN_PASSWORD, "themes": THEMES,
+                                            "site_theme": default})
+
+
+@router.post("/account/theme")
+async def account_theme(request: Request):
+    form = await request.form()
+    theme = str(form.get("theme") or "")
+    with st(request).db.session() as s:
+        user = s.get(User, request.state.user.id)
+        user.theme = theme if theme in THEMES else None
+    flash(request, "Theme saved.")
+    return back("/account")
 
 
 @router.post("/account/password")

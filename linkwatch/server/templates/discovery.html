@@ -29,6 +29,14 @@
   {% else %}<p class="dim" style="margin:0">No SNMP credentials saved yet.</p>{% endif %}
 </div>
 
+<div class="p c12" id="ping-only"><div class="ph"><h2>Hosts that only answer ping</h2><span class="sub">Found by the ping sweep but no SNMP credentials worked</span></div>
+  <form method="post" action="/discovery/ping-only" class="stack" style="max-width:none">
+    {% for k, label in ping_only_modes.items() %}<label class="chk"><input type="radio" name="mode" value="{{ k }}" {% if k == ping_only %}checked{% endif %}> {{ label }}</label>{% endfor %}
+    <p class="help" style="margin:0">With Skip, scan results leave them out, Add selected ignores them and saved scans set to "Add everything new that answers" add only devices that answer SNMP.</p>
+    <div class="actions"><button class="btn pri" type="submit">Save</button>
+      {% if ping_only_devices %}<a class="btn" href="/devices?source=ping">Review the {{ ping_only_devices }} ping-only device{{ 's' if ping_only_devices != 1 else '' }} already added</a>{% endif %}</div>
+  </form></div>
+
 <div class="p c12" id="rules"><div class="ph"><h2>Saved scans</h2><span class="sub">Run by hand or on a schedule; optional auto-add</span></div>
   {% if rules %}<div class="scroll"><table><thead><tr><th>Name</th><th>Addresses</th><th>Poller</th><th>Schedule</th><th>New devices</th><th>Last run</th><th></th></tr></thead><tbody>
   {% for r in rules %}<tr>

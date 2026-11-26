@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from .gateway import EnrollError
@@ -185,8 +185,28 @@ def _port_series(request: Request, port_id: int, rng: str) -> dict[str, list]:
         rows = s.execute(select(PortMetric.ts, PortMetric.in_bps, PortMetric.out_bps, PortMetric.in_err, PortMetric.out_err)
                          .where(PortMetric.port_id == port_id, PortMetric.hourly.is_(hourly), PortMetric.ts >= since)
                          .order_by(PortMetric.ts)).all()
+        speed = s.scalar(select(Port.speed_mbps).where(Port.id == port_id))
+    cap = speed * 1e6 if speed else None
+    util = (lambda v: None if v is None or not cap else min(100.0, v / cap * 100))
     return {"ts": [r[0].isoformat() + "Z" for r in rows], "in": [r[1] for r in rows], "out": [r[2] for r in rows],
-            "in_err": [r[3] for r in rows], "out_err": [r[4] for r in rows]}
+            "in_err": [r[3] for r in rows], "out_err": [r[4] for r in rows],
+            "util_in": [util(r[1]) for r in rows], "util_out": [util(r[2]) for r in rows]}
+
+
+def _device_traffic(request: Request, device_id: int, rng: str) -> dict[str, list]:
+    """All of a device's ports added up per poll."""
+    since, hourly = _window(rng)
+    with lw(request).db.session() as s:
+        rows = s.execute(select(PortMetric.ts, func.sum(PortMetric.in_bps), func.sum(PortMetric.out_bps))
+                         .join(Port, Port.id == PortMetric.port_id)
+                         .where(Port.device_id == device_id, PortMetric.hourly.is_(hourly), PortMetric.ts >= since)
+                         .group_by(PortMetric.ts).order_by(PortMetric.ts)).all()
+    return {"ts": [r[0].isoformat() + "Z" for r in rows], "in": [r[1] for r in rows], "out": [r[2] for r in rows]}
+
+
+@router.get("/ui/metrics/device/{device_id}/traffic", include_in_schema=False)
+def device_traffic_ui(device_id: int, request: Request, range: str = "24h"):
+    return _device_traffic(request, device_id, range)
 
 
 @router.get("/ui/metrics/device/{device_id}", include_in_schema=False)

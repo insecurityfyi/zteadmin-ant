@@ -1,0 +1,15 @@
+{# Shared bits for the device, port, health and event pages. #}
+{% macro graph(src, series, unit='num', h=160, label='', max=None) %}<div class="fig" data-src="{{ src }}" data-unit="{{ unit }}" data-h="{{ h }}" data-label="{{ label }}"{% if max is not none %} data-max="{{ max }}"{% endif %} data-series='{{ series|tojson }}'></div>{% endmacro %}
+{% macro panel_graph(title, sub, src, series, unit='num', h=160, max=None, cls='c6') %}<div class="{{ cls }}"><div class="ph" style="margin-bottom:4px"><h3>{{ title }}</h3><span class="sub">{{ sub }}</span></div>{{ graph(src, series, unit, h, title, max) }}</div>{% endmacro %}
+{% macro ranges(default='24h', opts=['6h','24h','7d','30d','1y']) %}<div class="ranges">{% for r in opts %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == default else 'false' }}">{{ r }}</button>{% endfor %}</div>{% endmacro %}
+{% macro inout() %}<div class="legend"><span><i style="background:var(--s1)"></i>In</span><span><i style="background:var(--s2)"></i>Out</span></div>{% endmacro %}
+{% macro portdot(p) %}<span class="dot d-{{ 'up' if p.oper == 'up' else ('off' if p.admin != 'up' else 'down') }}" title="admin {{ p.admin }}, oper {{ p.oper }}"></span>{% endmacro %}
+{% macro sevtag(sev) %}<span class="sev {{ sev }}">{{ {'crit':'Critical','warn':'Warning','info':'Info','ok':'OK'}.get(sev, sev) }}</span>{% endmacro %}
+{% macro meter(pct, warn=70, bad=85) %}{% if pct is none %}<span class="dim">–</span>{% else %}<span class="meter"><b style="width:{{ [pct, 100]|min }}%;{% if pct >= bad %}background:var(--down){% elif pct >= warn %}background:var(--warn){% endif %}"></b></span>{{ pct|round|int }}%{% endif %}{% endmacro %}
+{% macro event_rows(events, show_device=false) %}
+<div class="scroll"><table><thead><tr><th>When</th><th>Type</th>{% if show_device %}<th>Device</th>{% endif %}<th>Event</th></tr></thead><tbody>
+{% for e in events %}<tr><td class="nw dim mono" title="{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ e.at.strftime('%d %b %H:%M') }}</td>
+  <td class="nw"><span class="dot {{ {'ok':'d-up','crit':'d-down','warn':'d-warn'}.get(e.severity, 'd-off') }}"></span> {{ e.kind }}</td>
+  {% if show_device %}<td class="nw">{% if e.device %}<a href="/devices/{{ e.device_id }}?tab=events">{{ e.device.hostname }}</a>{% else %}<span class="dim">–</span>{% endif %}</td>{% endif %}
+  <td>{% if e.port_id %}<a href="/ports/{{ e.port_id }}" style="color:inherit">{{ e.message }}</a>{% else %}{{ e.message }}{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>{% endmacro %}
