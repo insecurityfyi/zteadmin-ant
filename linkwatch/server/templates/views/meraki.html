@@ -1,0 +1,37 @@
+{% from "_iv.html" import chart, legend, meter, dot, filter_box %}
+{% set cl = data.clients or {} %}
+{% set ups = data.uplinks or [] %}
+<div class="kpis">
+  <div class="kpi"><span>Devices online</span><b>{{ counts.up }} / {{ devices|length }}</b>{% if counts.down %}<em class="bad">{{ counts.down }} offline</em>{% elif counts.warn %}<em class="wa">{{ counts.warn }} alerting</em>{% else %}<em class="okc">all online</em>{% endif %}</div>
+  <div class="kpi"><span>Clients (last hour)</span><b>{{ cl.total|num if cl.get('total') is not none else '–' }}</b><em>across {{ (data.networks or [])|length }} networks</em></div>
+  <div class="kpi"><span>Client traffic (hour average)</span><b>{{ cl.down_bps|bps }}</b><em>up {{ cl.up_bps|bps }}</em></div>
+  <div class="kpi"><span>WAN uplinks active</span><b>{{ ups|selectattr('status', 'in', ['active', 'ready'])|list|length }} / {{ ups|length }}</b>{% set failed = ups|selectattr('status', 'in', ['failed', 'not connected'])|list %}<em class="{{ 'bad' if failed else '' }}">{{ (failed|length ~ ' failed') if failed else 'appliance uplinks' }}</em></div>
+  <div class="kpi"><span>Licensing</span><b style="font-size:18px">{{ (data.licensing or {}).status or '–' }}</b><em>{% if (data.licensing or {}).expires %}expires {{ data.licensing.expires }}{% else %}&nbsp;{% endif %}</em></div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Client traffic</h2><span class="sub">hourly average, b/s</span></div>
+    {{ legend([('Download', 'var(--s1)'), ('Upload', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'clients', [{"key":"b","color":"var(--s1)"},{"key":"c","color":"var(--s2)"}], 'bps', 180, 'Client traffic') }}</div>
+  <div class="p c6"><div class="ph"><h2>Clients</h2><span class="sub">seen in the last hour</span></div>
+    {{ legend([('Clients', 'var(--s1)')]) }}{{ chart(integ.id, 'clients', [{"key":"a","color":"var(--s1)"}], 'num', 180, 'Clients') }}</div>
+  <div class="p c6"><div class="ph"><h2>Devices by type</h2></div>
+    <table><thead><tr><th>Type</th><th class="n">Online</th><th class="n">Alerting</th><th class="n">Offline</th><th class="n">Dormant</th><th class="n">Total</th></tr></thead><tbody>
+    {% for t, c in (data.by_type or {})|dictsort %}<tr><td><b>{{ t }}</b></td><td class="n okc">{{ c.up }}</td><td class="n {{ 'wa' if c.warn }}">{{ c.warn }}</td><td class="n {{ 'bad' if c.down }}">{{ c.down }}</td><td class="n dim">{{ c.off }}</td><td class="n">{{ c.total }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Firmware</h2><span class="sub">model and version</span></div>
+    <div class="bars">{% for v, n in data.firmware or [] %}<div class="bar"><span class="mono" style="font-size:12px">{{ v }}</span><span class="v">{{ n }}</span><div class="tr"><b style="width:{{ (100 * n / (devices|length or 1))|round(1) }}%;background:var(--s1)"></b></div></div>{% endfor %}</div></div>
+  {% if ups or data.loss_latency %}
+  <div class="p"><div class="ph"><h2>WAN uplinks</h2><span class="sub">loss and latency are the last 5-minute sample to Meraki's test target</span></div>
+    {% set ll = {} %}{% for u in data.loss_latency or [] %}{% set _ = ll.__setitem__(u.serial ~ '/' ~ u.uplink, u) %}{% endfor %}
+    <div class="scroll"><table><thead><tr><th></th><th>Appliance</th><th>Network</th><th>Uplink</th><th>Status</th><th>IP</th><th>Public IP</th><th>Provider</th><th class="n">Latency</th><th class="n">Loss</th></tr></thead><tbody>
+    {% for u in ups %}{% set m = ll.get(u.serial ~ '/' ~ u.interface, {}) %}
+      <tr><td>{{ dot(u.status in ['active','ready'] if u.status else none) }}</td><td><b>{{ u.device }}</b>{% if u.ha_role %} <span class="tag">{{ u.ha_role }}</span>{% endif %}</td><td>{{ u.network or '' }}</td><td>{{ u.interface }}</td>
+        <td class="{{ 'bad' if u.status in ['failed','not connected'] else '' }}">{{ u.status }}</td><td class="mono">{{ u.ip or '' }}</td><td class="mono">{{ u.public_ip or '' }}</td><td>{{ u.provider or '' }}</td>
+        {% set lat, loss = m.get('latency_ms'), m.get('loss_pct') %}<td class="n">{{ (lat|round(1) ~ ' ms') if lat is not none else '–' }}</td><td class="n {{ 'bad' if (loss or 0) >= 5 else '' }}">{{ loss|pct if loss is not none else '–' }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  {% for u in (data.loss_latency or [])[:6] if u.series %}<div class="p c4"><div class="ph"><h3>{{ u.device }} {{ u.uplink }}</h3><span class="sub">latency ms</span></div>
+    {{ chart(integ.id, u.series, [{"key":"a","color":"var(--s1)","area":false}], 'ms', 130, 'Latency') }}</div>{% endfor %}
+  {% endif %}
+  <div class="p"><div class="ph"><h2>Networks</h2>{{ filter_box('mk-net') }}</div>
+    <div class="scroll"><table id="mk-net"><thead><tr><th>Network</th><th>Products</th><th class="n">Online</th><th class="n">Alerting</th><th class="n">Offline</th><th>Time zone</th><th>Tags</th></tr></thead><tbody>
+    {% for n in data.networks or [] %}<tr data-q="{{ [n.name, n.types|join(' '), n.tags|join(' ')]|join(' ')|lower }}"><td><b>{{ n.name }}</b></td><td style="font-size:12.5px">{{ n.types|join(', ') }}</td><td class="n">{{ n.up or 0 }}</td><td class="n {{ 'wa' if n.warn }}">{{ n.warn or 0 }}</td><td class="n {{ 'bad' if n.down }}">{{ n.down or 0 }}</td><td class="dim">{{ n.tz or '' }}</td><td>{% for t in n.tags %}<span class="tag">{{ t }}</span> {% endfor %}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>

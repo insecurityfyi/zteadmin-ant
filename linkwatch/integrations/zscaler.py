@@ -24,6 +24,20 @@ import httpx
 from .base import Field, Integration, IntegrationError, Record
 
 TOKEN_AUDIENCE = "https://api.zscaler.com"
+
+
+def _epoch(v) -> str | None:
+    """ZPA sends epoch seconds or milliseconds as strings. Returns ISO UTC."""
+    from datetime import datetime, timezone
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    if n > 1e11:
+        n /= 1000
+    return datetime.fromtimestamp(n, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 PRODUCTS = ("zia", "zpa", "zdx", "zcc", "ztb")
 
 
@@ -56,6 +70,15 @@ class Zscaler(Integration):
         self._token: str | None = None
         self._token_exp = 0.0
         self.errors: list[str] = []
+        self.data: dict[str, Any] = {"type": "zscaler", "products": {}, "unavailable": []}
+
+    def _optional(self, label: str, fn):
+        """Extra detail that some tenants or licences don't have: a failure is noted on the page, not an error."""
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - any failure here only hides one panel
+            self.data["unavailable"].append(f"{label}: {exc}")
+            return None
 
     # auth ---------------------------------------------------------------
     @property
@@ -117,27 +140,49 @@ class Zscaler(Integration):
     def collect(self) -> list[Record]:
         records: list[Record] = []
         self.errors = []
+        self.data = {"type": "zscaler", "products": {}, "unavailable": []}
         for product in PRODUCTS:
             if not self._enabled(product):
                 continue
             try:
-                records.extend(getattr(self, f"_collect_{product}")())
+                got = getattr(self, f"_collect_{product}")()
+                records.extend(got)
+                self.data["products"][product] = {"ok": True, "objects": len(got)}
             except IntegrationError as exc:
                 self.errors.append(f"{product.upper()}: {exc}")
+                self.data["products"][product] = {"ok": False, "error": str(exc)}
         if self.errors and not records:
             raise IntegrationError("; ".join(self.errors))
         return records
 
     def _collect_zia(self) -> list[Record]:
         out: list[Record] = []
-        for loc in self._zia_paged("/zia/api/v1/locations"):
+        locations = self._zia_paged("/zia/api/v1/locations")
+        tunnels = self._zia_paged("/zia/api/v1/greTunnels")
+        status = self._optional("ZIA activation status", lambda: self.api("/zia/api/v1/status")) or {}
+        self.data["zia"] = {
+            "activation": status.get("status") if isinstance(status, dict) else None,
+            "locations": [{"id": loc.get("id"), "name": loc.get("name"), "country": loc.get("country"), "tz": loc.get("tz"),
+                           "ips": loc.get("ipAddresses") or [], "vpn_credentials": len(loc.get("vpnCredentials") or []),
+                           "up_kbps": loc.get("upBandwidth"), "down_kbps": loc.get("dnBandwidth"),
+                           "firewall": loc.get("ofwEnabled"), "ssl_scan": loc.get("sslScanEnabled"),
+                           "auth": loc.get("authRequired"), "xff": loc.get("xffForwardEnabled"),
+                           "sub": bool(loc.get("parentId"))} for loc in locations],
+            "tunnels": [{"id": t.get("id"), "source_ip": t.get("sourceIp"), "comment": t.get("comment"),
+                         "primary": (t.get("primaryDestVip") or {}).get("datacenter"),
+                         "primary_vip": (t.get("primaryDestVip") or {}).get("virtualIp"),
+                         "secondary": (t.get("secondaryDestVip") or {}).get("datacenter"),
+                         "secondary_vip": (t.get("secondaryDestVip") or {}).get("virtualIp"),
+                         "inside": t.get("internalIpRange")} for t in tunnels],
+        }
+        for loc in locations:
             out.append(Record(
                 external_id=f"zia-loc-{loc.get('id')}", hostname=f"ZIA location {loc.get('name', loc.get('id'))}",
                 ip=None, type="Zscaler", platform="ZIA location", site=loc.get("name"), status="unknown",
                 detail=", ".join(loc.get("ipAddresses") or []) or "No static IPs",
                 extra={"product": "zia", "country": loc.get("country"), "vpnCredentials": len(loc.get("vpnCredentials") or [])},
             ))
-        for t in self._zia_paged("/zia/api/v1/greTunnels"):
+        for t in tunnels:
             src = t.get("sourceIp", "")
             out.append(Record(
                 external_id=f"zia-gre-{t.get('id')}", hostname=f"ZIA GRE {src}", ip=src or None, type="Zscaler",
@@ -161,14 +206,23 @@ class Zscaler(Integration):
         cid = str(self.config.get("zpa_customer_id") or "").strip()
         if not cid:
             raise IntegrationError("ZPA customer ID is not set")
-        path = f"/zpa/mgmtconfig/v1/admin/customers/{cid}/connector"
+        base = f"/zpa/mgmtconfig/v1/admin/customers/{cid}"
+        path = f"{base}/connector"
         out: list[Record] = []
+        connectors: list[dict] = []
         page, pages = 1, 1
         while page <= pages and page <= 50:
             body = self.api(path, {"page": page, "pagesize": 500}) or {}
             pages = int(body.get("totalPages") or 1)
             for c in body.get("list", []):
                 healthy = c.get("controlChannelStatus") == "ZPN_STATUS_AUTHENTICATED"
+                connectors.append({"id": c.get("id"), "name": c.get("name"), "group": c.get("appConnectorGroupName"),
+                                   "enabled": c.get("enabled", True) is not False, "healthy": healthy,
+                                   "channel": str(c.get("controlChannelStatus", "unknown")).replace("ZPN_STATUS_", "").lower(),
+                                   "version": c.get("currentVersion"), "expected": c.get("expectedVersion"),
+                                   "upgrade": c.get("upgradeStatus"), "private_ip": c.get("privateIp"), "public_ip": c.get("publicIp"),
+                                   "location": c.get("location"), "os": c.get("runtimeOS") or c.get("platform"),
+                                   "last_connect": _epoch(c.get("lastBrokerConnectTime"))})
                 out.append(Record(
                     external_id=f"zpa-ac-{c.get('id')}", hostname=c.get("name") or f"connector {c.get('id')}",
                     ip=c.get("privateIp") or None, type="Zscaler",
@@ -179,11 +233,22 @@ class Zscaler(Integration):
                     extra={"product": "zpa", "expectedVersion": c.get("expectedVersion"), "upgradeStatus": c.get("upgradeStatus")},
                 ))
             page += 1
+        count = lambda sub: int(((self.api(f"{base}/{sub}", {"page": 1, "pagesize": 1}) or {}).get("totalCount")) or 0)  # noqa: E731
+        self.data["zpa"] = {"connectors": connectors,
+                            "groups": self._optional("ZPA connector groups", lambda: count("appConnectorGroup")),
+                            "applications": self._optional("ZPA application segments", lambda: count("application")),
+                            "healthy": sum(1 for c in connectors if c["healthy"]),
+                            "outdated": sum(1 for c in connectors if c["expected"] and c["version"] and c["expected"] != c["version"])}
         return out
 
     def _collect_zdx(self) -> list[Record]:
         out: list[Record] = []
-        for app in self.api("/zdx/v1/apps", {"since": 2}) or []:
+        apps = self.api("/zdx/v1/apps", {"since": 2}) or []
+        self.data["zdx"] = {"apps": [{"id": a.get("id"), "name": a.get("name"), "score": a.get("score"), "users": a.get("total_users"),
+                                      "region": (a.get("most_impacted_region") or {}).get("country")
+                                      if isinstance(a.get("most_impacted_region"), dict) else a.get("most_impacted_region")}
+                                     for a in apps]}
+        for app in apps:
             score = app.get("score")
             status = "unknown" if score is None else ("up" if score >= 66 else "warn" if score >= 34 else "down")
             out.append(Record(
@@ -203,6 +268,13 @@ class Zscaler(Integration):
                 break
         versions = Counter(str(d.get("agentVersion") or "unknown") for d in devices)
         oses = Counter(str(d.get("osVersion") or d.get("type") or "unknown").split(" ")[0] for d in devices)
+        states = Counter(str(d.get("registrationState") or "unknown") for d in devices)
+        self.data["zcc"] = {"total": len(devices), "versions": versions.most_common(15), "os": oses.most_common(10),
+                            "states": states.most_common(), "devices": [
+                                {"hostname": d.get("machineHostname") or d.get("hostname"), "user": d.get("user") or d.get("userName"),
+                                 "os": d.get("osVersion") or d.get("type"), "version": d.get("agentVersion"),
+                                 "state": d.get("registrationState"), "model": d.get("deviceModel"),
+                                 "last_seen": d.get("lastSeenTime") or d.get("last_seen_time")} for d in devices[:1000]]}
         return [Record(
             external_id="zcc-summary", hostname="Client Connector fleet", ip=None, type="Zscaler",
             platform="Zscaler Client Connector", site=None, status="up",
@@ -245,8 +317,14 @@ class Zscaler(Integration):
                 raise
         sites = body if isinstance(body, list) else (body or {}).get("result") or (body or {}).get("data") or (body or {}).get("sites") or []
         out: list[Record] = []
+        self.data["ztb"] = {"sites": []}
         for s in sites:
             raw = str(s.get("status") or s.get("state") or s.get("health") or "").lower()
+            self.data["ztb"]["sites"].append({
+                "name": s.get("display_name") or s.get("name") or s.get("siteName") or s.get("id"),
+                "status": raw or "unknown", "gateway": s.get("gatewayType") or s.get("gateway_type"),
+                "location": s.get("location") or s.get("city") or s.get("address"),
+                "details": {k: v for k, v in s.items() if isinstance(v, (str, int, float, bool)) and k not in ("id", "name", "display_name")}})
             status = "up" if raw in ("up", "online", "active", "healthy", "connected") else \
                      "down" if raw in ("down", "offline", "disconnected", "unhealthy") else "unknown"
             sid = s.get("id") or s.get("siteId") or s.get("site_id") or s.get("name")

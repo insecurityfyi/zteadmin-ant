@@ -187,3 +187,73 @@ def test_unifi_pages(logged_in, app):
     assert logged_in.get(f"/ui/metrics/integration/{iid}/ssid%3AOffice").json()["a"] == [4_000_000.0]
     assert "Wi-Fi traffic" in logged_in.get(f"/devices/{ap_id}").text
     assert f'href="/unifi?i={iid}"' in logged_in.get(f"/integrations/{iid}").text
+
+
+def test_integration_pages(logged_in, app):
+    import copy
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Integration, IntegrationMetric
+    from tests.linkwatch.sample_integrations import DATA, RECORDS
+
+    ids = {}
+    db = app.state.lw.db
+    with db.session() as s:
+        for kind, data in DATA.items():
+            integ = Integration(kind=kind, name=f"My {kind}", config_enc=app.state.lw.vault.seal({}), status="never")
+            s.add(integ)
+            s.flush()
+            ingest_integration(s, Alerter(s), integ, {"ok": True, "records": RECORDS[kind], "data": copy.deepcopy(data)})
+            ids[kind] = integ.id
+        keys = {(m.integration_id, m.key) for m in s.scalars(select(IntegrationMetric))}
+    assert {(ids["zscaler"], k) for k in ("objects", "zpa:connectors", "zdx:3", "zdx:average", "zcc:devices", "zia:inventory")} <= keys
+    assert {(ids["meraki"], "clients"), (ids["meraki"], "uplink:Q2-MX/wan1"), (ids["panos"], "sessions"),
+            (ids["fortigate"], "tunnels"), (ids["proxmox"], "guests"), (ids["proxmox"], "storage:pve-01/local-zfs")} <= keys
+
+    nav = logged_in.get("/").text
+    assert f'href="/integrations/{ids["meraki"]}/overview"' in nav and "My zscaler" in nav
+
+    z = logged_in.get(f"/integrations/{ids['zscaler']}/overview").text
+    assert "ZDX average score" in z and "ac-hq-02" in z and "1 optional panel" in z
+    for tab, text in [("zia", "HQ Guest"), ("zpa", "UPGRADE_FAILED".lower().replace("_", " ")), ("zdx", "Salesforce"),
+                      ("zcc", "LT-0042"), ("ztb", "No sites")]:
+        r = logged_in.get(f"/integrations/{ids['zscaler']}/overview?tab={tab}")
+        assert r.status_code == 200 and text in r.text, tab
+    assert "dal-mx" in logged_in.get(f"/integrations/{ids['meraki']}/overview").text
+    pa = logged_in.get(f"/integrations/{ids['panos']}/overview").text
+    assert "WildFire License" in pa and "(expired)" in pa and "to-azure" in pa
+    assert "grace" in logged_in.get(f"/integrations/{ids['fortigate']}/overview").text
+    assert "local-zfs" in logged_in.get(f"/integrations/{ids['proxmox']}/overview").text
+    assert logged_in.get("/integrations/999/overview").status_code == 404
+    series = logged_in.get(f"/ui/metrics/integration/{ids['zscaler']}/objects").json()
+    assert series["a"] == [1.0] and series["b"] == [3.0] and series["c"] == [1.0]
+
+
+def test_integration_page_before_first_sync(logged_in, app):
+    from linkwatch.server.models import Integration
+    with app.state.lw.db.session() as s:
+        integ = Integration(kind="panos", name="New PA", config_enc=app.state.lw.vault.seal({}))
+        s.add(integ)
+        s.flush()
+        iid = integ.id
+    r = logged_in.get(f"/integrations/{iid}/overview")
+    assert r.status_code == 200 and "hasn't synced yet" in r.text
+
+
+def test_integration_pages_with_sparse_data(logged_in, app):
+    """A tenant that returns almost nothing still gets a page, not an error."""
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Integration
+    with app.state.lw.db.session() as s:
+        ids = []
+        for kind in ("zscaler", "meraki", "panos", "fortigate", "proxmox"):
+            integ = Integration(kind=kind, name=f"Sparse {kind}", config_enc=app.state.lw.vault.seal({}))
+            s.add(integ)
+            s.flush()
+            data = {"type": kind, "products": {"zia": {"ok": True, "objects": 0}}} if kind == "zscaler" else {"type": kind}
+            ingest_integration(s, Alerter(s), integ, {"ok": True, "records": [], "data": data})
+            ids.append(integ.id)
+    for iid in ids:
+        assert logged_in.get(f"/integrations/{iid}/overview").status_code == 200, iid
+    assert logged_in.get(f"/integrations/{ids[0]}/overview?tab=zia").status_code == 200

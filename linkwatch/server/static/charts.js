@@ -18,6 +18,7 @@
     const vals = series.flatMap(s => data[s.key].filter(v => v != null));
     const min = opts.min ? +opts.min : 0;
     let max = opts.max ? +opts.max : nice((Math.max(0, ...vals) || 1) * 1.1);
+    if (!opts.max && (opts.unit || "num") === "num" && max < 40) max = Math.max(4, Math.ceil(max / 4) * 4);   // whole-number ticks for counts
     const t0 = ts[0], t1 = ts[ts.length - 1] === t0 ? t0 + 1 : ts[ts.length - 1];
     const x = t => L + (W - L - R) * (t - t0) / (t1 - t0), y = v => T + (H - T - B) * (1 - (v - min) / (max - min));
     const f = fmt[opts.unit || "num"];

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
+from typing import Any
 
 import httpx
 
@@ -79,12 +81,23 @@ class Meraki(Integration):
         seen = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs[:10])
         raise IntegrationError(f"No organization named '{org}'. This key can see: {seen}. Use one of those IDs, or leave Organization ID blank.")
 
+    def _optional(self, label: str, fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - one missing panel, not a failed sync
+            self.data["unavailable"].append(f"{label}: {exc}")
+            return None
+
     def collect(self) -> list[Record]:
+        self.data: dict[str, Any] = {"type": "meraki", "unavailable": []}
         org = self.org_id()
-        networks = {n["id"]: n.get("name") for n in self._paged(f"/organizations/{org}/networks")}
+        nets = self._paged(f"/organizations/{org}/networks")
+        networks = {n["id"]: n.get("name") for n in nets}
         statuses = {s["serial"]: s for s in self._paged(f"/organizations/{org}/devices/statuses")}
+        devices = self._paged(f"/organizations/{org}/devices")
+        self._telemetry(org, nets, devices, statuses)
         out: list[Record] = []
-        for d in self._paged(f"/organizations/{org}/devices"):
+        for d in devices:
             st = statuses.get(d["serial"], {})
             ip = st.get("lanIp") or d.get("lanIp") or st.get("publicIp")
             out.append(Record(
@@ -95,3 +108,56 @@ class Meraki(Integration):
                 extra={"mac": d.get("mac"), "publicIp": st.get("publicIp"), "lastReportedAt": st.get("lastReportedAt")},
             ))
         return out
+
+    def _telemetry(self, org: str, nets: list[dict], devices: list[dict], statuses: dict) -> None:
+        names = {d["serial"]: d.get("name") or d["serial"] for d in devices}
+        net_names = {n["id"]: n.get("name") for n in nets}
+        per_net: dict[str, Counter] = {}
+        for d in devices:
+            per_net.setdefault(d.get("networkId") or "", Counter())[STATUS.get(statuses.get(d["serial"], {}).get("status", ""), "unknown")] += 1
+        self.data["networks"] = sorted(({"id": n["id"], "name": n.get("name"), "types": n.get("productTypes") or [],
+                                         "tz": n.get("timeZone"), "tags": n.get("tags") or [], **dict(per_net.get(n["id"], Counter()))}
+                                        for n in nets), key=lambda n: str(n["name"]).lower())
+        self.data["by_type"] = {}
+        for d in devices:
+            t = TYPES.get(d.get("productType", ""), "Other")
+            c = self.data["by_type"].setdefault(t, {"total": 0, "up": 0, "warn": 0, "down": 0, "off": 0, "unknown": 0})
+            c["total"] += 1
+            c[STATUS.get(statuses.get(d["serial"], {}).get("status", ""), "unknown")] += 1
+        self.data["firmware"] = Counter(f"{d.get('model', '?')} {d.get('firmware') or '?'}" for d in devices).most_common(15)
+
+        def uplinks():
+            out = []
+            for a in self._paged(f"/organizations/{org}/appliance/uplink/statuses"):
+                for u in a.get("uplinks") or []:
+                    out.append({"serial": a.get("serial"), "device": names.get(a.get("serial"), a.get("serial")),
+                                "network": net_names.get(a.get("networkId")), "interface": u.get("interface"),
+                                "status": u.get("status"), "ip": u.get("ip"), "public_ip": u.get("publicIp"),
+                                "gateway": u.get("gateway"), "provider": u.get("provider"),
+                                "ha_role": (a.get("highAvailability") or {}).get("role")})
+            return out
+        self.data["uplinks"] = self._optional("Appliance uplinks", uplinks) or []
+
+        def loss_latency():
+            out = []
+            for u in self._paged(f"/organizations/{org}/devices/uplinksLossAndLatency", {"timespan": 300}):
+                series = [p for p in u.get("timeSeries") or [] if p.get("latencyMs") is not None or p.get("lossPercent") is not None]
+                last = series[-1] if series else {}
+                out.append({"serial": u.get("serial"), "device": names.get(u.get("serial"), u.get("serial")), "uplink": u.get("uplink"),
+                            "target": u.get("ip"), "latency_ms": last.get("latencyMs"), "loss_pct": last.get("lossPercent")})
+            return out
+        self.data["loss_latency"] = self._optional("Uplink loss and latency", loss_latency) or []
+
+        def clients():
+            body = self._get(f"{BASE}/organizations/{org}/clients/overview", params={"timespan": 3600}).json()
+            usage = ((body.get("usages") or {}).get("overall") or {})
+            # kilobytes over the hour -> average bits per second
+            return {"total": (body.get("counts") or {}).get("total"),
+                    "down_bps": usage.get("downstream") * 8000 / 3600 if usage.get("downstream") is not None else None,
+                    "up_bps": usage.get("upstream") * 8000 / 3600 if usage.get("upstream") is not None else None}
+        self.data["clients"] = self._optional("Client overview", clients) or {}
+
+        def licensing():
+            body = self._get(f"{BASE}/organizations/{org}/licenses/overview").json()
+            return {"status": body.get("status"), "expires": body.get("expirationDate"), "model": "co-term"}
+        self.data["licensing"] = self._optional("Licensing", licensing) or {}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_iv.html" import chart, legend %}
+{% block title %}{{ integ.name }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · {{ cls.label if cls else integ.kind }}</div>
+  <h1 style="display:flex;align-items:center;gap:10px"><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(integ.status, 'd-off') }}"></span>{{ integ.name }}</h1>
+  <p>{{ {'ok':'Connected','partial':'Partly working','error':'Failing','never':'Not synced yet'}[integ.status] }}{% if not integ.enabled %} · paused{% endif %} · last sync {{ integ.last_sync|ago }} · {{ 'via poller ' ~ integ.poller.name if integ.poller else 'called from this server' }}</p></div>
+  <div class="actions">
+    <div class="ranges">{% for r in ['6h','24h','7d','30d','1y'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div>
+    <form class="inline" method="post" action="/integrations/{{ integ.id }}/sync"><button class="btn" type="submit">Sync now</button></form>
+    <a class="btn" href="/integrations/{{ integ.id }}">Settings</a></div></div>
+{% if integ.last_error %}<div class="flash {{ 'bad' if integ.status == 'error' else 'warn' }}" role="alert"><b>{{ 'Sync failed' if integ.status == 'error' else 'Some parts failed' }}:</b> {{ integ.last_error }}</div>{% endif %}
+{% if data.unavailable %}<details class="p" style="padding:10px 16px"><summary class="sub" style="cursor:pointer">{{ data.unavailable|length }} optional panel{{ '' if data.unavailable|length == 1 else 's' }} not available with these credentials or this licence</summary>
+  <ul class="dim" style="margin:8px 0 0;font-size:12.5px">{% for u in data.unavailable %}<li>{{ u }}</li>{% endfor %}</ul></details>{% endif %}
+
+{% if tabs %}<nav class="tabs" aria-label="{{ integ.name }} sections">{% for k, label in tabs %}<a href="?tab={{ k }}" {% if k == tab %}aria-current="page"{% endif %}>{{ label }}{% set p = (data.products or {}).get(k) %}{% if p and not p.ok %} <span class="dot d-down" title="{{ p.error }}"></span>{% endif %}</a>{% endfor %}</nav>{% endif %}
+
+{% if not data_ts and integ.kind not in [] %}<div class="p empty-state"><h2>No telemetry yet</h2><p>{% if integ.status == 'never' %}This integration hasn't synced yet. Press Sync now.{% else %}The last sync didn't return details. Fix the problem above, then press Sync now.{% endif %}</p></div>{% endif %}
+
+{% if data_ts %}{% include "views/" ~ integ.kind ~ ".html" ignore missing %}{% endif %}
+
+{% if not tabs or tab == 'overview' or devices %}
+<div class="grid">
+  {% if not tabs or tab == 'overview' %}
+  <div class="p c4"><div class="ph"><h2>Reported objects</h2><span class="sub">{{ devices|length }} total</span></div>
+    <div class="kpis" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:12px">
+      <div class="kpi"><span>Up</span><b class="okc">{{ counts.up }}</b></div>
+      <div class="kpi"><span>Problems</span><b class="{{ 'bad' if counts.down else ('wa' if counts.warn else '') }}">{{ counts.down + counts.warn }}</b><em>{{ counts.down }} down · {{ counts.warn }} warning</em></div></div>
+    {{ legend([('Up', 'var(--up)'), ('Total', 'var(--off)'), ('Problems', 'var(--down)')]) }}
+    {{ chart(integ.id, 'objects', [{"key":"a","color":"var(--up)","area":false},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--down)"}], 'num', 150, 'Objects') }}</div>
+  {% endif %}
+  <div class="p {{ 'c8' if not tabs or tab == 'overview' else '' }}"><div class="ph"><h2>Inventory</h2>
+      <input type="search" data-filter="inv" placeholder="Filter by name, type, site, detail" aria-label="Filter inventory" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></div>
+    <div class="scroll" style="max-height:520px;overflow:auto"><table id="inv"><thead><tr><th></th><th>Name</th><th>Type</th><th>Site</th><th>Details</th><th class="n">CPU</th><th class="n">Mem</th></tr></thead><tbody>
+    {% for d in devices %}<tr data-q="{{ [d.hostname, d.type, d.platform, d.site.name if d.site else '', d.detail, d.ip]|select|join(' ')|lower }}">
+      <td><span class="dot d-{{ d.status }}" title="{{ d.status }}"></span></td>
+      <td><a class="row" href="/devices/{{ d.id }}">{{ d.hostname }}</a><div class="dim" style="font-size:12px">{{ d.platform or '' }}</div></td>
+      <td class="nw">{{ d.type or '' }}</td><td>{{ d.site.name if d.site else '' }}</td>
+      <td style="font-size:12.5px">{% if d.status_reason %}<span class="{{ 'bad' if d.status == 'down' else 'wa' }}">{{ d.status_reason }}</span>{% else %}{{ d.detail or '' }}{% endif %}</td>
+      <td class="n">{{ d.cpu|pct }}</td><td class="n">{{ d.mem|pct }}</td></tr>
+    {% else %}<tr><td colspan="7" class="dim">Nothing reported{{ ' for this product' if tabs and tab != 'overview' else '' }}.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+</div>
+{% endif %}
+<script>
+document.querySelectorAll("input[data-filter]").forEach(q => q.addEventListener("input", () => {
+  const t = q.value.trim().toLowerCase();
+  document.querySelectorAll("#" + q.dataset.filter + " tbody tr[data-q]").forEach(r => { r.hidden = t && !r.dataset.q.includes(t); });
+}));
+</script>
+{% endblock %}
