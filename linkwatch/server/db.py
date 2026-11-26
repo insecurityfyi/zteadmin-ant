@@ -20,6 +20,8 @@ DEFAULT_RULES = [
     ("port_down", "Port down", "Port is admin up but operationally down (only ports marked 'alert if down')", "crit", None, 1),
     ("port_errors", "Port errors", "In or out errors per poll above the threshold", "warn", 100, 1),
     ("bandwidth", "High bandwidth", "Port utilization above the threshold (%)", "warn", 85, 2),
+    ("sensor", "Sensor problem", "A health sensor reports warning or critical, or a temperature is above the threshold (°C)", "warn", 70, 2),
+    ("storage_full", "Storage nearly full", "A disk or flash volume is fuller than the threshold (%)", "warn", 90, 1),
     ("integration_failed", "Integration failing", "An API integration could not sync", "warn", None, 1),
     ("poller_offline", "Poller offline", "A poller has not been heard from for three poll intervals", "crit", None, 1),
 ]

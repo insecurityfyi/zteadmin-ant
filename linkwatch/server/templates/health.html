@@ -1,10 +1,23 @@
 {% extends "base.html" %}
-{% from "_g.html" import graph, ranges, meter %}
+{% from "_g.html" import graph, ranges, meter, sensor_value, sensor_graph %}
 {% block title %}{{ title }}{% endblock %}
 {% block content %}
 <div class="head"><div><h1>Health</h1><p>{{ sub }}. {{ rows|length }} device{{ '' if rows|length == 1 else 's' }} report it{% if missing %}, {{ missing }} don't{% endif %}.</p></div></div>
-<nav class="tabs" aria-label="Health readings">{% for k, m in metrics.items() %}<a href="?metric={{ k }}" {% if k == metric %}aria-current="page"{% endif %}>{{ m[0] }}</a>{% endfor %}</nav>
-{% if rows %}
+<nav class="tabs" aria-label="Health readings">{% for k, m in metrics.items() %}<a href="?metric={{ k }}" {% if k == metric %}aria-current="page"{% endif %}>{{ m[0] }}</a>{% endfor %}
+  {% for k, m in sensor_pages.items() if kinds.get(k) or (k == 'voltage' and kinds.get('current')) or k == metric %}<a href="?metric={{ k }}" {% if k == metric %}aria-current="page"{% endif %}>{{ m[0] }} <span class="dim">{{ kinds.get(k, 0) }}</span></a>{% endfor %}</nav>
+{% if sensor_rows is not none %}
+{% if sensor_rows %}
+<div class="grid">
+  <div class="p c5"><div class="ph"><h2>{{ title }}</h2><span class="sub">{{ sensor_rows|length }} sensors{% if sensor_rows|selectattr('status','ne','ok')|list %} · <span class="bad">{{ sensor_rows|selectattr('status','ne','ok')|list|length }} not OK</span>{% endif %}</span></div>
+    <div class="scroll" style="max-height:640px;overflow:auto"><table><thead><tr><th>Device</th><th>Sensor</th><th class="n">Now</th></tr></thead><tbody>
+    {% for x in sensor_rows %}<tr class="click" onclick="location.href='/devices/{{ x.device_id }}?tab=health'"><td class="nw"><span class="dot d-{{ x.device.status }}"></span> <a class="row" href="/devices/{{ x.device_id }}?tab=health">{{ x.device.hostname }}</a></td><td>{{ x.name }}</td><td class="n nw">{{ sensor_value(x) }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  {% set graphable = sensor_rows|rejectattr('kind','equalto','state')|list %}
+  {% if graphable %}<div class="p c7"><div class="ph"><h2>{{ 'Top ' ~ [graphable|length, 8]|min }}</h2>{{ ranges(opts=['6h','24h','7d','30d']) }}</div>
+    <div class="grid" style="gap:16px">{% for x in graphable[:8] %}<div class="c6"><div class="ph" style="margin-bottom:4px"><h3><a href="/devices/{{ x.device_id }}?tab=health" style="color:inherit">{{ x.device.hostname }}</a></h3><span class="sub">{{ x.name|truncate(28) }}</span></div>{{ sensor_graph(x, 120) }}</div>{% endfor %}</div></div>{% endif %}
+</div>
+{% else %}<div class="p empty-state"><h2>No {{ title|lower }} sensors</h2><p>These come from SNMP: ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, LM-SENSORS-MIB and HOST-RESOURCES storage.</p></div>{% endif %}
+{% elif rows %}
 <div class="grid">
   <div class="p c5"><div class="ph"><h2>{{ title }}</h2><span class="sub">{% if avg is not none %}average {{ (avg|round(1) ~ ' ms') if unit == 'ms' else (avg|round|int ~ '%') }}{% endif %}</span></div>
     <div class="scroll"><table><thead><tr><th></th><th>Device</th><th>Now</th></tr></thead><tbody>

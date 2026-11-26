@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
-from .models import Device, Event, Port
+from .models import Device, Event, Neighbor, Port, Sensor
 from .web import render, st
 
 router = APIRouter(include_in_schema=False)
@@ -17,6 +17,10 @@ HEALTH = {
     "ping": ("Latency", "Ping round trip from each device's poller", Device.ping_ms, "ms", "ping"),
     "loss": ("Packet loss", "Ping loss from each device's poller", Device.loss_pct, "pct", "loss"),
 }
+
+
+SENSOR_PAGES = {"temperature": ("Temperature", "°C"), "fan": ("Fans", "rpm"), "power": ("Power", "W"),
+                "voltage": ("Voltage", "V"), "state": ("Component state", ""), "storage": ("Storage", "%")}
 
 
 def _page(v) -> int:
@@ -69,6 +73,18 @@ def port_page(request: Request, port_id: int):
 
 @router.get("/health", response_class=HTMLResponse)
 def health_page(request: Request, metric: str = "cpu"):
+    if metric in SENSOR_PAGES:
+        with st(request).db.session() as s:
+            q = select(Sensor).options(selectinload(Sensor.device)).join(Device, Device.id == Sensor.device_id).where(
+                Device.disabled.is_(False))
+            q = q.where(Sensor.kind == metric) if metric != "voltage" else q.where(Sensor.kind.in_(("voltage", "current")))
+            rows = s.scalars(q).all()
+            rows = sorted(rows, key=lambda x: ({"crit": 0, "warn": 1}.get(x.status, 2), -(x.value or 0)))
+            kinds = dict(s.execute(select(Sensor.kind, func.count(Sensor.id)).group_by(Sensor.kind)).all())
+        return render(request, "health.html", {"metric": metric, "metrics": HEALTH, "sensor_pages": SENSOR_PAGES,
+                                               "kinds": kinds, "sensor_rows": rows, "title": SENSOR_PAGES[metric][0],
+                                               "rows": [], "values": [], "missing": 0, "avg": None, "unit": "", "key": "",
+                                               "sub": "Readings from the last poll"})
     if metric not in HEALTH:
         metric = "cpu"
     title, sub, col, unit, key = HEALTH[metric]
@@ -78,7 +94,10 @@ def health_page(request: Request, metric: str = "cpu"):
         missing = s.scalar(select(func.count(Device.id)).where(Device.disabled.is_(False), col.is_(None))) or 0
     values = [getattr(d, {"cpu": "cpu", "mem": "mem", "ping": "ping_ms", "loss": "loss_pct"}[metric]) for d in rows]
     avg = sum(values) / len(values) if values else None
-    return render(request, "health.html", {"metric": metric, "metrics": HEALTH, "title": title, "sub": sub, "unit": unit,
+    with st(request).db.session() as s:
+        kinds = dict(s.execute(select(Sensor.kind, func.count(Sensor.id)).group_by(Sensor.kind)).all())
+    return render(request, "health.html", {"metric": metric, "metrics": HEALTH, "sensor_pages": SENSOR_PAGES, "kinds": kinds,
+                                           "sensor_rows": None, "title": title, "sub": sub, "unit": unit,
                                            "key": key, "rows": rows, "values": values, "avg": avg, "missing": missing})
 
 
@@ -101,3 +120,50 @@ def eventlog(request: Request, kind: str = "", severity: str = "", q: str = "", 
         dev = s.get(Device, int(device)) if device.isdigit() else None
     return render(request, "eventlog.html", {"events": events, "kind": kind, "severity": severity, "q": q, "device": device,
                                              "dev": dev, "page": pg, "pages": max(1, -(-total // PAGE)), "total": total})
+
+
+@router.get("/map", response_class=HTMLResponse)
+def network_map(request: Request, site: str = "", focus: str = "", external: str = ""):
+    with st(request).db.session() as s:
+        from .models import Site
+        sites = sorted(s.scalars(select(Site.name)))
+        links = s.scalar(select(func.count(Neighbor.id))) or 0
+    return render(request, "map.html", {"sites": sites, "site": site, "focus": focus, "external": external, "link_count": links})
+
+
+@router.get("/ui/map", include_in_schema=False)
+def map_data(request: Request, site: str = "", external: str = "", all: str = ""):
+    """Nodes and links for the network map. Links come from LLDP/CDP neighbours and integration uplinks."""
+    with st(request).db.session() as s:
+        devs = {d.id: d for d in s.scalars(select(Device).options(selectinload(Device.site)).where(Device.disabled.is_(False)))}
+        if site:
+            devs = {i: d for i, d in devs.items() if d.site and d.site.name == site}
+        rows = s.scalars(select(Neighbor).options(selectinload(Neighbor.port)).where(Neighbor.device_id.in_(list(devs) or [0]))).all()
+        links: dict[tuple, dict] = {}
+        ghosts: dict[str, dict] = {}
+        for n in rows:
+            if n.remote_device_id in devs:
+                b = n.remote_device_id
+            elif external and (n.remote_name or n.remote_chassis):
+                gid = "x:" + (n.remote_name or n.remote_chassis).lower()
+                ghosts.setdefault(gid, {"id": gid, "name": n.remote_name or n.remote_chassis, "status": "external",
+                                        "type": (n.remote_platform or "")[:40], "ip": n.remote_ip})
+                b = gid
+            else:
+                continue
+            a = n.device_id
+            key = tuple(sorted([str(a), str(b)])) + tuple(sorted([str(n.local_port or ""), str(n.remote_port or "")]))
+            p = n.port
+            util = p.util_pct if p is not None else None
+            cur = links.get(key)
+            if cur is None:
+                links[key] = {"source": a, "target": b, "protocol": n.protocol, "a_port": n.local_port, "b_port": n.remote_port,
+                              "speed": p.speed_mbps if p is not None else None, "util": util,
+                              "bps": max(p.in_bps or 0, p.out_bps or 0) if p is not None else None}
+            elif util is not None and (cur["util"] is None or util > cur["util"]):
+                cur.update(util=util, speed=p.speed_mbps, bps=max(p.in_bps or 0, p.out_bps or 0))
+        linked = {x for k in links.values() for x in (k["source"], k["target"])}
+        nodes = [{"id": d.id, "name": d.hostname, "status": d.status, "type": d.type, "ip": d.ip,
+                  "site": d.site.name if d.site else None, "platform": d.platform}
+                 for d in devs.values() if all or d.id in linked]
+    return {"nodes": nodes + list(ghosts.values()), "links": list(links.values())}

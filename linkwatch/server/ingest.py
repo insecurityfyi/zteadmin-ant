@@ -5,12 +5,13 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from . import events
 from .alerts import Alerter
-from .models import Device, DeviceMetric, Integration, IntegrationMetric, Port, PortMetric, ProcessedBatch, Site, utcnow
+from .models import (Device, DeviceMetric, Integration, IntegrationMetric, Neighbor, Port, PortMetric, ProcessedBatch, Sensor,
+                     SensorMetric, Site, utcnow)
 
 COUNTER32 = 2**32
 
@@ -78,6 +79,15 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
         if isinstance(item.get("vendor"), dict):     # e.g. SonicWall connection counts
             dev.extra = {**(dev.extra or {}), "vendor": item["vendor"]}
         _update_ports(s, dev, item.get("ports") or [], float(item.get("ts") or ts.timestamp()), ts)
+        if item.get("inventory") is not None:
+            dev.inventory = item["inventory"]
+            chassis = next((e for e in item["inventory"] if e.get("class") == "chassis" and e.get("serial")), None)
+            if chassis and not dev.serial:
+                dev.serial = str(chassis["serial"])[:128]
+        if item.get("sensors") is not None or item.get("storage") is not None:
+            update_sensors(s, dev, item.get("sensors") or [], item.get("storage") or [], ts)
+        if item.get("neighbors") is not None:
+            update_neighbors(s, dev, item["neighbors"])
 
     if (has_snmp and snmp_ok) or (not has_snmp and ping_ok):
         dev.fail_count = 0
@@ -97,6 +107,77 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
     s.flush()
     alerter.evaluate_device(dev)
     return dev
+
+
+def update_sensors(s: Session, dev: Device, sensors: list[dict], storage: list[dict], ts: datetime) -> None:
+    rows = [dict(x) for x in sensors] + [
+        {"key": x["key"], "kind": "storage", "name": x.get("name"), "unit": "%", "value": x.get("pct"), "status": "ok",
+         "extra": {"size": x.get("size"), "used": x.get("used"), "type": x.get("kind")}} for x in storage]
+    existing = {x.key: x for x in s.scalars(select(Sensor).where(Sensor.device_id == dev.id))}
+    seen = set()
+    for r in rows:
+        key = str(r.get("key") or "")[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        sen = existing.get(key)
+        if sen is None:
+            sen = Sensor(device_id=dev.id, key=key, kind=str(r.get("kind") or "other")[:24], name="", status="ok")
+            s.add(sen)
+        old = sen.status
+        sen.kind = str(r.get("kind") or sen.kind)[:24]
+        sen.name = str(r.get("name") or key)[:255]
+        sen.unit = str(r.get("unit") or "")[:16]
+        sen.value = r.get("value")
+        sen.high = r.get("high")
+        sen.status = r.get("status") if r.get("status") in ("ok", "warn", "crit") else "ok"
+        sen.extra = r.get("extra") or ({"label": r["label"]} if r.get("label") else None)
+        sen.updated_at = ts
+        if sen.id is not None and old != sen.status:
+            events.log(s, "sensor", f"{sen.name}: {sen.status} (was {old})", "ok" if sen.status == "ok" else sen.status, dev)
+        s.flush()
+        if sen.value is not None:
+            s.add(SensorMetric(sensor_id=sen.id, ts=ts, value=sen.value))
+    for key, sen in existing.items():
+        if key not in seen:
+            s.delete(sen)
+
+
+def _short(name: str | None) -> str:
+    return (name or "").strip().lower().split(".")[0]
+
+
+def resolve_device(s: Session, ip: str | None, name: str | None, mac: str | None, not_id: int | None = None) -> int | None:
+    """Which monitored device a neighbour is: by IP, then sysName/hostname (without domain), then MAC."""
+    if ip:
+        hit = s.scalar(select(Device.id).where(Device.ip == ip, Device.id != (not_id or 0)).limit(1))
+        if hit:
+            return hit
+    short = _short(name)
+    if short:
+        for did, host, sysn in s.execute(select(Device.id, Device.hostname, Device.sys_name).where(Device.id != (not_id or 0))):
+            if short in (_short(host), _short(sysn)):
+                return did
+    if mac:
+        for did, extra in s.execute(select(Device.id, Device.extra).where(Device.id != (not_id or 0))):
+            if str((extra or {}).get("mac") or "").lower() == mac.lower():
+                return did
+    return None
+
+
+def update_neighbors(s: Session, dev: Device, rows: list[dict], protocols: tuple[str, ...] = ("lldp", "cdp")) -> None:
+    """Replace this device's neighbour list (for the given protocols) with what was just seen."""
+    s.execute(delete(Neighbor).where(Neighbor.device_id == dev.id, Neighbor.protocol.in_(protocols)))
+    ports = {p.ifindex: p.id for p in dev.ports}
+    for n in rows[:500]:
+        s.add(Neighbor(device_id=dev.id, protocol=str(n.get("protocol") or protocols[0])[:12],
+                       port_id=ports.get(n.get("ifindex")), local_port=(str(n.get("local_port") or "") or None),
+                       remote_name=(n.get("remote_name") or None), remote_port=(n.get("remote_port") or None),
+                       remote_ip=(n.get("remote_ip") or None), remote_chassis=(n.get("remote_chassis") or None),
+                       remote_platform=(str(n.get("remote_platform") or "")[:255] or None),
+                       remote_device_id=n.get("remote_device_id") or resolve_device(
+                           s, n.get("remote_ip"), n.get("remote_name"), n.get("remote_chassis"), dev.id),
+                       updated_at=utcnow()))
 
 
 def _update_ports(s: Session, dev: Device, ports: list[dict], ts_epoch: float, ts: datetime) -> None:
@@ -200,6 +281,7 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
             s.add(DeviceMetric(device_id=dev.id, ts=ts, cpu=dev.cpu, mem=dev.mem))
         alerter.evaluate_device(dev)
 
+    _integration_links(s, integ, records, current)
     for ext, dev in current.items():
         if ext not in seen and dev.source == integ.kind and dev.status != "unknown":
             set_status(dev, "unknown", f"No longer reported by {integ.name}")
@@ -349,6 +431,23 @@ def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any]
     integ.data = {**data, "ts": ts.isoformat() + "Z"}
     for key, a, b, c in points:
         s.add(IntegrationMetric(integration_id=integ.id, key=key[:160], ts=ts, a=a, b=b, c=c))
+
+
+def _integration_links(s: Session, integ: Integration, records: list[dict], current: dict[str, Device]) -> None:
+    """Uplinks an integration reports (UniFi: which switch port each device hangs off) become map links."""
+    by_mac = {str((d.extra or {}).get("mac") or (d.extra or {}).get("api", {}).get("mac") or "").lower(): d
+              for d in current.values()}
+    by_mac.pop("", None)
+    for rec in records:
+        ex = rec.get("extra") or {}
+        dev = current.get(str(rec.get("external_id") or ""))
+        if dev is None or "uplink_mac" not in ex:
+            continue
+        up = by_mac.get(str(ex.get("uplink_mac") or "").lower())
+        rows = [{"protocol": integ.kind[:12], "local_port": ex.get("uplink_local_port"), "remote_name": up.hostname if up else ex.get("uplink_name"),
+                 "remote_port": (f"port {ex['uplink_port']}" if ex.get("uplink_port") else None), "remote_chassis": ex.get("uplink_mac"),
+                 "remote_device_id": up.id if up else None}] if ex.get("uplink_mac") else []
+        update_neighbors(s, dev, rows, (integ.kind[:12],))
 
 
 def _norm(v) -> str:

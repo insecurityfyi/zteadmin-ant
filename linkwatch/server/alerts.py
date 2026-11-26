@@ -84,6 +84,32 @@ class Alerter:
             self.set(key, ref, hot, f"High {label.lower()}: {dev.hostname}",
                      f"{label} {recent[0]:.0f}% for {rule.polls} polls, threshold {rule.threshold:.0f}%" if hot else None, dev)
         self.evaluate_ports(dev)
+        self.evaluate_sensors(dev)
+
+    def evaluate_sensors(self, dev: Device) -> None:
+        from .models import Sensor
+        rule, disk = self.rule("sensor"), self.rule("storage_full")
+        open_refs = {ref for (key, ref) in self.open if key in ("sensor", "storage_full")}
+        live = set()
+        for sen in self.s.scalars(select(Sensor).where(Sensor.device_id == dev.id)):
+            ref = f"sensor:{sen.id}"
+            live.add(ref)
+            label = f"{dev.hostname} {sen.name}"
+            if sen.kind == "storage":
+                full = bool(disk and disk.threshold is not None and sen.value is not None and sen.value > disk.threshold)
+                self.set("storage_full", ref, full, f"Storage nearly full: {label}",
+                         f"{sen.value:.0f}% used, threshold {disk.threshold:.0f}%" if full else None, dev)
+                continue
+            hot = sen.kind == "temperature" and sen.value is not None and (
+                (sen.high is not None and sen.value >= sen.high) or
+                (rule is not None and rule.threshold is not None and sen.value > rule.threshold))
+            bad = sen.status in ("warn", "crit") or hot
+            unit = f" {sen.unit}" if sen.unit else ""
+            self.set("sensor", ref, bool(rule and bad), f"Sensor problem: {label}",
+                     (f"{sen.status}, reading {sen.value:g}{unit}" if sen.value is not None else sen.status) if bad else None, dev)
+        for key, ref in [(k, r) for (k, r) in list(self.open) if k in ("sensor", "storage_full")]:
+            if ref in open_refs and ref not in live and self.open[(key, ref)].device_id == dev.id:
+                self.set(key, ref, False, device=dev)        # the sensor went away
 
     def evaluate_ports(self, dev: Device) -> None:
         down_rule, err_rule, bw_rule = self.rule("port_down"), self.rule("port_errors"), self.rule("bandwidth")

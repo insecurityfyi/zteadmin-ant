@@ -206,6 +206,7 @@ class Device(Base):
     loss_pct: Mapped[float | None] = mapped_column(Float)
     detail: Mapped[str | None] = mapped_column(String(500))
     extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    inventory: Mapped[list | None] = mapped_column(JSON)    # ENTITY-MIB parts: chassis, modules, PSUs, fans
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     site: Mapped[Site | None] = relationship()
     poller: Mapped[Poller | None] = relationship()
@@ -237,6 +238,54 @@ class Port(Base):
     last_out_errors: Mapped[float | None] = mapped_column(Float)
     last_ts: Mapped[float | None] = mapped_column(Float)
     device: Mapped[Device] = relationship(back_populates="ports")
+
+
+class Sensor(Base):
+    """A health reading on a device: temperature, fan, voltage, power, a state (fan/PSU OK), or storage use."""
+    __tablename__ = "sensors"
+    __table_args__ = (UniqueConstraint("device_id", "key", name="uq_sensor_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(24))       # temperature | fan | voltage | current | power | humidity | state | storage
+    name: Mapped[str] = mapped_column(String(255))
+    unit: Mapped[str] = mapped_column(String(16), default="")
+    value: Mapped[float | None] = mapped_column(Float)
+    high: Mapped[float | None] = mapped_column(Float)   # the device's own threshold, when it reports one
+    status: Mapped[str] = mapped_column(String(8), default="ok")   # ok | warn | crit
+    extra: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    device: Mapped["Device"] = relationship()
+
+
+class SensorMetric(Base):
+    __tablename__ = "sensor_metrics"
+    __table_args__ = (Index("ix_senmet_sensor_ts", "sensor_id", "ts"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sensor_id: Mapped[int] = mapped_column(ForeignKey("sensors.id", ondelete="CASCADE"))
+    ts: Mapped[datetime] = mapped_column(DateTime)
+    hourly: Mapped[bool] = mapped_column(Boolean, default=False)
+    value: Mapped[float | None] = mapped_column(Float)
+
+
+class Neighbor(Base):
+    """A link seen over LLDP or CDP (or reported by an integration): this device's port to a remote device's port."""
+    __tablename__ = "neighbors"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id", ondelete="SET NULL"))
+    protocol: Mapped[str] = mapped_column(String(12))    # lldp | cdp | unifi | meraki
+    local_port: Mapped[str | None] = mapped_column(String(255))
+    remote_name: Mapped[str | None] = mapped_column(String(255))
+    remote_port: Mapped[str | None] = mapped_column(String(255))
+    remote_ip: Mapped[str | None] = mapped_column(String(64))
+    remote_chassis: Mapped[str | None] = mapped_column(String(64))
+    remote_platform: Mapped[str | None] = mapped_column(String(255))
+    remote_device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    device: Mapped["Device"] = relationship(foreign_keys=[device_id])
+    remote_device: Mapped["Device | None"] = relationship(foreign_keys=[remote_device_id])
+    port: Mapped["Port | None"] = relationship()
 
 
 class DeviceMetric(Base):

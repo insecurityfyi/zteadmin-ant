@@ -25,6 +25,8 @@ from .models import (
     DiscoveryRule,
     EnrollToken,
     Event,
+    Neighbor,
+    Sensor,
     Integration,
     Poller,
     Port,
@@ -465,7 +467,8 @@ async def discovery_add(request: Request, jid: int):
 
 
 DEVICE_TABS = [("overview", "Overview"), ("graphs", "Graphs"), ("ports", "Ports"), ("health", "Health"),
-               ("inventory", "Inventory"), ("events", "Events"), ("alerts", "Alerts")]
+               ("inventory", "Inventory"), ("neighbours", "Neighbours"), ("events", "Events"), ("alerts", "Alerts")]
+SENSOR_ORDER = ["temperature", "fan", "power", "voltage", "current", "humidity", "frequency", "airflow", "state", "storage"]
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
@@ -488,6 +491,15 @@ def device_detail(request: Request, device_id: int, tab: str = "overview", view:
         ctx: dict[str, Any] = {"d": d, "ports": ports, "port_counts": port_counts, "dev_alerts": dev_alerts, "tab": tab,
                                "tabs": DEVICE_TABS, "view": view, "kind": kind,
                                "connected": d.poller_id in st(request).hub.conns}
+        sensors = sorted(s.scalars(select(Sensor).where(Sensor.device_id == d.id)),
+                         key=lambda x: (SENSOR_ORDER.index(x.kind) if x.kind in SENSOR_ORDER else 99, x.name))
+        ctx["sensors"] = sensors
+        ctx["neighbor_count"] = s.scalar(select(func.count(Neighbor.id)).where(Neighbor.device_id == d.id)) or 0
+        if tab == "neighbours":
+            ctx["neighbors"] = s.scalars(select(Neighbor).options(selectinload(Neighbor.remote_device), selectinload(Neighbor.port))
+                                         .where(Neighbor.device_id == d.id).order_by(Neighbor.local_port)).all()
+            ctx["seen_by"] = s.scalars(select(Neighbor).options(selectinload(Neighbor.device))
+                                       .where(Neighbor.remote_device_id == d.id)).all()
         if tab == "overview":
             ctx["events"] = s.scalars(select(Event).where(Event.device_id == d.id).order_by(Event.id.desc()).limit(10)).all()
         elif tab == "events":

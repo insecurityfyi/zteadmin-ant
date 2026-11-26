@@ -97,9 +97,18 @@ def rollup_and_prune(app_state) -> None:
                          .group_by(IntegrationMetric.integration_id, IntegrationMetric.key, bucket_i)).all()
         for iid, key, b, va, vb, vc in rows:
             s.add(IntegrationMetric(integration_id=iid, key=key, ts=_as_dt(b), hourly=True, a=va, b=vb, c=vc))
+        from .models import SensorMetric
+        bucket_s = func.date_trunc("hour", SensorMetric.ts) if s.bind.dialect.name == "postgresql" \
+            else func.strftime("%Y-%m-%d %H:00:00", SensorMetric.ts)
+        rows = s.execute(select(SensorMetric.sensor_id, bucket_s, func.avg(SensorMetric.value))
+                         .where(SensorMetric.hourly.is_(False), SensorMetric.ts >= start, SensorMetric.ts < hour_end)
+                         .group_by(SensorMetric.sensor_id, bucket_s)).all()
+        for sid, b, v in rows:
+            s.add(SensorMetric(sensor_id=sid, ts=_as_dt(b), hourly=True, value=v))
         set_setting(s, "rollup_until", hour_end.isoformat())
         raw_cut, hourly_cut = now - timedelta(days=cfg.raw_days), now - timedelta(days=cfg.hourly_days)
-        for model in (DeviceMetric, PortMetric, IntegrationMetric):
+        from .models import SensorMetric
+        for model in (DeviceMetric, PortMetric, IntegrationMetric, SensorMetric):
             s.execute(delete(model).where(model.hourly.is_(False), model.ts < raw_cut))
             s.execute(delete(model).where(model.hourly.is_(True), model.ts < hourly_cut))
     log.info("Rollup done up to %s", hour_end)

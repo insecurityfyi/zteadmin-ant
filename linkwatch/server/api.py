@@ -204,6 +204,17 @@ def _device_traffic(request: Request, device_id: int, rng: str) -> dict[str, lis
     return {"ts": [r[0].isoformat() + "Z" for r in rows], "in": [r[1] for r in rows], "out": [r[2] for r in rows]}
 
 
+@router.get("/ui/metrics/sensor/{sensor_id}", include_in_schema=False)
+def sensor_metrics_ui(sensor_id: int, request: Request, range: str = "24h"):
+    from .models import SensorMetric
+    since, hourly = _window(range)
+    with lw(request).db.session() as s:
+        rows = s.execute(select(SensorMetric.ts, SensorMetric.value).where(
+            SensorMetric.sensor_id == sensor_id, SensorMetric.hourly.is_(hourly), SensorMetric.ts >= since)
+            .order_by(SensorMetric.ts)).all()
+    return {"ts": [r[0].isoformat() + "Z" for r in rows], "value": [r[1] for r in rows]}
+
+
 @router.get("/ui/metrics/device/{device_id}/traffic", include_in_schema=False)
 def device_traffic_ui(device_id: int, request: Request, range: str = "24h"):
     return _device_traffic(request, device_id, range)
