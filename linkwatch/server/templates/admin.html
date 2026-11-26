@@ -29,6 +29,13 @@
       <dt>Devices</dt><dd>{{ counts.devices|num }}</dd><dt>Pollers</dt><dd>{{ counts.pollers }}</dd><dt>Integrations</dt><dd>{{ counts.integrations }}</dd></dl>
     <p class="help" style="margin-bottom:0">Locked out? On the server, <code>deploy/reset-password.sh</code> sets a new password for the <code>admin</code> user and re-enables it.</p>
   </div>
+  <div class="p c12" id="appearance"><div class="ph"><h2>Appearance</h2><span class="sub">Site-wide default; each user can choose their own under Your account</span></div>
+    <form method="post" action="/admin/theme" class="stack" style="max-width:none">
+      <div class="themes">{% for k, label in themes.items() %}<label class="theme-pick" data-theme="{{ k }}"><input type="radio" name="theme" value="{{ k }}" {% if k == site_theme %}checked{% endif %}>
+        <span class="sw"><i style="background:var(--bg)"></i><i style="background:var(--panel)"></i><i style="background:var(--accent)"></i><i style="background:var(--up)"></i><i style="background:var(--warn)"></i><i style="background:var(--down)"></i></span>
+        <span>{{ label }}</span></label>{% endfor %}</div>
+      <div><button class="btn pri" type="submit">Save site theme</button></div>
+    </form></div>
   <div class="p c12" id="audit"><div class="ph"><h2>Audit log</h2>
       <form method="get" action="/admin#audit" class="filters"><input type="search" name="audit_q" value="{{ audit_q }}" placeholder="Filter by user, action or IP" aria-label="Filter audit log"></form></div>
     {% if events %}<div class="scroll"><table><thead><tr><th>When (UTC)</th><th>User</th><th>Action</th><th>Detail</th><th>From</th></tr></thead><tbody>

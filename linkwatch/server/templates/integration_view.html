@@ -29,16 +29,20 @@
     {{ legend([('Up', 'var(--up)'), ('Total', 'var(--off)'), ('Problems', 'var(--down)')]) }}
     {{ chart(integ.id, 'objects', [{"key":"a","color":"var(--up)","area":false},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--down)"}], 'num', 150, 'Objects') }}</div>
   {% endif %}
-  <div class="p {{ 'c8' if not tabs or tab == 'overview' else '' }}"><div class="ph"><h2>Inventory</h2>
+  <div class="p {{ 'c8' if not tabs or tab == 'overview' else '' }}"><div class="ph"><h2>Inventory</h2>{% if snmp_merged %}<span class="sub">{{ snmp_merged }} also polled over SNMP</span>{% endif %}
       <input type="search" data-filter="inv" placeholder="Filter by name, type, site, detail" aria-label="Filter inventory" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></div>
-    <div class="scroll" style="max-height:520px;overflow:auto"><table id="inv"><thead><tr><th></th><th>Name</th><th>Type</th><th>Site</th><th>Details</th><th class="n">CPU</th><th class="n">Mem</th></tr></thead><tbody>
+    <div class="scroll" style="max-height:520px;overflow:auto"><table id="inv"><thead><tr><th></th><th>Name</th><th>Type</th><th>Site</th><th>Details</th><th>Data from</th><th class="n">Ports up</th><th class="n">Traffic</th><th class="n">CPU</th><th class="n">Mem</th></tr></thead><tbody>
     {% for d in devices %}<tr data-q="{{ [d.hostname, d.type, d.platform, d.site.name if d.site else '', d.detail, d.ip]|select|join(' ')|lower }}">
       <td><span class="dot d-{{ d.status }}" title="{{ d.status }}"></span></td>
       <td><a class="row" href="/devices/{{ d.id }}">{{ d.hostname }}</a><div class="dim" style="font-size:12px">{{ d.platform or '' }}</div></td>
       <td class="nw">{{ d.type or '' }}</td><td>{{ d.site.name if d.site else '' }}</td>
       <td style="font-size:12.5px">{% if d.status_reason %}<span class="{{ 'bad' if d.status == 'down' else 'wa' }}">{{ d.status_reason }}</span>{% else %}{{ d.detail or '' }}{% endif %}</td>
+      <td class="nw">{% if d.source in ('snmp', 'ping') %}<span class="tag" title="Polled by {{ d.poller.name if d.poller else 'a poller' }} and enriched with API data">{{ d.source|upper }} + API</span>{% else %}<span class="tag">API</span>{% endif %}</td>
+      {% set pu = d.ports|selectattr('oper', 'equalto', 'up')|list|length %}
+      <td class="n">{% if d.ports %}<a href="/devices/{{ d.id }}?tab=ports">{{ pu }}/{{ d.ports|length }}</a>{% else %}<span class="dim">–</span>{% endif %}</td>
+      <td class="n mono">{% if d.ports %}{{ (d.ports|map(attribute='in_bps')|select|sum + d.ports|map(attribute='out_bps')|select|sum)|bps }}{% else %}<span class="dim">–</span>{% endif %}</td>
       <td class="n">{{ d.cpu|pct }}</td><td class="n">{{ d.mem|pct }}</td></tr>
-    {% else %}<tr><td colspan="7" class="dim">Nothing reported{{ ' for this product' if tabs and tab != 'overview' else '' }}.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="10" class="dim">Nothing reported{{ ' for this product' if tabs and tab != 'overview' else '' }}.</td></tr>{% endfor %}
     </tbody></table></div></div>
 </div>
 {% endif %}

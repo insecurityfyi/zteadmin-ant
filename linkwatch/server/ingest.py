@@ -5,9 +5,10 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
+from . import events
 from .alerts import Alerter
 from .models import Device, DeviceMetric, Integration, IntegrationMetric, Port, PortMetric, ProcessedBatch, Site, utcnow
 
@@ -34,8 +35,9 @@ def site_by_name(s: Session, name: str | None) -> Site | None:
 
 def set_status(dev: Device, status: str, reason: str | None = None) -> None:
     if dev.status != status:
-        dev.status = status
+        old, dev.status = dev.status, status
         dev.status_since = utcnow()
+        events.device_status_changed(dev, old, status, reason)
     dev.status_reason = reason[:255] if reason else None
 
 
@@ -112,7 +114,9 @@ def _update_ports(s: Session, dev: Device, ports: list[dict], ts_epoch: float, t
         p.name = str(data.get("name") or p.name)[:255]
         p.alias = (data.get("alias") or "")[:255]
         p.speed_mbps = data.get("speed_mbps") or None
+        old_oper = p.oper
         p.admin, p.oper = data.get("admin"), data.get("oper")
+        events.port_status_changed(s, dev, p, old_oper, p.oper)
         bits = int(data.get("counter_bits") or 64)
         dt = ts_epoch - p.last_ts if p.last_ts else None
         if dt and dt > 0:
@@ -142,13 +146,18 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
     ts = from_epoch(item.get("ts"))
     integ.last_sync = ts
     ref = f"integration:{integ.id}"
+    old_status = integ.status
     if not item.get("ok"):
         integ.status, integ.last_error = "error", (item.get("error") or "Unknown error")[:2000]
+        if old_status != "error":
+            events.log(s, "integration", f"{integ.name}: sync failing: {integ.last_error[:300]}", "crit")
         alerter.set("integration_failed", ref, True, f"Integration failing: {integ.name}", integ.last_error)
         return
     records = item.get("records") or []
     warnings = item.get("warnings") or []
     integ.status = "partial" if warnings else "ok"
+    if old_status == "error":
+        events.log(s, "integration", f"{integ.name}: syncing again", "ok")
     integ.last_error = "; ".join(warnings)[:2000] or None
     integ.object_count = len(records)
     alerter.set("integration_failed", ref, False)
@@ -161,12 +170,16 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
             continue
         seen.add(ext)
         dev = current.get(ext)
-        if dev is None and rec.get("ip"):
-            # same box already polled over SNMP: attach the API data to it instead of duplicating
-            dev = s.scalar(select(Device).where(Device.ip == rec["ip"], Device.integration_id.is_(None),
-                                                Device.source.in_(("snmp", "ping"))).limit(1))
-            if dev is not None:
-                dev.integration_id, dev.external_id = integ.id, ext
+        if dev is None or dev.source == integ.kind:
+            # the same box polled over SNMP: put the API data on it instead of keeping two devices
+            local = match_local_device(s, rec)
+            if local is not None:
+                if dev is not None:
+                    merge_into(s, dev, local)
+                local.integration_id, local.external_id = integ.id, ext
+                events.log(s, "config", f"Matched to {integ.name} device {rec.get('hostname') or ext}; its API data now shows here",
+                           "info", local)
+                dev = current[ext] = local
         if dev is None:
             dev = Device(hostname=str(rec.get("hostname") or ext)[:255], source=integ.kind, integration_id=integ.id,
                          external_id=ext, ping=False, extra={})
@@ -320,6 +333,52 @@ def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any]
         s.add(IntegrationMetric(integration_id=integ.id, key=key[:160], ts=ts, a=a, b=b, c=c))
 
 
+def _norm(v) -> str:
+    return str(v or "").strip().lower()
+
+
+def match_local_device(s: Session, rec: dict) -> Device | None:
+    """An SNMP or ping device (not yet tied to an integration) that is the same box as an API record.
+
+    Tried in order: serial number, any of the record's IP addresses (LAN, WAN, management), then the name, which
+    must match exactly one device's sysName or hostname.
+    """
+    pool = select(Device).where(Device.integration_id.is_(None), Device.source.in_(("snmp", "ping")))
+    extra = rec.get("extra") or {}
+    serial = _norm(rec.get("serial"))
+    if serial:
+        dev = s.scalar(pool.where(func.lower(Device.serial) == serial).limit(1))
+        if dev is not None:
+            return dev
+    ips = [ip for ip in [rec.get("ip"), *(extra.get("ips") or [])] if ip]
+    if ips:
+        dev = s.scalar(pool.where(Device.ip.in_(ips)).order_by(Device.id).limit(1))
+        if dev is not None:
+            return dev
+    mac = _norm(extra.get("mac")).replace("-", ":")
+    if mac:
+        for dev in s.scalars(pool.where(Device.extra.is_not(None))):
+            if _norm((dev.extra or {}).get("mac")).replace("-", ":") == mac:
+                return dev
+    name = _norm(rec.get("hostname"))
+    if name and name != serial:
+        hits = s.scalars(pool.where(or_(func.lower(Device.sys_name) == name, func.lower(Device.hostname) == name)).limit(2)).all()
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
+def merge_into(s: Session, api_dev: Device, local: Device) -> None:
+    """Fold a device that only came from an API into the SNMP device for the same box, keeping its history."""
+    from .models import Alert, Event
+    for model in (DeviceMetric, Alert, Event):
+        s.execute(update(model).where(model.device_id == api_dev.id).values(device_id=local.id))
+    if not local.site_id:
+        local.site_id = api_dev.site_id
+    s.delete(api_dev)
+    s.flush()
+
+
 def _apply_record(s: Session, dev: Device, integ: Integration, rec: dict, ts: datetime) -> None:
     merged = dev.source != integ.kind      # an SNMP device enriched by API data
     extra = dict(dev.extra or {})
@@ -335,6 +394,9 @@ def _apply_record(s: Session, dev: Device, integ: Integration, rec: dict, ts: da
             dev.platform = rec["platform"][:255]   # "Proxmox VE" reads better than a raw sysDescr
         dev.serial = dev.serial or rec.get("serial")
         dev.detail = rec.get("detail") or dev.detail
+        if not dev.site_id:
+            site = site_by_name(s, rec.get("site"))
+            dev.site_id = site.id if site else integ.site_id
     else:
         dev.hostname = str(rec.get("hostname") or dev.hostname)[:255]
         dev.ip = rec.get("ip")

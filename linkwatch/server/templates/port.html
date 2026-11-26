@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_g.html" import graph, ranges, inout, portdot, meter, event_rows %}
+{% block title %}{{ d.hostname }} {{ p.name }}{% endblock %}
+{% block content %}
+{% set src = '/ui/metrics/port/' ~ p.id %}
+<div class="p devhead">
+  <div style="min-width:0">
+    <div class="crumb"><a href="/ports">Ports</a> / <a href="/devices/{{ d.id }}?tab=ports">{{ d.hostname }}</a></div>
+    <h1 style="display:flex;align-items:center;gap:10px">{{ portdot(p) }}{{ p.name }}{% if p.alias %} <span class="dim" style="font-weight:400">{{ p.alias }}</span>{% endif %}</h1>
+    <div class="facts" style="margin-top:6px">
+      <span>admin <b>{{ p.admin or '–' }}</b>, oper <b>{{ p.oper or '–' }}</b></span>
+      <span>speed <b>{{ p.speed_mbps|speed }}</b></span>
+      <span>ifIndex <b class="mono">{{ p.ifindex }}</b></span>
+      <span>in <b class="mono">{{ p.in_bps|bps }}</b> · out <b class="mono">{{ p.out_bps|bps }}</b></span>
+      {% if p.util_pct is not none %}<span>utilisation {{ meter(p.util_pct) }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    <form class="inline" method="post" action="/ports/{{ p.id }}/alert?next=/ports/{{ p.id }}"><button class="btn" type="submit" aria-pressed="{{ 'true' if p.alert_on_down else 'false' }}">Alert if down: {{ 'On' if p.alert_on_down else 'Off' }}</button></form>
+    <select aria-label="Other ports on this device" onchange="if (this.value) location.href='/ports/' + this.value" style="width:auto"><option value="">Other ports…</option>{% for o in siblings if o.id != p.id %}<option value="{{ o.id }}">{{ o.name }}{{ ' · ' ~ o.alias if o.alias else '' }}</option>{% endfor %}</select>
+  </div>
+</div>
+<div class="p"><div class="ph"><h2>Traffic</h2><div class="filters">{{ inout() }}{{ ranges() }}</div></div>
+  {{ graph(src, [{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}], 'bps', 230, 'Traffic') }}</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Utilisation</h2><span class="sub">{{ 'of ' ~ p.speed_mbps|speed if p.speed_mbps else 'speed unknown' }}</span></div>
+    {% if p.speed_mbps %}{{ graph(src, [{"key":"util_in","color":"var(--s1)","area":false},{"key":"util_out","color":"var(--s2)","area":false}], 'pct', 170, 'Utilisation', 100) }}
+    {% else %}<div class="fig"><div class="empty">The device doesn't report a speed for this port.</div></div>{% endif %}</div>
+  <div class="p c6"><div class="ph"><h2>Errors</h2><span class="sub">per poll, in and out</span></div>
+    {{ graph(src, [{"key":"in_err","color":"var(--warn)","area":false},{"key":"out_err","color":"var(--down)","area":false}], 'num', 170, 'Errors') }}</div>
+</div>
+<div class="p"><div class="ph"><h2>Events</h2></div>
+  {% if events %}{{ event_rows(events) }}{% else %}<p class="dim" style="margin:0">No changes recorded for this port yet.</p>{% endif %}</div>
+{% endblock %}

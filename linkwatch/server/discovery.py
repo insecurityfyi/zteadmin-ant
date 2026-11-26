@@ -16,7 +16,15 @@ from .models import Device, DiscoveryJob, DiscoveryRule, SnmpProfile, utcnow
 log = logging.getLogger("linkwatch.discovery")
 DEVICE_TYPES = ["Switch", "Router", "Firewall", "Wireless", "Server", "Hypervisor", "Storage", "Power", "Printer", "Camera", "Network", "Other"]
 SCHEDULES = {0: "Only when run by hand", 6: "Every 6 hours", 24: "Daily", 168: "Weekly"}
+PING_ONLY = {"include": "List them and let me add them as ping-only devices",
+             "skip": "Skip them: don't list or add hosts that only answer ping"}
 AUTO_ADD = {"off": "Don't add; I'll review the results", "snmp": "Add new devices that answer SNMP", "all": "Add everything new that answers"}
+
+
+def ping_only_mode(s: Session) -> str:
+    """Whether discovery lists and adds hosts that answered ping but not SNMP ("include") or skips them ("skip")."""
+    v = get_setting(s, "discovery_ping_only", "include") or "include"
+    return v if v in PING_ONLY else "include"
 
 
 def ordered_profiles(s: Session) -> list[SnmpProfile]:
@@ -65,6 +73,7 @@ def add_from_job(s: Session, job: DiscoveryJob, ips: set[str] | None = None, sit
     existing = set(s.scalars(select(Device.ip).where(Device.ip.is_not(None))))
     site = site_by_name(s, site_name)
     valid_profiles = set(s.scalars(select(SnmpProfile.id)))
+    only_snmp = only_snmp or ping_only_mode(s) == "skip"
     added = 0
     for r in job.results or []:
         ip = r.get("ip")

@@ -101,6 +101,14 @@ class Hub:
         return True
 
     # websocket --------------------------------------------------------------
+    def _event(self, message: str, severity: str) -> None:
+        from . import events
+        try:
+            with self.db.session() as s:
+                events.log(s, "poller", message, severity)
+        except Exception:
+            log.exception("Could not write the event log")
+
     def _touch(self, poller_id: int, **fields) -> None:
         with self.db.session() as s:
             p = s.get(Poller, poller_id)
@@ -170,6 +178,7 @@ class Hub:
         self.conns[poller.id] = ws
         await asyncio.to_thread(self._touch, poller.id, last_ip=client_ip)
         log.info("Poller %s connected from %s", poller.name, client_ip)
+        await asyncio.to_thread(self._event, f"Poller {poller.name} connected from {client_ip or 'unknown address'}", "ok")
         try:
             await self.push_config(poller.id)
             while True:
@@ -193,4 +202,5 @@ class Hub:
         finally:
             if self.conns.get(poller.id) is ws:
                 del self.conns[poller.id]
+                await asyncio.to_thread(self._event, f"Poller {poller.name} disconnected", "warn")
             log.info("Poller %s disconnected", poller.name)

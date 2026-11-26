@@ -12,7 +12,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from ..common.discovery import TargetError, expand_targets, guess_type
-from .discovery import AUTO_ADD, DEVICE_TYPES, SCHEDULES, add_from_job, in_order, move_profile, ordered_profiles, run_rule, start_job
+from .discovery import AUTO_ADD, DEVICE_TYPES, PING_ONLY, ping_only_mode, SCHEDULES, add_from_job, in_order, move_profile, ordered_profiles, run_rule, start_job
 from ..integrations import REGISTRY, IntegrationError, build
 from .app import flash
 from .db import set_setting
@@ -24,6 +24,7 @@ from .models import (
     DiscoveryJob,
     DiscoveryRule,
     EnrollToken,
+    Event,
     Integration,
     Poller,
     Port,
@@ -35,7 +36,9 @@ from .ingest import site_by_name
 from .notify import KINDS as TRANSPORT_KINDS
 from .notify import send_one
 from .alerts import AlertEvent
+from . import events
 from .security import mask, new_secret, sha256
+from .themes import theme_for
 
 router = APIRouter(include_in_schema=False)
 SNMP_AUTH = ["SHA", "SHA224", "SHA256", "SHA384", "SHA512", "MD5"]
@@ -46,18 +49,33 @@ def st(request: Request):
     return request.app.state.lw
 
 
+SECTIONS = {"dashboard": "overview", "eventlog": "overview", "devices": "devices", "device": "devices", "discovery": "devices",
+            "ports": "ports", "port": "ports", "health": "health", "alerts": "alerts", "map": "map",
+            "integrations": "integrations", "integration": "integrations", "unifi": "integrations",
+            "pollers": "admin", "settings": "admin", "admin": "admin", "account": "admin"}
+
+
 def render(request: Request, name: str, ctx: dict[str, Any] | None = None, status_code: int = 200) -> HTMLResponse:
     ctx = dict(ctx or {})
     ctx["flashes"] = request.session.pop("flash", [])
     ctx["nav"] = name.split(".")[0].split("_")[0]
+    ctx.setdefault("section", SECTIONS.get(ctx["nav"], ""))
     with st(request).db.session() as s:
         ctx["open_alerts"] = s.scalar(select(func.count(Alert.id)).where(Alert.state == "open")) or 0
+        ctx["nav_types"] = s.execute(select(Device.type, func.count(Device.id)).group_by(Device.type).order_by(Device.type)).all()
+        ctx["nav_down"] = s.scalar(select(func.count(Device.id)).where(Device.status == "down", Device.disabled.is_(False))) or 0
+        ctx["theme"] = theme_for(s, getattr(request.state, "user", None))
         ctx["pollers_total"] = s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0
         ctx["nav_integrations"] = s.execute(select(Integration.id, Integration.name, Integration.kind, Integration.status,
                                                    Integration.enabled).order_by(Integration.name)).all()
     ctx["pollers_connected"] = len(st(request).hub.conns)
     ctx["me"] = getattr(request.state, "user", None)
     return st(request).templates.TemplateResponse(request, name, ctx, status_code=status_code)
+
+
+def _who(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    return user.username if user else "someone"
 
 
 def back(url: str) -> RedirectResponse:
@@ -111,7 +129,7 @@ def dashboard(request: Request):
 
 # ------------------------------------------------------------------ devices
 @router.get("/devices", response_class=HTMLResponse)
-def devices(request: Request, q: str = "", status: str = "", type: str = "", site: str = ""):
+def devices(request: Request, q: str = "", status: str = "", type: str = "", site: str = "", source: str = ""):
     with st(request).db.session() as s:
         query = select(Device).options(selectinload(Device.site), selectinload(Device.poller)).order_by(Device.hostname)
         if q:
@@ -122,6 +140,8 @@ def devices(request: Request, q: str = "", status: str = "", type: str = "", sit
             query = query.where(Device.status == status)
         if type:
             query = query.where(Device.type == type)
+        if source:
+            query = query.where(Device.source == source)
         rows = s.scalars(query).all()
         if site:
             rows = [d for d in rows if (d.site.name if d.site else "") == site]
@@ -129,8 +149,44 @@ def devices(request: Request, q: str = "", status: str = "", type: str = "", sit
         from .models import Site
         site_names = sorted(n for n in s.scalars(select(Site.name)))
         total = s.scalar(select(func.count(Device.id))) or 0
+        sources = sorted({x for x in s.scalars(select(Device.source).distinct()) if x})
     return render(request, "devices.html", {"devices": rows, "q": q, "status": status, "type": type, "site": site,
-                                            "types": types, "site_names": site_names, "total": total})
+                                            "types": types, "site_names": site_names, "total": total,
+                                            "source": source, "sources": sources})
+
+
+@router.post("/devices/bulk")
+async def devices_bulk(request: Request):
+    """Disable, enable or delete the ticked devices."""
+    form = await request.form()
+    action = str(form.get("action") or "")
+    ids = [int(v) for v in form.getlist("device_id") if str(v).isdigit()]
+    if action not in ("disable", "enable", "delete") or not ids:
+        flash(request, "Tick some devices and choose what to do with them.", "warn")
+        return back(str(form.get("back") or "/devices"))
+    pollers: set[int | None] = set()
+    with st(request).db.session() as s:
+        devs = s.scalars(select(Device).where(Device.id.in_(ids))).all()
+        for d in devs:
+            pollers.add(d.poller_id)
+            if action == "delete":
+                events.log(s, "config", f"Device {d.hostname} deleted by {_who(request)}", "info", username=_who(request))
+                s.delete(d)
+            else:
+                d.disabled = action == "disable"
+                if d.disabled:
+                    d.status, d.status_reason = "off", "Disabled"
+                    for a in s.scalars(select(Alert).where(Alert.device_id == d.id, Alert.state.in_(("open", "ack")))):
+                        a.state, a.resolved_at = "resolved", utcnow()
+                elif d.status == "off":
+                    d.status, d.status_reason = "unknown", None
+                events.log(s, "config", f"Device {'disabled' if d.disabled else 'enabled'} by {_who(request)}", "info", d,
+                           username=_who(request))
+        n = len(devs)
+    for pid in pollers:
+        push_poller(request, pid)
+    flash(request, f"{ {'disable': 'Disabled', 'enable': 'Enabled', 'delete': 'Deleted'}[action] } {n} device{'s' if n != 1 else ''}.")
+    return back(str(form.get("back") or "/devices") if str(form.get("back") or "").startswith("/") else "/devices")
 
 
 def _device_form_ctx(s, device: Device | None = None) -> dict[str, Any]:
@@ -182,6 +238,7 @@ async def device_create(request: Request):
         s.add(d)
         s.flush()
         dev_id, poller_id = d.id, d.poller_id
+        events.log(s, "config", f"Device added by {_who(request)}", "info", d, username=_who(request))
     push_poller(request, poller_id)
     flash(request, "Device added. It is polled on the next cycle; use Poll now to check it right away.")
     return back(f"/devices/{dev_id}")
@@ -224,8 +281,20 @@ async def device_import(request: Request, file: UploadFile = File(...), poller_i
 def _discovery_ctx(s) -> dict[str, Any]:
     ctx = _device_form_ctx(s)
     ctx["profiles"] = ordered_profiles(s)
-    ctx |= {"schedules": SCHEDULES, "auto_add_modes": AUTO_ADD}
+    ctx |= {"schedules": SCHEDULES, "auto_add_modes": AUTO_ADD, "ping_only_modes": PING_ONLY, "ping_only": ping_only_mode(s),
+            "ping_only_devices": s.scalar(select(func.count(Device.id)).where(Device.source == "ping")) or 0}
     return ctx
+
+
+@router.post("/discovery/ping-only")
+async def discovery_ping_only(request: Request):
+    form = await request.form()
+    mode = str(form.get("mode") or "include")
+    with st(request).db.session() as s:
+        set_setting(s, "discovery_ping_only", mode if mode in PING_ONLY else "include")
+    flash(request, "Discovery now skips hosts that only answer ping." if mode == "skip"
+          else "Discovery lists hosts that only answer ping again.")
+    return back("/discovery#ping-only")
 
 
 @router.get("/discovery", response_class=HTMLResponse)
@@ -370,8 +439,12 @@ def discovery_job(request: Request, jid: int):
         names = {p.id: p.name for p in s.scalars(select(SnmpProfile))}
         rows = [r | {"known": known.get(r["ip"]), "type": guess_type(r.get("sys_descr"), r.get("sys_object_id")),
                      "profile": names.get(r.get("profile_id"))} for r in job.results or []]
+        hidden = 0
+        if ping_only_mode(s) == "skip":
+            keep = [r for r in rows if r["profile"] or r["known"]]
+            hidden, rows = len(rows) - len(keep), keep
         ctx = _device_form_ctx(s)
-    ctx |= {"job": job, "rows": rows, "new_count": sum(1 for r in rows if not r["known"])}
+    ctx |= {"job": job, "rows": rows, "new_count": sum(1 for r in rows if not r["known"]), "hidden_ping_only": hidden}
     return render(request, "discovery_job.html", ctx)
 
 
@@ -391,8 +464,14 @@ async def discovery_add(request: Request, jid: int):
     return back("/devices" if added else f"/discovery/{jid}")
 
 
+DEVICE_TABS = [("overview", "Overview"), ("graphs", "Graphs"), ("ports", "Ports"), ("health", "Health"),
+               ("inventory", "Inventory"), ("events", "Events"), ("alerts", "Alerts")]
+
+
 @router.get("/devices/{device_id}", response_class=HTMLResponse)
-def device_detail(request: Request, device_id: int):
+def device_detail(request: Request, device_id: int, tab: str = "overview", view: str = "list", kind: str = ""):
+    if tab not in dict(DEVICE_TABS):
+        tab = "overview"
     with st(request).db.session() as s:
         d = s.get(Device, device_id, options=[selectinload(Device.site), selectinload(Device.poller),
                                               selectinload(Device.snmp_profile), selectinload(Device.integration),
@@ -400,9 +479,25 @@ def device_detail(request: Request, device_id: int):
         if d is None:
             raise HTTPException(404, "No such device")
         ports = sorted(d.ports, key=lambda p: (-(max(p.in_bps or 0, p.out_bps or 0)), p.ifindex))
-        alerts = s.scalars(select(Alert).where(Alert.device_id == d.id).order_by(Alert.opened_at.desc()).limit(10)).all()
-    return render(request, "device.html", {"d": d, "ports": ports, "alerts": alerts,
-                                           "connected": d.poller_id in st(request).hub.conns})
+        port_counts = {"total": len(ports), "up": sum(1 for p in ports if p.oper == "up"),
+                       "down": sum(1 for p in ports if p.admin == "up" and p.oper != "up"),
+                       "disabled": sum(1 for p in ports if p.admin != "up"),
+                       "errors": sum(1 for p in ports if (p.in_err_rate or 0) + (p.out_err_rate or 0) > 0)}
+        dev_alerts = s.scalars(select(Alert).where(Alert.device_id == d.id, Alert.state.in_(("open", "ack")))
+                                .order_by(Alert.opened_at.desc())).all()
+        ctx: dict[str, Any] = {"d": d, "ports": ports, "port_counts": port_counts, "dev_alerts": dev_alerts, "tab": tab,
+                               "tabs": DEVICE_TABS, "view": view, "kind": kind,
+                               "connected": d.poller_id in st(request).hub.conns}
+        if tab == "overview":
+            ctx["events"] = s.scalars(select(Event).where(Event.device_id == d.id).order_by(Event.id.desc()).limit(10)).all()
+        elif tab == "events":
+            q = select(Event).where(Event.device_id == d.id)
+            if kind:
+                q = q.where(Event.kind == kind)
+            ctx["events"] = s.scalars(q.order_by(Event.id.desc()).limit(300)).all()
+        elif tab == "alerts":
+            ctx["alerts"] = s.scalars(select(Alert).where(Alert.device_id == d.id).order_by(Alert.opened_at.desc()).limit(100)).all()
+    return render(request, "device.html", ctx)
 
 
 @router.get("/devices/{device_id}/edit", response_class=HTMLResponse)
@@ -436,6 +531,7 @@ async def device_update(request: Request, device_id: int):
                 ctx.update(error=err, form=form)
                 return render(request, "device_form.html", ctx, 400)
             new_poller = d.poller_id
+        events.log(s, "config", f"Settings changed by {_who(request)}", "info", d, username=_who(request))
     push_poller(request, old_poller)
     if new_poller != old_poller:
         push_poller(request, new_poller)
@@ -451,6 +547,7 @@ def device_delete(request: Request, device_id: int):
             raise HTTPException(404)
         poller_id, name = d.poller_id, d.hostname
         s.delete(d)
+        events.log(s, "config", f"Device {name} deleted by {_who(request)}", "info", username=_who(request))
     push_poller(request, poller_id)
     flash(request, f"Deleted {name} and its history.")
     return back("/devices")
@@ -476,7 +573,10 @@ def port_alert_toggle(request: Request, port_id: int):
             raise HTTPException(404)
         p.alert_on_down = not p.alert_on_down
         dev_id = p.device_id
-    return back(f"/devices/{dev_id}#ports")
+        events.log(s, "config", f"Port {p.name}: alert when down turned {'on' if p.alert_on_down else 'off'} by {_who(request)}",
+                   "info", dev_id, p, username=_who(request))
+    nxt = str(request.query_params.get("next") or "")
+    return back(nxt if nxt.startswith("/") else f"/devices/{dev_id}?tab=ports")
 
 
 # ------------------------------------------------------------------ alerts

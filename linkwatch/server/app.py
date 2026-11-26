@@ -105,9 +105,11 @@ def flash(request: Request, message: str, kind: str = "ok") -> None:
 def login_context(request: Request, next: str) -> dict:
     """What the sign-in page needs: where to go after, and the SSO button if single sign-on is on."""
     from .saml import SamlSettings
+    from .themes import site_theme
     with request.app.state.lw.db.session() as s:
         cfg = SamlSettings.load(s)
-    return {"next": next, "error": None, "sso": cfg if cfg.ready else None}
+        theme = site_theme(s)
+    return {"next": next, "error": None, "sso": cfg if cfg.ready else None, "theme": theme}
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -249,6 +251,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .admin import router as admin_router
     from .api import router as api_router
     from .integration_views import router as integration_views_router
+    from .nms_views import router as nms_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
@@ -257,5 +260,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(unifi_router)
     app.include_router(sso_router)
     app.include_router(integration_views_router)
+    app.include_router(nms_router)
     app.include_router(admin_router)
     return app

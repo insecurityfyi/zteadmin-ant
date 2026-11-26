@@ -1,5 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Your account{% endblock %}
+{% block title %}Your account<div class="p" style="max-width:860px" id="theme"><div class="ph"><h2>Theme</h2><span class="sub">Only for you</span></div>
+  <form method="post" action="/account/theme" class="stack" style="max-width:none">
+    <div class="themes">
+      <label class="theme-pick" data-theme="{{ site_theme }}"><input type="radio" name="theme" value="" {% if not me.theme %}checked{% endif %}>
+        <span class="sw"><i style="background:var(--bg)"></i><i style="background:var(--panel)"></i><i style="background:var(--accent)"></i><i style="background:var(--up)"></i><i style="background:var(--warn)"></i><i style="background:var(--down)"></i></span>
+        <span>Site default <span class="dim">({{ themes[site_theme].split(' (')[0] }})</span></span></label>
+      {% for k, label in themes.items() %}<label class="theme-pick" data-theme="{{ k }}"><input type="radio" name="theme" value="{{ k }}" {% if me.theme == k %}checked{% endif %}>
+        <span class="sw"><i style="background:var(--bg)"></i><i style="background:var(--panel)"></i><i style="background:var(--accent)"></i><i style="background:var(--up)"></i><i style="background:var(--warn)"></i><i style="background:var(--down)"></i></span>
+        <span>{{ label }}</span></label>{% endfor %}</div>
+    <div><button class="btn pri" type="submit">Save</button></div>
+  </form></div>
+{% endblock %}
 {% block content %}
 <div class="head"><div><h1>Your account</h1><p>Signed in as <b>{{ me.username }}</b> ({{ roles[me.role] }}){% if me.role != 'admin' %}. You can view everything; ask an admin to make changes{% endif %}.</p></div></div>
 {% if me.auth_source == 'saml' %}<div class="p" style="max-width:560px"><h2>Password</h2><p class="dim" style="margin-bottom:0">You sign in with your Microsoft account through single sign-on, so there is no Linkwatch password to change. Your access comes from your Entra groups or app roles.</p></div>
@@ -11,4 +22,15 @@
     <label class="f">New password again<input type="password" name="password2" id="a_new2" autocomplete="new-password" required minlength="{{ min_password }}"></label>
     <div><button class="btn pri" type="submit">Change password</button></div>
   </form></div>{% endif %}
+<div class="p" style="max-width:860px" id="theme"><div class="ph"><h2>Theme</h2><span class="sub">Only for you</span></div>
+  <form method="post" action="/account/theme" class="stack" style="max-width:none">
+    <div class="themes">
+      <label class="theme-pick" data-theme="{{ site_theme }}"><input type="radio" name="theme" value="" {% if not me.theme %}checked{% endif %}>
+        <span class="sw"><i style="background:var(--bg)"></i><i style="background:var(--panel)"></i><i style="background:var(--accent)"></i><i style="background:var(--up)"></i><i style="background:var(--warn)"></i><i style="background:var(--down)"></i></span>
+        <span>Site default <span class="dim">({{ themes[site_theme].split(' (')[0] }})</span></span></label>
+      {% for k, label in themes.items() %}<label class="theme-pick" data-theme="{{ k }}"><input type="radio" name="theme" value="{{ k }}" {% if me.theme == k %}checked{% endif %}>
+        <span class="sw"><i style="background:var(--bg)"></i><i style="background:var(--panel)"></i><i style="background:var(--accent)"></i><i style="background:var(--up)"></i><i style="background:var(--warn)"></i><i style="background:var(--down)"></i></span>
+        <span>{{ label }}</span></label>{% endfor %}</div>
+    <div><button class="btn pri" type="submit">Save</button></div>
+  </form></div>
 {% endblock %}

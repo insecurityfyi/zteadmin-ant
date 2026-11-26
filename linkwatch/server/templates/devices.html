@@ -7,21 +7,31 @@
   <div class="ph">
     <div class="filters">
       {% for s, label in [('', 'All'), ('down', 'Down'), ('warn', 'Warning'), ('up', 'Up'), ('unknown', 'Unknown')] %}
-      <a class="fbtn" aria-pressed="{{ 'true' if status == s else 'false' }}" href="?status={{ s }}&type={{ type }}&site={{ site }}&q={{ q }}">{{ label }}</a>{% endfor %}
+      <a class="fbtn" aria-pressed="{{ 'true' if status == s else 'false' }}" href="?status={{ s }}&type={{ type }}&site={{ site }}&source={{ source }}&q={{ q }}">{{ label }}</a>{% endfor %}
       <form method="get" class="filters" style="margin-left:8px">
         <input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="q" value="{{ q }}">
         <select name="type" aria-label="Type" onchange="this.form.submit()" style="width:auto"><option value="">All types</option>{% for t in types %}<option {% if t == type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
         <select name="site" aria-label="Site" onchange="this.form.submit()" style="width:auto"><option value="">All sites</option>{% for s in site_names %}<option {% if s == site %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        <select name="source" aria-label="Source" onchange="this.form.submit()" style="width:auto"><option value="">All sources</option>{% for x in sources %}<option value="{{ x }}" {% if x == source %}selected{% endif %}>{{ {'ping':'Ping only','snmp':'SNMP'}.get(x, x) }}</option>{% endfor %}</select>
       </form>
     </div>
     <span class="sub">{{ devices|length }} of {{ total }}</span>
   </div>
+  {% if source == 'ping' and devices %}<p class="dim" style="margin:0 0 10px">These devices answered ping but not SNMP when they were found, so only reachability is monitored. Tick them and disable or delete them below; to stop discovery adding more, see <a href="/discovery#ping-only">Discovery</a>.</p>{% endif %}
   {% if devices %}
+  <form method="post" action="/devices/bulk" id="bulk">
+  <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
+  {% if me and me.role == 'admin' %}<div class="actions" style="margin-bottom:10px">
+    <label class="chk"><input type="checkbox" data-check-all="device_id"> Select all {{ devices|length }}</label>
+    <select name="action" aria-label="Action for ticked devices" style="width:auto"><option value="">With ticked devices…</option><option value="disable">Disable (stop polling, keep history)</option><option value="enable">Enable</option><option value="delete">Delete with their history</option></select>
+    <button class="btn" type="submit" onclick="var a=this.form.action.value; return a !== 'delete' || confirm('Delete the ticked devices and all their history?')">Apply</button>
+  </div>{% endif %}
   <div class="scroll"><table>
-    <thead><tr><th></th><th>Hostname</th><th>IP address</th><th>Type</th><th>Platform</th><th>Site</th><th>Source</th><th class="n">CPU</th><th class="n">Mem</th><th class="n">Ping</th><th class="n">Status for</th></tr></thead>
+    <thead><tr>{% if me and me.role == 'admin' %}<th><span class="sr">Select</span></th>{% endif %}<th></th><th>Hostname</th><th>IP address</th><th>Type</th><th>Platform</th><th>Site</th><th>Source</th><th class="n">CPU</th><th class="n">Mem</th><th class="n">Ping</th><th class="n">Status for</th></tr></thead>
     <tbody>
     {% for d in devices %}
-      <tr class="click" onclick="location.href='/devices/{{ d.id }}'">
+      <tr class="click" onclick="if (!event.target.closest('input,label')) location.href='/devices/{{ d.id }}'">
+        {% if me and me.role == 'admin' %}<td><input type="checkbox" name="device_id" value="{{ d.id }}" aria-label="Select {{ d.hostname }}"></td>{% endif %}
         <td><span class="dot d-{{ d.status }}" title="{{ d.status }}"></span></td>
         <td class="nw"><a class="row" href="/devices/{{ d.id }}">{{ d.hostname }}</a>{% if d.disabled %} <span class="tag">disabled</span>{% endif %}</td>
         <td class="mono nw">{{ d.ip or '–' }}</td><td>{{ d.type }}</td><td class="dim">{{ d.platform or '' }}</td>
@@ -33,6 +43,7 @@
       </tr>
     {% endfor %}
     </tbody></table></div>
+  </form>
   {% else %}
   <div class="empty-state"><h2>No devices match</h2><p>Add one, import a CSV, or connect an integration to pull devices in.</p></div>
   {% endif %}

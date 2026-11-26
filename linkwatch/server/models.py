@@ -104,6 +104,7 @@ class User(Base):
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime)
     auth_source: Mapped[str | None] = mapped_column(String(16))      # None/local | saml (no usable password)
     external_id: Mapped[str | None] = mapped_column(String(255))     # Entra object ID for SSO users
+    theme: Mapped[str | None] = mapped_column(String(16))           # None = the site default
 
 
 class AuditEvent(Base):
@@ -115,6 +116,21 @@ class AuditEvent(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
     action: Mapped[str] = mapped_column(String(120))
     detail: Mapped[str | None] = mapped_column(String(500))
+
+
+class Event(Base):
+    """The event log: what happened to devices, ports, alerts, pollers and integrations, newest first."""
+    __tablename__ = "events"
+    __table_args__ = (Index("ix_event_dev_at", "device_id", "at"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    kind: Mapped[str] = mapped_column(String(16))          # device | port | alert | config | poller | integration
+    severity: Mapped[str] = mapped_column(String(8), default="info")   # ok | info | warn | crit
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
+    port_id: Mapped[int | None] = mapped_column(ForeignKey("ports.id", ondelete="SET NULL"))
+    message: Mapped[str] = mapped_column(String(500))
+    username: Mapped[str | None] = mapped_column(String(64))
+    device: Mapped["Device | None"] = relationship()
 
 
 class DiscoveryRule(Base):

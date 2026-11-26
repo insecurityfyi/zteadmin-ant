@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import events
 from .models import Alert, AlertRule, Device, DeviceMetric, PortMetric, utcnow
 
 SEVERITY_ORDER = {"info": 0, "warn": 1, "crit": 2}
@@ -47,6 +48,7 @@ class Alerter:
             self.s.add(alert)
             self.s.flush()
             self.open[(key, ref)] = alert
+            events.log(self.s, "alert", f"Alert opened: {alert.title}", alert.severity, device)
             self.events.append(AlertEvent("opened", alert.id, alert.severity, alert.title, alert.detail,
                                           device.hostname if device else None))
         elif active and current is not None:
@@ -56,6 +58,7 @@ class Alerter:
             current.state = "resolved"
             current.resolved_at = utcnow()
             del self.open[(key, ref)]
+            events.log(self.s, "alert", f"Alert resolved: {current.title}", "ok", device or current.device_id)
             self.events.append(AlertEvent("resolved", current.id, current.severity, current.title, current.detail,
                                           device.hostname if device else None))
 

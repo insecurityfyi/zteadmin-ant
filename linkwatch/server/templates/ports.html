@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_g.html" import portdot, meter %}
+{% block title %}Ports{% endblock %}
+{% block content %}
+{% macro qs(over) %}{% set a = {'q': q, 'state': state, 'errors': errors, 'sort': sort} %}{% set _ = a.update(over) %}?{% for k, v in a.items() if v %}{{ k }}={{ v|urlencode }}{{ '&' if not loop.last }}{% endfor %}{% endmacro %}
+<div class="head"><div><h1>Ports</h1><p>{{ counts.all|num }} interfaces across your devices: {{ counts.up|num }} up, {{ counts.down|num }} down, {{ counts.shutdown|num }} shut down.</p></div></div>
+<div class="p">
+  <div class="ph">
+    <div class="filters">
+      {% for k, label in [('', 'All'), ('up', 'Up'), ('down', 'Down'), ('shutdown', 'Shut down')] %}<a class="fbtn" href="{{ qs({'state': k, 'page': ''}) }}" aria-pressed="{{ 'true' if state == k else 'false' }}">{{ label }}</a>{% endfor %}
+      <a class="fbtn" href="{{ qs({'errors': '' if errors else '1'}) }}" aria-pressed="{{ 'true' if errors else 'false' }}">With errors</a>
+      <form method="get" class="filters" style="margin-left:6px">
+        <input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="errors" value="{{ errors }}">
+        <input type="search" name="q" value="{{ q }}" placeholder="Port, description or device" aria-label="Filter ports" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+        <select name="sort" aria-label="Sort" onchange="this.form.submit()" style="width:auto">{% for k, label in [('traffic','Most traffic'),('util','Highest utilisation'),('errors','Most errors'),('name','Device and port')] %}<option value="{{ k }}" {% if sort == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </form>
+    </div>
+    <span class="sub">{{ total|num }} match{{ '' if total == 1 else 'es' }}</span>
+  </div>
+  {% if rows %}
+  <div class="scroll"><table><thead><tr><th></th><th>Device</th><th>Port</th><th>Description</th><th class="n">Speed</th><th class="n">In</th><th class="n">Out</th><th>Util</th><th class="n">Errors / poll</th></tr></thead>
+  <tbody>{% for p, host, dstatus in rows %}
+    <tr class="click" onclick="location.href='/ports/{{ p.id }}'">
+      <td>{{ portdot(p) }}</td>
+      <td class="nw"><span class="dot d-{{ dstatus }}" title="Device {{ dstatus }}"></span> <a href="/devices/{{ p.device_id }}?tab=ports" style="color:inherit">{{ host }}</a></td>
+      <td class="mono nw"><a class="row" href="/ports/{{ p.id }}">{{ p.name }}</a></td>
+      <td class="dim">{{ p.alias or '' }}</td><td class="n">{{ p.speed_mbps|speed }}</td>
+      <td class="n mono">{{ p.in_bps|bps }}</td><td class="n mono">{{ p.out_bps|bps }}</td><td class="nw">{{ meter(p.util_pct) }}</td>
+      <td class="n {{ 'wa' if (p.in_err_rate or 0) + (p.out_err_rate or 0) > 0 else '' }}">{{ ((p.in_err_rate or 0) + (p.out_err_rate or 0))|int }}</td></tr>
+  {% endfor %}</tbody></table></div>
+  {% if pages > 1 %}<div class="pager"><span class="sub">Page {{ page }} of {{ pages }}</span>
+    {% if page > 1 %}<a class="btn sm" href="{{ qs({'page': page - 1}) }}">Previous</a>{% endif %}
+    {% if page < pages %}<a class="btn sm" href="{{ qs({'page': page + 1}) }}">Next</a>{% endif %}</div>{% endif %}
+  {% else %}<div class="empty-state"><h2>No ports match</h2><p>Ports appear once SNMP devices have been polled.</p></div>{% endif %}
+</div>
+{% endblock %}

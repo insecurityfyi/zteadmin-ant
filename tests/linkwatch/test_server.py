@@ -185,7 +185,8 @@ def test_unifi_pages(logged_in, app):
     series = logged_in.get(f"/ui/metrics/integration/{iid}/ssid:Office").json()
     assert series["a"] == [4_000_000.0] and series["c"] == [1.0]
     assert logged_in.get(f"/ui/metrics/integration/{iid}/ssid%3AOffice").json()["a"] == [4_000_000.0]
-    assert "Wi-Fi traffic" in logged_in.get(f"/devices/{ap_id}").text
+    assert "Wi-Fi clients" in logged_in.get(f"/devices/{ap_id}").text
+    assert "Wi-Fi traffic" in logged_in.get(f"/devices/{ap_id}?tab=graphs").text
     assert f'href="/unifi?i={iid}"' in logged_in.get(f"/integrations/{iid}").text
 
 

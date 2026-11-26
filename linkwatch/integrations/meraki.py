@@ -105,7 +105,9 @@ class Meraki(Integration):
                 type=TYPES.get(d.get("productType", ""), "Network"), platform=f"Meraki {d.get('model', '')}".strip(),
                 site=networks.get(d.get("networkId")), status=STATUS.get(st.get("status", ""), "unknown"),
                 serial=d["serial"], detail=f"Firmware {d.get('firmware') or '?'}",
-                extra={"mac": d.get("mac"), "publicIp": st.get("publicIp"), "lastReportedAt": st.get("lastReportedAt")},
+                extra={"mac": d.get("mac"), "publicIp": st.get("publicIp"), "lastReportedAt": st.get("lastReportedAt"),
+                       "ips": sorted({x for x in (st.get("lanIp"), d.get("lanIp"), st.get("wan1Ip"), st.get("wan2Ip"),
+                                                  d.get("wan1Ip"), d.get("wan2Ip")) if x})},
             ))
         return out
 
