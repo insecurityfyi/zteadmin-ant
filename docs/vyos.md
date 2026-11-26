@@ -15,12 +15,12 @@ In configuration mode:
 
 ```
 set service https api keys id linkwatch key '<a long random key>'
-set service https api rest                 # VyOS 1.5 and newer: the REST API is off until you add this
+set service https api rest                 # needed on VyOS 1.5 and newer (and later 1.4 builds)
 set service https listen-address <router address the poller reaches>
 commit ; save
 ```
 
-- **VyOS 1.3 and 1.4:** leave out `set service https api rest`. Those versions have no such option and serve the REST API as soon as a key exists.
+- **VyOS 1.3 and early 1.4:** if the CLI rejects `set service https api rest`, leave it out. On those versions the REST API runs as soon as a key exists.
 - **VyOS 1.5 and newer** (including current rolling releases): the key command is the same, but the REST API stays off until `set service https api rest` is set. Without it, every call returns 404, and Linkwatch says the REST API is turned off.
 - **Check:** `curl -k https://<router>/info` needs no key on 1.5 and newer. It returns the version and host name when the HTTPS service is up.
 - **Other port:** `set service https port 8443`. Then add `:8443` to the address in Linkwatch.
