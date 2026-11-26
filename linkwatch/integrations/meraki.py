@@ -18,7 +18,7 @@ class Meraki(Integration):
     description = "Dashboard API: devices, status and uplinks across your organization."
     fields = [
         Field("api_key", "API key", "password", help="Organization > Settings > Dashboard API access, then your profile > API keys."),
-        Field("org_id", "Organization ID", required=False, help="Leave blank to use the first organization the key can see."),
+        Field("org_id", "Organization ID", required=False, help="Numeric ID or the organization's name. Leave blank to use the first organization the key can see."),
     ]
 
     def _key(self) -> str:
@@ -55,12 +55,18 @@ class Meraki(Integration):
 
     def org_id(self) -> str:
         org = str(self.config.get("org_id") or "").strip()
-        if org:
+        if org.isdigit():
             return org
         orgs = self._paged("/organizations")
         if not orgs:
             raise IntegrationError("The API key cannot see any organization")
-        return str(orgs[0]["id"])
+        if not org:
+            return str(orgs[0]["id"])
+        for o in orgs:   # a name was typed instead of the numeric ID
+            if org.lower() in (str(o.get("name", "")).strip().lower(), str(o.get("id"))):
+                return str(o["id"])
+        seen = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs[:10])
+        raise IntegrationError(f"No organization named '{org}'. This key can see: {seen}. Use one of those IDs, or leave Organization ID blank.")
 
     def collect(self) -> list[Record]:
         org = self.org_id()

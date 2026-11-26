@@ -102,6 +102,15 @@ def test_meraki_follows_shard_redirect_with_key():
     assert shard.calls.last.request.headers["x-cisco-meraki-api-key"] == "k"
 
 
+@respx.mock
+def test_meraki_org_name_resolves_to_id():
+    respx.get("https://api.meraki.com/api/v1/organizations").mock(return_value=httpx.Response(
+        200, json=[{"id": "111", "name": "Other"}, {"id": "2222", "name": "HCI-SOHO-Network"}]))
+    assert build("meraki", {"api_key": "k", "org_id": "hci-soho-network"}).org_id() == "2222"
+    with pytest.raises(IntegrationError, match=r"No organization named 'nope'.*HCI-SOHO-Network \(2222\)"):
+        build("meraki", {"api_key": "k", "org_id": "nope"}).org_id()
+
+
 PAN_INFO = """<response status="success"><result><system><hostname>dc-pa440</hostname><ip-address>10.50.0.1</ip-address>
 <model>PA-440</model><serial>0123456789</serial><sw-version>11.1.2</sw-version><uptime>12 days, 3:04:05</uptime></system></result></response>"""
 PAN_RES = """<response status="success"><result><![CDATA[top - 10:00:00 up 12 days
