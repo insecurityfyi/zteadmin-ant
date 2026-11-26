@@ -39,6 +39,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from .. import __version__
 from ..common.discovery import TargetError, expand_targets
 from ..integrations import IntegrationError, build
+from . import mtr
 from .discover import scan
 from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
@@ -76,6 +77,11 @@ class Poller:
         self._poll_now: set[int] = set()
         self.outbox: list[dict] = []   # discovery results waiting for a connection
         self.discovering: set[int] = set()
+        self.probes: list[dict] = []          # path probes (mtr) assigned to this poller
+        self.probe_due: dict[int, float] = {}
+        self.probe_wake = asyncio.Event()
+        self.probe_sem = asyncio.Semaphore(4)
+        self.probing: set[int] = set()
 
     # identity -------------------------------------------------------------
     @property
@@ -113,6 +119,7 @@ class Poller:
     async def run(self) -> None:
         ident = self.load_identity() or await self.enroll()
         asyncio.create_task(self.schedule_loop())
+        asyncio.create_task(self.probe_loop())
         backoff = 2.0
         while True:
             try:
@@ -123,7 +130,8 @@ class Poller:
                     log.info("Connected to %s", self.ws_url)
                     from ..integrations import REGISTRY
                     await ws.send(json.dumps({"type": "hello", "version": __version__, "hostname": socket.gethostname(),
-                                              "spooled": len(self.spool), "integrations": sorted(REGISTRY)}))
+                                              "spooled": len(self.spool), "integrations": sorted(REGISTRY),
+                                              "features": ["mtr"] if mtr.available() else []}))
                     for batch in self.spool.pending():
                         await ws.send(json.dumps(batch))
                     while self.outbox:
@@ -152,6 +160,7 @@ class Poller:
             self.devices = msg.get("devices", [])
             self.integrations = msg.get("integrations", [])
             self.interval = max(60, int(msg.get("interval", 300)))
+            self.set_probes(msg.get("probes") or [])
             log.info("Config: %d devices, %d integrations, every %ds", len(self.devices), len(self.integrations), self.interval)
             first = not self.configured.is_set()
             self.configured.set()
@@ -167,6 +176,11 @@ class Poller:
             if job and job not in self.discovering:
                 self.discovering.add(job)
                 asyncio.create_task(self.discover(msg))
+        elif t == "probe_now":
+            pid = int(msg.get("probe_id") or 0)
+            if any(p["id"] == pid for p in self.probes):
+                self.probe_due[pid] = 0.0
+                self.probe_wake.set()
         elif t == "ping" and self.ws:
             await self.ws.send(json.dumps({"type": "pong"}))
 
@@ -255,6 +269,55 @@ class Poller:
                 if not dev.get("snmp"):
                     item["ok"] = bool(item["ping"] and item["ping"]["loss_pct"] < 100)
             return item
+
+    # path probes ------------------------------------------------------------
+    def set_probes(self, probes: list[dict]) -> None:
+        now = time.monotonic()
+        old = {p["id"]: p for p in self.probes}
+        self.probes = [p for p in probes if isinstance(p, dict) and p.get("id") and p.get("target")]
+        for p in self.probes:
+            prev = old.get(p["id"])
+            if prev is None or any(prev.get(k) != p.get(k) for k in ("target", "protocol", "port", "count")):
+                self.probe_due[p["id"]] = now + random.uniform(0, 10)    # new or changed: run soon, spread out
+        live = {p["id"] for p in self.probes}
+        for pid in [k for k in self.probe_due if k not in live]:
+            del self.probe_due[pid]
+        if self.probes:
+            log.info("Config: %d path probes", len(self.probes))
+        self.probe_wake.set()
+
+    async def probe_loop(self) -> None:
+        while True:
+            now = time.monotonic()
+            for p in list(self.probes):
+                if self.probe_due.get(p["id"], 0) <= now and p["id"] not in self.probing:
+                    self.probe_due[p["id"]] = now + max(60, int(p.get("interval") or 300))
+                    self.probing.add(p["id"])
+                    asyncio.create_task(self.run_probe(p))
+            nxt = min(self.probe_due.values(), default=now + 30)
+            self.probe_wake.clear()
+            try:
+                await asyncio.wait_for(self.probe_wake.wait(), timeout=min(30.0, max(1.0, nxt - time.monotonic())))
+            except asyncio.TimeoutError:
+                pass
+
+    async def run_probe(self, probe: dict) -> None:
+        try:
+            async with self.probe_sem:
+                item = await mtr.trace(probe)
+            if item.get("error"):
+                log.warning("Path probe %s to %s: %s", probe["id"], probe.get("target"), item["error"])
+            batch = {"type": "results", "batch_id": new_batch_id(), "partial": True, "items": [item]}
+            self.spool.put(batch)
+            if self.ws:
+                try:
+                    await self.ws.send(json.dumps(batch))
+                except ConnectionClosed:
+                    pass
+        except Exception:
+            log.exception("Path probe %s failed", probe.get("id"))
+        finally:
+            self.probing.discard(probe["id"])
 
     async def run_integration(self, integ: dict) -> dict[str, Any]:
         item: dict[str, Any] = {"kind": "integration", "integration_id": integ["id"], "ts": time.time(), "ok": False, "error": None}

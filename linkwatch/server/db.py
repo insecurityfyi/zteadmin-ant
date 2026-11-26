@@ -24,6 +24,9 @@ DEFAULT_RULES = [
     ("storage_full", "Storage nearly full", "A disk or flash volume is fuller than the threshold (%)", "warn", 90, 1),
     ("integration_failed", "Integration failing", "An API integration could not sync", "warn", None, 1),
     ("poller_offline", "Poller offline", "A poller has not been heard from for three poll intervals", "crit", None, 1),
+    ("path_loss", "Path loss", "Packet loss to a path probe's target above the threshold (%)", "warn", 20, 2),
+    ("path_latency", "Path latency", "Average latency to a path probe's target above the threshold (ms)", "warn", 150, 3),
+    ("path_change", "Path changed networks", "A path probe's route now crosses different networks (ASNs). Clears once it holds for the poll count", "info", None, 3),
 ]
 
 

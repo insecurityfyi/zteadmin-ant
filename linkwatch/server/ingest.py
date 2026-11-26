@@ -572,4 +572,7 @@ def ingest_batch(s: Session, poller_id: int, batch: dict[str, Any]) -> Alerter |
             integ = s.get(Integration, int(item.get("integration_id") or 0))
             if integ is not None and integ.poller_id == poller_id:
                 ingest_integration(s, alerter, integ, item)
+        elif item.get("kind") == "probe":
+            from .paths import ingest_probe
+            ingest_probe(s, alerter, poller_id, item)
     return alerter

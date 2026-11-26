@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Path probes{% endblock %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+<div class="head"><div><h1>Path probes</h1><p>Your pollers trace the route to each target, hop by hop, with loss, latency and jitter at every hop and the network (AS) and provider each hop belongs to.</p></div>
+  {% if admin %}<div class="actions"><a class="btn pri" href="/probes/new">New probe</a></div>{% endif %}</div>
+{% if rows %}
+<div class="p"><div class="scroll"><table class="probes"><thead><tr><th>Probe</th><th>Target</th><th>From</th><th class="n">Loss</th><th class="n">Latency</th><th class="n">Jitter</th><th class="n">Hops</th><th>Networks crossed</th><th>Last run</th></tr></thead><tbody>
+{% for row in rows %}{% set p = row.p %}
+  {% for x in row.per or [none] %}
+  <tr class="click" onclick="location.href='/probes/{{ p.id }}{{ '?poller=' ~ x.poller_id if x }}'">
+    {% if loop.first %}<td rowspan="{{ (row.per or [none])|length }}"><a class="row" href="/probes/{{ p.id }}"><b>{{ p.name }}</b></a>{% if not p.enabled %} <span class="tag">paused</span>{% endif %}{% if row.alerts %} <a class="pill down" style="font-size:11px;padding:1px 8px;text-decoration:none" href="/alerts?state=open">{{ row.alerts }} alert{{ "s" if row.alerts > 1 }}</a>{% endif %}
+      <div class="sub">{{ protocols[p.protocol] }}{% if p.port %} port {{ p.port }}{% endif %} · {{ intervals.get(p.interval_s, p.interval_s ~ ' s')|lower }}</div></td>
+    <td rowspan="{{ (row.per or [none])|length }}" class="mono">{{ p.target }}</td>{% endif %}
+    {% if x %}{% set r = x.r %}
+    <td style="white-space:nowrap"><span class="pill {{ {'up':'up','warn':'warn','down':'down','error':'down'}.get(x.status, 'unknown') }}">{{ {'up':'OK','warn':'Degraded','down':'Unreachable','error':'Error','unknown':'Waiting'}[x.status] }}</span> {{ x.poller.name if x.poller else 'removed poller' }}</td>
+    <td class="n">{{ '%.0f%%'|format(r.loss_pct) if r and r.ok and r.loss_pct is not none else '–' }}</td>
+    <td class="n">{{ '%.1f ms'|format(r.avg_ms) if r and r.avg_ms is not none else '–' }}</td>
+    <td class="n">{{ '%.1f ms'|format(r.jitter_ms) if r and r.jitter_ms is not none else '–' }}</td>
+    <td class="n">{{ r.hop_count if r and r.ok else '–' }}</td>
+    <td>{% for n in x.nets %}<span class="asn" title="{{ n.holder or n.name }}">{{ n.key if n.asn else n.name }}{% if n.asn %} <em>{{ n.name }}</em>{% endif %}</span>{% if not loop.last %}<span class="dim"> › </span>{% endif %}{% else %}<span class="dim">{{ r.error[:80] if r and r.error else '–' }}</span>{% endfor %}</td>
+    <td>{{ r.ts|ago if r else 'not yet' }}</td>
+    {% else %}<td colspan="7" class="dim">No pollers assigned.</td>{% endif %}
+  </tr>{% endfor %}
+{% endfor %}
+</tbody></table></div></div>
+{% else %}
+<div class="p empty-state"><h2>No path probes yet</h2><p>A path probe runs an MTR-style trace (ICMP, UDP or TCP) from one or more pollers to a target, such as a SaaS endpoint, a branch firewall or your ISP's gateway, and keeps the history so you can see when a route or provider changes.</p>
+  {% if admin %}<p><a class="btn pri" href="/probes/new">New probe</a></p>{% endif %}</div>
+{% endif %}
+{% endblock %}
