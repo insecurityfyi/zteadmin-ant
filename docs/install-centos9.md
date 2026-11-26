@@ -1,4 +1,4 @@
-# Installing Linkwatch on the CentOS Stream 9 VPS
+# Installing Linkwatch on the CentOS Stream 10 VPS
 
 This guide sets up `utilz.perrego.net` (VPS `129.121.123.176`, deploy account
 `aperrego`) so that every push to `main` on GitHub deploys the app
@@ -23,6 +23,10 @@ There are two ways to do steps 2 to 9:
 
 Commands that start with `sudo` need root. Everything else runs as `aperrego`.
 
+The VPS runs CentOS Stream 10 (EL10). The script and the steps below also
+work on Stream 9; where the two differ it says so. The file names still say
+`centos9` for history, they cover both.
+
 ---
 
 ## 1. Before you start
@@ -38,7 +42,7 @@ Commands that start with `sudo` need root. Everything else runs as `aperrego`.
 3. **Log in as the deploy account** and confirm the OS:
    ```sh
    ssh aperrego@129.121.123.176
-   cat /etc/os-release | head -3        # NAME="CentOS Stream", VERSION="9"
+   cat /etc/os-release | head -3        # NAME="CentOS Stream", VERSION="10"
    sudo -v                              # confirms aperrego can use sudo
    ```
 
@@ -47,9 +51,15 @@ Commands that start with `sudo` need root. Everything else runs as `aperrego`.
 ```sh
 sudo dnf -y upgrade --refresh
 sudo dnf -y install dnf-plugins-core
-sudo dnf config-manager --set-enabled crb          # CodeReady Builder, needed by EPEL
-sudo dnf -y install epel-release epel-next-release  # EPEL has certbot and fail2ban
+sudo dnf config-manager --set-enabled crb   # CodeReady Builder, needed by EPEL
+sudo dnf -y install epel-release            # EPEL 10 has certbot and fail2ban
 ```
+
+If `epel-release` isn't found, install it straight from Fedora:
+`sudo dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm`.
+If `config-manager --set-enabled` errors (newer dnf), use
+`sudo dnf config-manager setopt crb.enabled=1`. On Stream 9 only, also install
+`epel-next-release`; there is no EPEL Next for 10.
 
 If the upgrade installed a new kernel (`dnf needs-restarting -r` says a reboot
 is required), run `sudo reboot` and log back in.
@@ -57,9 +67,22 @@ is required), run `sudo reboot` and log back in.
 ## 3. Install the dependencies
 
 ```sh
-sudo dnf -y install podman nginx firewalld policycoreutils-python-utils \
-  curl git tar certbot python3-certbot-nginx fail2ban
+sudo dnf -y install podman nginx firewalld policycoreutils-python-utils curl git tar openssl
+sudo dnf -y install certbot python3-certbot-nginx fail2ban    # from EPEL
 ```
+
+EPEL 10 is newer and sometimes lags a package. If certbot isn't available yet,
+install it with pip instead (this is what the script does automatically):
+
+```sh
+sudo dnf -y install python3 python3-pip augeas-libs
+sudo python3 -m venv /opt/certbot
+sudo /opt/certbot/bin/pip install certbot certbot-nginx
+sudo ln -sf /opt/certbot/bin/certbot /usr/local/bin/certbot
+```
+
+and use the renewal timer the script writes (`certbot-renew.timer`), or see
+step 7. If fail2ban is missing, skip step 5 for now; key-only SSH matters more.
 
 | Package | Why |
 | --- | --- |
@@ -105,7 +128,7 @@ sudo firewall-cmd --get-active-zones          # shows which interface (eth0, ens
 sudo firewall-cmd --zone=public --list-all
 ```
 
-A fresh CentOS Stream 9 install usually shows `services: cockpit dhcpv6-client ssh`.
+A fresh CentOS Stream install usually shows `services: cockpit dhcpv6-client ssh`.
 
 ### 4c. Allow only what Linkwatch needs
 

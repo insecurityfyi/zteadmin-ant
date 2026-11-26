@@ -3,7 +3,7 @@
 Two things live in this repository:
 
 * **Linkwatch** (`linkwatch/`): self-hosted network monitoring with
-  outbound-only remote pollers. Runs on the CentOS Stream 9 VPS at
+  outbound-only remote pollers. Runs on the CentOS Stream 10 VPS (9 also works) at
   `utilz.perrego.net` and deploys from GitHub on every push to `main`.
 * **Zscaler Toolbox, ZIA module** (`app/`): the earlier ZIA console. Its
   OneAPI work now also powers Linkwatch's Zscaler integration.

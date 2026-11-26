@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of a CentOS Stream 9 VPS for Linkwatch. Run as root (or with sudo):
+# One-time setup of a CentOS Stream 9 or 10 (or RHEL/Rocky/Alma 9-10) VPS for Linkwatch. Run as root (or with sudo):
 #
 #   sudo bash bootstrap-centos9.sh aperrego utilz.perrego.net you@example.com
 #
@@ -25,15 +25,49 @@ echo "==> 2/7 Packages"
 dnf -y install podman nginx firewalld policycoreutils-python-utils curl git tar openssl
 
 # certbot and fail2ban live in EPEL, which needs the CRB repo turned on.
+# Works on CentOS Stream / RHEL / Rocky / Alma 9 and 10 (EL10 has no epel-next).
+EL="$(. /etc/os-release; echo "${VERSION_ID%%.*}")"
+echo "    Detected EL$EL ($(. /etc/os-release; echo "$PRETTY_NAME"))"
 dnf -y install dnf-plugins-core
 dnf config-manager --set-enabled crb 2>/dev/null \
-  || dnf config-manager --set-enabled powertools 2>/dev/null \
+  || dnf config-manager setopt crb.enabled=1 2>/dev/null \
   || echo "    (could not enable CRB; trying EPEL anyway)"
-dnf -y install epel-release || dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
-dnf -y install epel-next-release >/dev/null 2>&1 || true   # optional on Stream; fine if missing
-dnf -y install certbot python3-certbot-nginx fail2ban
+rpm -q epel-release >/dev/null 2>&1 || dnf -y install epel-release \
+  || dnf -y install "https://dl.fedoraproject.org/pub/epel/epel-release-latest-$EL.noarch.rpm"
+if [[ "$EL" == "9" ]]; then
+  dnf -y install epel-next-release >/dev/null 2>&1 || true
+fi
 
-for bin in firewall-cmd podman nginx certbot fail2ban-client semanage; do
+if ! dnf -y install certbot python3-certbot-nginx; then
+  echo "    certbot is not packaged for EL$EL here; installing it in /opt/certbot with pip"
+  dnf -y install python3 python3-pip augeas-libs
+  python3 -m venv /opt/certbot
+  /opt/certbot/bin/pip install --quiet --upgrade pip certbot certbot-nginx
+  ln -sf /opt/certbot/bin/certbot /usr/local/bin/certbot
+  cat > /etc/systemd/system/certbot-renew.service <<UNIT
+[Unit]
+Description=Renew Let's Encrypt certificates
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"
+UNIT
+  cat > /etc/systemd/system/certbot-renew.timer <<UNIT
+[Unit]
+Description=Renew Let's Encrypt certificates twice a day
+[Timer]
+OnCalendar=*-*-* 03,15:17:00
+RandomizedDelaySec=1h
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+fi
+export PATH="$PATH:/usr/local/bin"
+HAVE_FAIL2BAN=1
+dnf -y install fail2ban || { HAVE_FAIL2BAN=0; echo "    fail2ban not available for EL$EL; skipping it (SSH keys-only login is the stronger fix anyway)"; }
+
+for bin in firewall-cmd podman nginx certbot semanage; do
   command -v "$bin" >/dev/null || { echo "!! $bin is still missing after install; stopping." >&2; exit 1; }
 done
 
@@ -56,13 +90,17 @@ firewall-cmd --reload
 firewall-cmd --zone="$ZONE" --list-all
 
 echo "==> 4/7 fail2ban for SSH"
-cat > /etc/fail2ban/jail.d/sshd.local <<JAIL
+if [[ "$HAVE_FAIL2BAN" == "1" ]]; then
+  cat > /etc/fail2ban/jail.d/sshd.local <<JAIL
 [sshd]
 enabled = true
 maxretry = 5
 bantime = 1h
 JAIL
-systemctl enable --now fail2ban
+  systemctl enable --now fail2ban
+else
+  echo "    skipped"
+fi
 
 echo "==> 5/7 nginx reverse proxy"
 setsebool -P httpd_can_network_connect 1        # SELinux: let nginx talk to the app on 127.0.0.1:8080
