@@ -455,7 +455,7 @@ async def integration_create(request: Request):
         ctx = _integration_ctx(s, kind)
         cls = ctx["cls"]
         cfg = _read_integration_form(cls, form, None)
-        err = _validate_integration(cls, cfg, form)
+        err = _validate_integration(cls, cfg, form, st(request).config.admin_password)
         if err:
             ctx.update(values=cfg, error=err, name=form.get("name"))
             return render(request, "integration_form.html", ctx, 400)
@@ -469,7 +469,12 @@ async def integration_create(request: Request):
     return back(f"/integrations/{iid}")
 
 
-def _validate_integration(cls, cfg: dict, form) -> str | None:
+def _validate_integration(cls, cfg: dict, form, admin_password: str | None = None) -> str | None:
+    if admin_password:
+        for f in cls.fields:
+            if f.kind == "password" and (form.get(f.name) or "").strip() == admin_password:
+                return (f"{f.label} is your Linkwatch sign-in password, most likely filled in by the browser. "
+                        "Clear the field (blank keeps the saved value) or paste the real one.")
     missing = [f.label for f in cls.fields if f.required and f.kind != "bool" and not str(cfg.get(f.name, "")).strip()]
     if missing:
         return "Fill in: " + ", ".join(missing)
@@ -505,7 +510,7 @@ async def integration_update(request: Request, iid: int):
         for f in cls.fields:   # a masked value posted back means "unchanged"
             if f.kind == "password" and str(form.get(f.name, "")).startswith("••"):
                 cfg[f.name] = old.get(f.name, "")
-        err = _validate_integration(cls, cfg, form)
+        err = _validate_integration(cls, cfg, form, st(request).config.admin_password)
         if err:
             flash(request, err, "warn")
             return back(f"/integrations/{iid}")

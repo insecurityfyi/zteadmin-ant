@@ -28,7 +28,7 @@
       <label class="chk"><input type="checkbox" name="{{ f.name }}" id="f_{{ f.name }}" {% if values.get(f.name) %}checked{% endif %}> {{ f.label }}{% if f.help %} <span class="help">{{ f.help }}</span>{% endif %}</label>
     {% else %}
       <label class="f">{{ f.label }}{% if not f.required %} <span class="help">(optional)</span>{% endif %}
-        <input type="{{ 'password' if f.kind == 'password' else 'text' }}" name="{{ f.name }}" id="f_{{ f.name }}" value="{{ values.get(f.name, '') if f.kind != 'password' or not integ else '' }}" {% if f.kind == 'password' and integ %}placeholder="{{ values.get(f.name) or 'Not set' }} (leave blank to keep)"{% endif %} {% if f.required and not (f.kind == 'password' and integ) %}required{% endif %}>
+        <input type="{{ 'password' if f.kind == 'password' else 'text' }}" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="{{ f.name }}" id="f_{{ f.name }}" value="{{ values.get(f.name, '') if f.kind != 'password' or not integ else '' }}" {% if f.kind == 'password' and integ %}placeholder="{{ values.get(f.name) or 'Not set' }} (leave blank to keep)"{% endif %} {% if f.required and not (f.kind == 'password' and integ) %}required{% endif %}>
         {% if f.help %}<small>{{ f.help }}</small>{% endif %}</label>
     {% endif %}
   {% endfor %}

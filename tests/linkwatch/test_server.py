@@ -92,6 +92,14 @@ def test_integration_secrets_are_masked(logged_in, app):
     with app.state.lw.db.session() as s:
         integ = s.scalar(select(Integration))
         assert app.state.lw.vault.open(integ.config_enc)["api_key"] == "supersecretkey123" and integ.name == "Meraki org"
+    # the browser filling the sign-in password into the key field is refused, and the key is kept
+    r = logged_in.post(f"/integrations/{integ.id}", data={"name": "Meraki org", "api_key": "pw-for-tests", "enabled": "on"})
+    assert "sign-in password" in r.text
+    with app.state.lw.db.session() as s:
+        integ = s.scalar(select(Integration))
+        assert app.state.lw.vault.open(integ.config_enc)["api_key"] == "supersecretkey123"
+    form = logged_in.get(f"/integrations/{integ.id}").text
+    assert 'autocomplete="new-password"' in form
 
 
 def test_csv_import(logged_in):

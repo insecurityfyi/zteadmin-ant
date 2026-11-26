@@ -13,14 +13,14 @@
       <div class="row2"><label class="f">Name<input type="text" name="name" id="snmp_name" required placeholder="campus-v3"></label>
         <label class="f">Version<select name="version" id="snmp_version"><option value="3">SNMPv3 (recommended)</option><option value="2c">SNMPv2c</option></select></label></div>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv2c</legend>
-        <label class="f">Community<input type="password" name="community" id="snmp_community"></label></fieldset>
+        <label class="f">Community<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="community" id="snmp_community"></label></fieldset>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv3</legend>
         <div class="row2"><label class="f">Username<input type="text" name="username" id="snmp_user"></label>
           <label class="f">Security level<select name="level" id="snmp_level"><option>authPriv</option><option>authNoPriv</option><option>noAuthNoPriv</option></select></label></div>
         <div class="row2"><label class="f">Auth protocol<select name="auth_protocol" id="snmp_auth">{% for a in auth_protocols %}<option>{{ a }}</option>{% endfor %}</select></label>
-          <label class="f">Auth passphrase<input type="password" name="auth_key" id="snmp_authkey"></label></div>
+          <label class="f">Auth passphrase<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="auth_key" id="snmp_authkey"></label></div>
         <div class="row2"><label class="f">Privacy protocol<select name="priv_protocol" id="snmp_priv">{% for a in priv_protocols %}<option>{{ a }}</option>{% endfor %}</select></label>
-          <label class="f">Privacy passphrase<input type="password" name="priv_key" id="snmp_privkey"></label></div></fieldset>
+          <label class="f">Privacy passphrase<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="priv_key" id="snmp_privkey"></label></div></fieldset>
       <label class="f">UDP port <span class="help">(optional, default 161)</span><input type="number" name="port" id="snmp_port" min="1" max="65535"></label>
       <div><button class="btn pri" type="submit">Save credentials</button></div>
     </form></details>
@@ -43,7 +43,7 @@
       <label class="f">Webhook URL <span class="help">(Teams, Slack or generic)</span><input type="url" name="url" id="t_url" placeholder="https://..."></label>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">Email only</legend>
         <div class="row2"><label class="f">SMTP server<input type="text" name="host" id="t_host" placeholder="smtp.office365.com"></label><label class="f">Port<input type="number" name="port" id="t_port" value="587"></label></div>
-        <div class="row2"><label class="f">Username<input type="text" name="username" id="t_user"></label><label class="f">Password<input type="password" name="password" id="t_pass"></label></div>
+        <div class="row2"><label class="f">Username<input type="text" name="username" id="t_user" autocomplete="off" data-1p-ignore data-lpignore="true"></label><label class="f">Password<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="password" id="t_pass"></label></div>
         <div class="row2"><label class="f">From<input type="text" name="sender" id="t_from" placeholder="linkwatch@perrego.net"></label><label class="f">To (comma separated)<input type="text" name="recipients" id="t_to"></label></div>
         <label class="chk"><input type="checkbox" name="starttls" id="t_tls" checked> Use STARTTLS</label></fieldset>
       <label class="f">Send alerts of at least<select name="min_severity" id="t_sev"><option value="warn">Warning</option><option value="crit">Critical</option><option value="info">Info</option></select></label>
