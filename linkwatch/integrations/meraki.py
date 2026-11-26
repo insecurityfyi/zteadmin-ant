@@ -109,7 +109,57 @@ class Meraki(Integration):
                        "ips": sorted({x for x in (st.get("lanIp"), d.get("lanIp"), st.get("wan1Ip"), st.get("wan2Ip"),
                                                   d.get("wan1Ip"), d.get("wan2Ip")) if x})},
             ))
+        if any(d.get("productType") == "wireless" for d in devices):
+            self._access_points(org, nets, devices, out)
         return out
+
+    def _access_points(self, org: str, nets: list[dict], devices: list[dict], out: list[Record]) -> None:
+        """Where each MR access point plugs in (link-layer topology), mesh repeaters, and clients per AP, for the map."""
+        by_serial = {d["serial"]: d for d in devices}
+        recs = {r["external_id"]: r for r in out}
+        aps = {s for s, d in by_serial.items() if d.get("productType") == "wireless"}
+
+        def uplink(ap: str, to: str, port, wireless: bool = False) -> None:
+            peer = by_serial.get(to)
+            if ap in recs and peer and peer.get("mac"):
+                recs[ap]["extra"].update(uplink_mac=peer["mac"], uplink_name=peer.get("name") or to, uplink_port=port,
+                                      uplink_wireless=wireless,
+                                      uplink=f"{'mesh via' if wireless else 'wired to'} {peer.get('name') or to}{f' port {port}' if port else ''}")
+
+        def topology():
+            for n in [n for n in nets if "wireless" in (n.get("productTypes") or [])][:50]:
+                body = self._get(f"{BASE}/networks/{n['id']}/topology/linkLayer").json()
+                for link in body.get("links") or []:
+                    ends = [e for e in link.get("ends") or [] if (e.get("device") or {}).get("serial")]
+                    if len(ends) != 2:
+                        continue
+                    for me, other in (ends, ends[::-1]):
+                        ap, sw = me["device"]["serial"], other["device"]["serial"]
+                        if ap in aps and sw not in aps:
+                            disc = other.get("discovered") or {}
+                            port = (disc.get("lldp") or {}).get("portId") or (disc.get("cdp") or {}).get("portId")
+                            uplink(ap, sw, port)
+        self._optional("AP uplinks (link-layer topology)", topology)
+
+        def mesh():
+            for n in [n for n in nets if "wireless" in (n.get("productTypes") or [])][:50]:
+                try:     # networks without mesh answer with an error: not worth reporting
+                    rows = self._get(f"{BASE}/networks/{n['id']}/wireless/meshStatuses").json() or []
+                except Exception:  # noqa: BLE001, S112
+                    continue
+                for m in rows if isinstance(rows, list) else []:
+                    route = [x for x in m.get("meshRoute") or [] if x != m.get("serial")]
+                    if route and m.get("serial") in aps:
+                        uplink(m["serial"], route[0], None, wireless=True)
+        self._optional("Wireless mesh", mesh)
+
+        def clients():
+            for row in self._paged(f"/organizations/{org}/wireless/clients/overview/byDevice"):
+                serial = row.get("serial")
+                online = ((row.get("counts") or {}).get("byStatus") or {}).get("online")
+                if serial in recs and online is not None:
+                    recs[serial]["extra"]["clients"] = int(online)
+        self._optional("Clients per access point", clients)
 
     def _telemetry(self, org: str, nets: list[dict], devices: list[dict], statuses: dict) -> None:
         names = {d["serial"]: d.get("name") or d["serial"] for d in devices}

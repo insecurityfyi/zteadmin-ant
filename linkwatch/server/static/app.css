@@ -297,9 +297,9 @@ pre.cmd{background:var(--rail);color:#d6e3ea;border-radius:8px;padding:12px 14px
 .pathsvg .h-warn .c,.pathsvg .h-warn .tg{stroke:var(--warn)} .pathsvg .h-warn .ls{fill:var(--warn)}
 .pathsvg .h-bad .c,.pathsvg .h-bad .tg{stroke:var(--down)} .pathsvg .h-bad .ls{fill:var(--down)}
 .pathsvg .h-none .c{stroke:var(--off);stroke-dasharray:3 3} .pathsvg .h-none .hn{fill:var(--mute)} .pathsvg .h-none .ip{fill:var(--mute)}
-.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mute);margin-top:8px}
-.legend span{display:inline-flex;align-items:center;gap:6px}
+.plegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mute);margin-top:8px}
+.plegend span{display:inline-flex;align-items:center;gap:6px}
 .lg{display:inline-block;width:12px;height:12px;border-radius:50%;border:3px solid var(--off);box-sizing:border-box}
 .lg.h-ok{border-color:var(--up)}.lg.h-limited{border-color:var(--warn);border-style:dashed}.lg.h-bad{border-color:var(--down)}.lg.h-none{border-style:dotted}
-.legend .lg[style]{border:0;height:4px;width:14px;border-radius:2px}
+.plegend .lg[style]{border:0;height:4px;width:14px;border-radius:2px}
 .asn{font-weight:600;white-space:nowrap}.asn em{font-style:normal;font-weight:400;color:var(--mute)}

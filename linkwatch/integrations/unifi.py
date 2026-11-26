@@ -265,6 +265,7 @@ class UniFi(Integration):
             extra["uplink"] = " ".join(str(x) for x in (uplink.get("type"), up_name, f"port {port}" if port else "") if x)
             extra["uplink_mac"], extra["uplink_port"] = uplink.get("uplink_mac"), port
             extra["uplink_name"] = uplink.get("uplink_device_name")
+            extra["uplink_wireless"] = uplink.get("type") == "wireless"     # a mesh AP hanging off another AP
         if d.get("type") == "uap":
             extra["radios"] = ", ".join(self._radio_text(r) for r in self._radios(d))
         for key in ("wan1", "wan2", "wan3"):

@@ -53,7 +53,7 @@
       </g>
     {% endfor %}
   </svg></div>
-  <div class="legend"><span><i class="lg h-ok"></i>No loss</span><span><i class="lg h-limited"></i>Loss at this hop only (router rate-limits replies)</span><span><i class="lg h-bad"></i>Loss that carries on to the target</span><span><i class="lg h-none"></i>No reply</span><span class="dim">+ms on a link is the latency added by that hop</span></div>
+  <div class="plegend"><span><i class="lg h-ok"></i>No loss</span><span><i class="lg h-limited"></i>Loss at this hop only (router rate-limits replies)</span><span><i class="lg h-bad"></i>Loss that carries on to the target</span><span><i class="lg h-none"></i>No reply</span><span class="dim">+ms on a link is the latency added by that hop</span></div>
 {% elif shown and not shown.ok %}<p class="dim">No successful run yet.</p>
 {% else %}<p class="dim">Waiting for the first result. It arrives within a minute of a poller getting this probe.</p>{% endif %}
 </div>
@@ -73,7 +73,7 @@
 <div class="grid">
   <div class="p c6"><div class="ph"><h2>Latency to the target</h2><div class="ranges">{% for x in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ x }}" aria-pressed="{{ 'true' if x == '24h' else 'false' }}">{{ x }}</button>{% endfor %}</div></div>
     <div class="fig" data-src="/ui/metrics/probe/{{ probe.id }}/{{ chosen }}" data-unit="ms" data-h="200" data-label="Latency" data-series='[{"key":"avg","color":"var(--s1)"},{"key":"worst","color":"var(--s2)","dash":true},{"key":"jitter","color":"var(--warn)","area":false}]'></div>
-    <div class="legend"><span><i class="lg" style="background:var(--s1)"></i>Average</span><span><i class="lg" style="background:var(--s2)"></i>Worst</span><span><i class="lg" style="background:var(--warn)"></i>Jitter</span></div></div>
+    <div class="plegend"><span><i class="lg" style="background:var(--s1)"></i>Average</span><span><i class="lg" style="background:var(--s2)"></i>Worst</span><span><i class="lg" style="background:var(--warn)"></i>Jitter</span></div></div>
   <div class="p c6"><div class="ph"><h2>Loss at the target</h2></div>
     <div class="fig" data-src="/ui/metrics/probe/{{ probe.id }}/{{ chosen }}" data-unit="pct" data-max="100" data-h="200" data-label="Loss" data-series='[{"key":"loss","color":"var(--down)"}]'></div></div>
 </div>

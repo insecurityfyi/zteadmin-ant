@@ -131,13 +131,27 @@ def network_map(request: Request, site: str = "", focus: str = "", external: str
     return render(request, "map.html", {"sites": sites, "site": site, "focus": focus, "external": external, "link_count": links})
 
 
+def _clients(d: Device) -> int | None:
+    ex = d.extra or {}
+    v = ex.get("clients", (ex.get("api") or {}).get("clients"))
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 @router.get("/ui/map", include_in_schema=False)
-def map_data(request: Request, site: str = "", external: str = "", all: str = ""):
-    """Nodes and links for the network map. Links come from LLDP/CDP neighbours and integration uplinks."""
+def map_data(request: Request, site: str = "", external: str = "", all: str = "", hide_aps: str = ""):
+    """Nodes and links for the network map. Links come from LLDP/CDP neighbours and integration uplinks.
+
+    Wireless access points are always drawn (on their uplink when it is known) unless ``hide_aps`` is set.
+    """
     with st(request).db.session() as s:
         devs = {d.id: d for d in s.scalars(select(Device).options(selectinload(Device.site)).where(Device.disabled.is_(False)))}
         if site:
             devs = {i: d for i, d in devs.items() if d.site and d.site.name == site}
+        if hide_aps:
+            devs = {i: d for i, d in devs.items() if d.type != "Wireless"}
         rows = s.scalars(select(Neighbor).options(selectinload(Neighbor.port)).where(Neighbor.device_id.in_(list(devs) or [0]))).all()
         links: dict[tuple, dict] = {}
         ghosts: dict[str, dict] = {}
@@ -158,12 +172,14 @@ def map_data(request: Request, site: str = "", external: str = "", all: str = ""
             cur = links.get(key)
             if cur is None:
                 links[key] = {"source": a, "target": b, "protocol": n.protocol, "a_port": n.local_port, "b_port": n.remote_port,
+                              "mesh": n.protocol.endswith("-mesh"),
                               "speed": p.speed_mbps if p is not None else None, "util": util,
                               "bps": max(p.in_bps or 0, p.out_bps or 0) if p is not None else None}
             elif util is not None and (cur["util"] is None or util > cur["util"]):
                 cur.update(util=util, speed=p.speed_mbps, bps=max(p.in_bps or 0, p.out_bps or 0))
         linked = {x for k in links.values() for x in (k["source"], k["target"])}
         nodes = [{"id": d.id, "name": d.hostname, "status": d.status, "type": d.type, "ip": d.ip,
-                  "site": d.site.name if d.site else None, "platform": d.platform}
-                 for d in devs.values() if all or d.id in linked]
+                  "site": d.site.name if d.site else None, "platform": d.platform, "ap": d.type == "Wireless",
+                  "clients": _clients(d) if d.type == "Wireless" else None}
+                 for d in devs.values() if all or d.id in linked or d.type == "Wireless"]
     return {"nodes": nodes + list(ghosts.values()), "links": list(links.values())}
