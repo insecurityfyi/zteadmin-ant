@@ -119,6 +119,9 @@ async def user_reset_password(request: Request, uid: int):
         user = s.get(User, uid)
         if user is None:
             raise HTTPException(404)
+        if user.auth_source == "saml":
+            flash(request, f"{user.username} signs in with single sign-on and has no password here.", "warn")
+            return back(f"/admin/users/{uid}")
         user.password_hash, user.password_changed_at = hash_password(password), utcnow()
         audit(s, request.state.user.username, ip_of(request), "reset password", user.username)
         name, own = user.username, user.id == request.state.user.id
@@ -164,6 +167,9 @@ async def account_password(request: Request):
     form = await request.form()
     current, new, again = (str(form.get(k) or "") for k in ("current", "password", "password2"))
     me = request.state.user
+    if me.auth_source == "saml":
+        flash(request, "You sign in with single sign-on, so there is no password to change here.", "warn")
+        return back("/account")
     if not verify_password(current, me.password_hash):
         flash(request, "Your current password is wrong.", "warn")
         return back("/account")

@@ -145,6 +145,8 @@ async def background(app_state) -> None:
                 last_rollup = now
                 await asyncio.to_thread(rollup_and_prune, app_state)
                 await asyncio.to_thread(prune_audit, app_state)
+                from .sso import refresh_metadata_job
+                await asyncio.to_thread(refresh_metadata_job, app_state)
         except asyncio.CancelledError:
             raise
         except Exception:

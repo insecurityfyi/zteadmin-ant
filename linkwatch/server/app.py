@@ -28,7 +28,7 @@ from .users import audit, sync_admin_from_env
 
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/")
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/saml/")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
@@ -99,6 +99,14 @@ def fmt_bytes(v) -> str:
 
 def flash(request: Request, message: str, kind: str = "ok") -> None:
     request.session.setdefault("flash", []).append([kind, message])
+
+
+def login_context(request: Request, next: str) -> dict:
+    """What the sign-in page needs: where to go after, and the SSO button if single sign-on is on."""
+    from .saml import SamlSettings
+    with request.app.state.lw.db.session() as s:
+        cfg = SamlSettings.load(s)
+    return {"next": next, "error": None, "sso": cfg if cfg.ready else None}
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -186,24 +194,32 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, next: str = "/"):
-        return templates.TemplateResponse(request, "login.html", {"next": next, "error": None})
+        return templates.TemplateResponse(request, "login.html", login_context(request, next))
 
     @app.post("/login", response_class=HTMLResponse)
     def login(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("/")):
         ip = client_ip(request) or "?"
         now = time.time()
         failures[ip] = [t for t in failures[ip] if now - t < 900]
+        ctx = login_context(request, next)
         if len(failures[ip]) >= 8:
-            return templates.TemplateResponse(request, "login.html", {"next": next, "error": "Too many attempts. Wait 15 minutes.",
+            return templates.TemplateResponse(request, "login.html", {**ctx, "error": "Too many attempts. Wait 15 minutes.",
                                                                        "username": username}, status_code=429)
         username = username.strip()
+        sso = ctx["sso"]
         with db.session() as s:
             user = s.scalar(select(User).where(func.lower(User.username) == username.lower()))
             ok = user is not None and not user.disabled and verify_password(password, user.password_hash)
+            blocked = None
+            if ok and sso is not None and sso.local_login == "admins" and user.role != "admin":
+                blocked = f"Use “{sso.button_label}”. Password sign-in is limited to administrators."
+                ok = False
             if not ok:
                 if user is None:
                     verify_password(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")  # same timing
-                audit(s, username, ip, "sign-in failed", "account disabled" if user is not None and user.disabled else None)
+                elif user.auth_source == "saml" and sso is not None and not user.disabled:
+                    blocked = f"This account signs in with single sign-on. Use “{sso.button_label}”."
+                audit(s, username, ip, "sign-in failed", "account disabled" if user is not None and user.disabled else blocked)
             else:
                 user.last_login = utcnow()
                 audit(s, user.username, ip, "signed in")
@@ -214,8 +230,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             failures.pop(ip, None)
             return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
         failures[ip].append(now)
-        return templates.TemplateResponse(request, "login.html", {"next": next, "error": "Wrong username or password.",
-                                                                   "username": username}, status_code=401)
+        return templates.TemplateResponse(request, "login.html", {**ctx, "error": blocked or "Wrong username or password.",
+                                                                   "username": username}, status_code=403 if blocked else 401)
 
     @app.post("/logout")
     def logout(request: Request):
@@ -228,10 +244,12 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     from .admin import router as admin_router
     from .api import router as api_router
+    from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
     app.include_router(api_router)
     app.include_router(web_router)
     app.include_router(unifi_router)
+    app.include_router(sso_router)
     app.include_router(admin_router)
     return app

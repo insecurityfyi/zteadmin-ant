@@ -2,12 +2,13 @@
 {% block title %}Your account{% endblock %}
 {% block content %}
 <div class="head"><div><h1>Your account</h1><p>Signed in as <b>{{ me.username }}</b> ({{ roles[me.role] }}){% if me.role != 'admin' %}. You can view everything; ask an admin to make changes{% endif %}.</p></div></div>
-<div class="p" style="max-width:560px"><div class="ph"><h2>Change your password</h2></div>
+{% if me.auth_source == 'saml' %}<div class="p" style="max-width:560px"><h2>Password</h2><p class="dim" style="margin-bottom:0">You sign in with your Microsoft account through single sign-on, so there is no Linkwatch password to change. Your access comes from your Entra groups or app roles.</p></div>
+{% else %}<div class="p" style="max-width:560px"><div class="ph"><h2>Change your password</h2></div>
   <form method="post" action="/account/password" class="stack">
     <input type="text" name="username" value="{{ me.username }}" autocomplete="username" hidden>
     <label class="f">Current password<input type="password" name="current" id="a_current" autocomplete="current-password" required></label>
     <label class="f">New password<input type="password" name="password" id="a_new" autocomplete="new-password" required minlength="{{ min_password }}"><small>At least {{ min_password }} characters.</small></label>
     <label class="f">New password again<input type="password" name="password2" id="a_new2" autocomplete="new-password" required minlength="{{ min_password }}"></label>
     <div><button class="btn pri" type="submit">Change password</button></div>
-  </form></div>
+  </form></div>{% endif %}
 {% endblock %}

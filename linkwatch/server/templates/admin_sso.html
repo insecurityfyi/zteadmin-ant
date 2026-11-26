@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Single sign-on{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/admin">Administration</a></div><h1>Single sign-on</h1>
+  <p>Let people sign in with their Microsoft Entra ID account over SAML. Their Entra groups or app roles decide whether they get admin or read-only access.</p></div>
+  <div class="actions">{% if cfg.ready %}<span class="sev ok">On</span>{% elif cfg.enabled %}<span class="sev warn">Incomplete</span>{% else %}<span class="sev info">Off</span>{% endif %}</div></div>
+<div class="grid">
+  <div class="p c5"><div class="ph"><h2>1. Give these to Entra</h2></div>
+    <p class="help" style="margin-top:0">Enterprise application &gt; Single sign-on &gt; SAML &gt; Basic SAML Configuration. Or upload the metadata file.</p>
+    <dl class="kv">
+      <dt>Identifier (Entity ID)</dt><dd class="mono" id="v_entity">{{ sp_entity }} <button class="btn sm" type="button" data-copy="v_entity">Copy</button></dd>
+      <dt>Reply URL (ACS)</dt><dd class="mono" id="v_acs">{{ acs }} <button class="btn sm" type="button" data-copy="v_acs">Copy</button></dd>
+      <dt>Sign on URL</dt><dd class="mono" id="v_signon">{{ sign_on_url }} <button class="btn sm" type="button" data-copy="v_signon">Copy</button></dd>
+      <dt>Metadata file</dt><dd><a href="/saml/metadata" download="linkwatch-sp-metadata.xml">linkwatch-sp-metadata.xml</a></dd>
+    </dl>
+    <p class="help">These come from <code>LW_PUBLIC_URL</code>. Leave the Relay State and Logout URL empty. Don't turn on token encryption.</p>
+    <h3 style="margin:16px 0 8px">Identity provider</h3>
+    {% if cfg.idp_sso_url %}<dl class="kv">
+      <dt>Entra identifier</dt><dd class="mono">{{ cfg.idp_entity_id }}</dd>
+      <dt>Login URL</dt><dd class="mono">{{ cfg.idp_sso_url }}</dd>
+      <dt>Signing certificates</dt><dd>{{ cfg.idp_certs|length }}</dd>
+      <dt>Metadata loaded</dt><dd>{{ cfg.metadata_fetched or 'never' }} UTC{% if cfg.metadata_url %} · refreshed daily{% endif %}</dd>
+      <dt>SSO users</dt><dd>{{ sso_users }}</dd></dl>
+      {% if cfg.metadata_url %}<form method="post" action="/admin/sso/refresh" style="margin-top:10px"><button class="btn sm" type="submit">Refresh metadata now</button></form>{% endif %}
+    {% else %}<p class="dim" style="margin:0">No metadata loaded yet.</p>{% endif %}
+    {% if cfg.ready %}<p style="margin-bottom:0"><a class="btn sm" href="/saml/login?next=/admin/sso" target="_blank" rel="noopener">Test sign-in in a new tab</a></p>{% endif %}
+  </div>
+  <div class="p c7"><div class="ph"><h2>2. Settings</h2></div>
+  <form method="post" action="/admin/sso" class="stack" autocomplete="off">
+    <label class="f">App Federation Metadata URL<input type="url" name="metadata_url" id="metadata_url" value="{{ cfg.metadata_url }}" placeholder="https://login.microsoftonline.com/&lt;tenant-id&gt;/federationmetadata/2007-06/federationmetadata.xml?appid=&lt;app-id&gt;">
+      <small>From the app's SAML Certificates section. This server downloads it now and once a day, so certificate renewals are picked up.</small></label>
+    <details><summary class="sub" style="cursor:pointer">Or paste the Federation Metadata XML</summary>
+      <label class="f" style="margin-top:8px">Federation Metadata XML<textarea name="metadata_xml" id="metadata_xml" rows="5" placeholder="&lt;EntityDescriptor ...&gt;" style="font:12px var(--mono)"></textarea><small>Use this if the server can't reach login.microsoftonline.com. Pasting replaces what is loaded.</small></label></details>
+    <label class="f">Who gets admin<textarea name="admin_values" id="admin_values" rows="2" placeholder="Linkwatch.Admin, 3f2a...-group-object-id">{{ cfg.admin_values|join(', ') }}</textarea>
+      <small>App role values or group object IDs, separated by commas.</small></label>
+    <label class="f">Who gets read-only<textarea name="viewer_values" id="viewer_values" rows="2" placeholder="Linkwatch.ReadOnly">{{ cfg.viewer_values|join(', ') }}</textarea></label>
+    <label class="f">Anyone else assigned to the app<select name="default_role" id="default_role">
+      <option value="none" {% if cfg.default_role != 'viewer' %}selected{% endif %}>Can't sign in</option>
+      <option value="viewer" {% if cfg.default_role == 'viewer' %}selected{% endif %}>Gets read-only</option></select></label>
+    <label class="chk"><input type="checkbox" name="jit" id="jit" {% if cfg.jit %}checked{% endif %}> Create accounts on first sign-in <span class="help">Otherwise an admin adds each user first, with their Entra user name.</span></label>
+    <label class="chk"><input type="checkbox" name="sync_role" id="sync_role" {% if cfg.sync_role %}checked{% endif %}> Update the role from Entra at every sign-in</label>
+    <label class="f">Password sign-in<select name="local_login" id="local_login">
+      <option value="all" {% if cfg.local_login != 'admins' %}selected{% endif %}>Allowed for local accounts</option>
+      <option value="admins" {% if cfg.local_login == 'admins' %}selected{% endif %}>Only local admins (break-glass)</option></select>
+      <small>The <code>admin</code> account from <code>LW_ADMIN_PASSWORD</code> always works, and <code>deploy/reset-password.sh</code> still resets it.</small></label>
+    <label class="chk"><input type="checkbox" name="allow_idp_initiated" id="allow_idp_initiated" {% if cfg.allow_idp_initiated %}checked{% endif %}> Accept sign-ins started in Entra (My Apps, the Test button) <span class="help">Off is safer. With a Sign on URL set, the My Apps tile works either way.</span></label>
+    <details><summary class="sub" style="cursor:pointer">Advanced</summary>
+      <div class="stack" style="margin-top:10px">
+      <label class="f">Identifier (Entity ID) override<input type="text" name="sp_entity_id" id="sp_entity_id" value="{{ cfg.sp_entity_id }}" placeholder="{{ sp_entity }}"><small>Leave blank to use the value shown on the left.</small></label>
+      <label class="f">Button text<input type="text" name="button_label" id="button_label" value="{{ cfg.button_label }}"></label></div></details>
+    <label class="chk"><input type="checkbox" name="enabled" id="enabled" {% if cfg.enabled %}checked{% endif %}> <b>Turn on single sign-on</b></label>
+    <div><button class="btn pri" type="submit">Save</button></div>
+  </form></div>
+</div>
+<script>
+document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => {
+  const t = document.getElementById(b.dataset.copy).firstChild.textContent.trim();
+  navigator.clipboard.writeText(t).then(() => { b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1500); });
+}));
+</script>
+{% endblock %}
