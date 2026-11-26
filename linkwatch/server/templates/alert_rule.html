@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit alert rule' if rule.id else 'New alert rule' }}{% endblock %}
+{% block content %}
+{% set sc = rule.scope or {} %}
+<div class="head"><div><p class="crumbs"><a href="/alerts#custom">Alerts</a> · rules</p><h1>{{ 'Edit alert rule' if rule.id else 'New alert rule' }}</h1>
+  <p>Build a condition, narrow it down to the devices, ports or sensors it applies to, and check what it would match right now before saving.</p></div></div>
+{% if problems %}<div class="flash warn">{% for p in problems %}<div>{{ p }}</div>{% endfor %}</div>{% endif %}
+<div class="grid">
+<form class="p c7 stack" method="post" id="rule-form" action="{{ '/alerts/rules/' ~ rule.id ~ '/edit' if rule.id else '/alerts/rules/new' }}">
+  <h2 style="margin:0">Condition</h2>
+  <div class="rule-sentence">
+    <span>When a</span>
+    <select name="entity" id="r-entity" aria-label="What to watch">{% for k, label in entities.items() %}<option value="{{ k }}" {% if k == rule.entity %}selected{% endif %}>{{ label|lower }}</option>{% endfor %}</select>
+    <span>has</span>
+    <select name="metric" id="r-metric" aria-label="Metric" data-value="{{ rule.metric }}"></select>
+    <select name="op" id="r-op" aria-label="Comparison" data-value="{{ rule.op }}"></select>
+    <input type="number" step="any" name="threshold" id="r-threshold" aria-label="Value" value="{{ '%g'|format(rule.threshold) if rule.threshold is not none else '' }}" style="width:110px">
+    <select name="value_text" id="r-state" aria-label="Value" data-value="{{ rule.value_text or '' }}" hidden></select>
+    <span id="r-unit" class="dim"></span>
+    <span>for</span>
+    <input type="number" min="1" max="60" name="polls" value="{{ rule.polls or 1 }}" aria-label="Polls in a row" style="width:70px">
+    <span>polls in a row</span>
+  </div>
+  <div class="row2">
+    <label class="f">Severity<select name="severity">{% for k, label in [('crit','Critical'),('warn','Warning'),('info','Info')] %}<option value="{{ k }}" {% if k == rule.severity %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="f">Name <span class="help">(shown in the alert title)</span><input type="text" name="name" maxlength="120" value="{{ rule.name }}" placeholder="Core uplink saturated"></label>
+  </div>
+
+  <h2 style="margin:8px 0 0">Applies to</h2>
+  <p class="help" style="margin:0">Leave a field empty to include everything. Name fields take comma-separated patterns: <code>core-*</code>, <code>*-fw?</code>, or plain text to match anywhere in the name.</p>
+  <div class="row2">
+    <label class="f">Device type<select name="type"><option value="">Any type</option>{% for t in types %}<option {% if t == sc.get('type') %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="f">Site<select name="site"><option value="">Any site</option>{% for n in sites %}<option {% if n == sc.get('site') %}selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row2">
+    <label class="f">Device name or IP<input type="text" name="name_q" id="r-name" value="{{ sc.get('name', '') }}" placeholder="core-*, 10.0.1.*"></label>
+    <label class="f">Data from<select name="source"><option value="">Any source</option>{% for x in sources %}<option {% if x == sc.get('source') %}selected{% endif %}>{{ x }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row2" data-for="port"><label class="f">Port name or description<input type="text" name="port" value="{{ sc.get('port', '') }}" placeholder="uplink, Te1/1/*"></label><span></span></div>
+  <div class="row2" data-for="sensor">
+    <label class="f">Sensor type<select name="sensor_kind"><option value="">Any type</option>{% for k in sensor_kinds %}<option {% if k == sc.get('sensor_kind') %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
+    <label class="f">Sensor name<input type="text" name="sensor_name" value="{{ sc.get('sensor_name', '') }}" placeholder="CPU*, inlet"></label>
+  </div>
+  <label class="chk"><input type="checkbox" name="enabled" {% if rule.enabled %}checked{% endif %}> Enabled</label>
+  <div class="actions"><button class="btn pri" type="submit">Save rule</button><a class="btn" href="/alerts#custom">Cancel</a></div>
+</form>
+<div class="c5">
+  <div class="p" id="preview" aria-live="polite"><div class="ph"><h2>Right now</h2><span class="sub">ignoring the poll count</span></div>
+    <p id="pv-text" class="dim" style="margin:0 0 10px"></p><p id="pv-sum" style="margin:0 0 10px"><b>…</b></p>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table><tbody id="pv-rows"></tbody></table></div></div>
+  {% if rule.id %}<form class="p" method="post" action="/alerts/rules/{{ rule.id }}/delete" style="margin-top:16px" onsubmit="return confirm('Delete this rule and clear its open alerts?')">
+    <div class="ph"><h2>Delete</h2></div><p class="help" style="margin:0 0 10px">Clears any alerts this rule has open.</p><button class="btn" type="submit">Delete rule</button></form>
+  <p style="margin-top:12px"><a href="/alerts/rules/new?copy={{ rule.id }}">Make a copy</a></p>{% endif %}
+</div>
+</div>
+<script>
+(function () {
+  const M = {{ metrics|tojson }}, NUM = {{ num_ops|tojson }}, ST = {{ state_ops|tojson }};
+  const f = document.getElementById("rule-form"), ent = document.getElementById("r-entity"), met = document.getElementById("r-metric"),
+        op = document.getElementById("r-op"), thr = document.getElementById("r-threshold"), sta = document.getElementById("r-state"), unit = document.getElementById("r-unit");
+  const fill = (sel, pairs, want) => { sel.replaceChildren(...pairs.map(([k, v]) => { const o = new Option(v, k); o.selected = k === want; return o; })); };
+  const cur = () => (M[ent.value] || []).find(m => m.key === met.value) || (M[ent.value] || [])[0];
+  function metrics(keep) { fill(met, (M[ent.value] || []).map(m => [m.key, m.label.toLowerCase()]), keep ? met.dataset.value : null); kind(keep); }
+  function kind(keep) {
+    const m = cur(); if (!m) return;
+    const state = m.states.length > 0;
+    fill(op, Object.entries(state ? ST : NUM), keep ? op.dataset.value : (state ? "==" : ">"));
+    thr.hidden = state; sta.hidden = !state; thr.required = !state;
+    if (state) fill(sta, m.states.map(s => [s, s]), keep ? sta.dataset.value : m.states[m.key === "status" ? 1 : 0]);
+    unit.textContent = state ? "" : (m.unit || "");
+    document.querySelectorAll("[data-for]").forEach(el => { el.hidden = el.dataset.for !== ent.value; });
+  }
+  ent.addEventListener("change", () => { metrics(false); preview(); });
+  met.addEventListener("change", () => { kind(false); preview(); });
+  let t;
+  function preview() {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const r = await fetch("/alerts/rules/preview", { method: "POST", body: new FormData(f), credentials: "same-origin" });
+      const j = r.ok ? await r.json() : { problems: ["Preview failed (HTTP " + r.status + ")"] };
+      document.getElementById("pv-text").textContent = j.text || "";
+      const rows = document.getElementById("pv-rows"); rows.replaceChildren();
+      if (j.problems) { document.getElementById("pv-sum").textContent = j.problems.join(" "); return; }
+      document.getElementById("pv-sum").innerHTML = "";
+      const b = document.createElement("b"); b.textContent = j.matching + " of " + j.checked; b.className = j.matching ? "wa" : "okc";
+      document.getElementById("pv-sum").append(b, document.createTextNode(j.checked === 1 ? " object would alert" : " objects would alert"));
+      j.rows.forEach(x => { const tr = document.createElement("tr"), a = document.createElement("a"), td = document.createElement("td"), v = document.createElement("td");
+        a.href = x.url; a.textContent = x.label; td.append(a); v.className = "n mono"; v.textContent = x.value; tr.append(td, v); rows.append(tr); });
+      if (j.matching > j.rows.length) { const tr = document.createElement("tr"), td = document.createElement("td"); td.colSpan = 2; td.className = "dim"; td.textContent = "and " + (j.matching - j.rows.length) + " more"; tr.append(td); rows.append(tr); }
+    }, 300);
+  }
+  f.addEventListener("input", preview); f.addEventListener("change", preview);
+  metrics(true); preview();
+})();
+</script>
+{% endblock %}

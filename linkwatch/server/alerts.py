@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import events
-from .models import Alert, AlertRule, Device, DeviceMetric, PortMetric, utcnow
+from . import custom_rules, events
+from .models import Alert, AlertPending, AlertRule, Device, DeviceMetric, PortMetric, utcnow
 
 SEVERITY_ORDER = {"info": 0, "warn": 1, "crit": 2}
 
@@ -30,6 +30,26 @@ class Alerter:
         self.rules = {r.key: r for r in s.scalars(select(AlertRule))}
         self.events: list[AlertEvent] = []
         self.open = {(a.rule_key, a.ref): a for a in s.scalars(select(Alert).where(Alert.state.in_(("open", "ack"))))}
+
+    def pending(self) -> dict[tuple[str, str], int]:
+        """Consecutive-match counters for custom rules, loaded on first use."""
+        if not hasattr(self, "_pending"):
+            self._pending = {(p.rule_key, p.ref): p.hits for p in self.s.scalars(select(AlertPending))}
+        return self._pending
+
+    def set_pending(self, key: str, ref: str, hits: int) -> None:
+        pend = self.pending()
+        row = self.s.get(AlertPending, (key, ref))
+        if hits <= 0:
+            pend.pop((key, ref), None)
+            if row is not None:
+                self.s.delete(row)
+        else:
+            pend[(key, ref)] = hits
+            if row is None:
+                self.s.add(AlertPending(rule_key=key, ref=ref, hits=hits))
+            else:
+                row.hits = hits
 
     def rule(self, key: str) -> AlertRule | None:
         r = self.rules.get(key)
@@ -68,6 +88,7 @@ class Alerter:
         if dev.disabled:
             for key in ("device_down", "device_warn", "high_cpu", "high_mem"):
                 self.set(key, ref, False, device=dev)
+            custom_rules.evaluate(self, dev)
             return
         down = dev.status == "down"
         self.set("device_down", ref, down, f"Device down: {dev.hostname}", dev.status_reason, dev)
@@ -85,6 +106,7 @@ class Alerter:
                      f"{label} {recent[0]:.0f}% for {rule.polls} polls, threshold {rule.threshold:.0f}%" if hot else None, dev)
         self.evaluate_ports(dev)
         self.evaluate_sensors(dev)
+        custom_rules.evaluate(self, dev)
 
     def evaluate_sensors(self, dev: Device) -> None:
         from .models import Sensor

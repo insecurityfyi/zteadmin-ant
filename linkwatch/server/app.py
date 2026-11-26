@@ -250,12 +250,16 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     from .admin import router as admin_router
     from .api import router as api_router
+    from .dashboard import router as dashboard_router
+    from .rules_views import router as rules_router
     from .integration_views import router as integration_views_router
     from .nms_views import router as nms_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
     app.include_router(api_router)
+    app.include_router(dashboard_router)
+    app.include_router(rules_router)
     app.include_router(web_router)
     app.include_router(unifi_router)
     app.include_router(sso_router)
