@@ -17,6 +17,8 @@ Environment:
     LW_POLLER_NAME   optional display name (defaults to the hostname)
     LW_DATA_DIR      /var/lib/linkwatch
     LW_CONCURRENCY   simultaneous device polls (default 32)
+    LW_TUNNEL        on (default) / off: allow SSH consoles through this poller (see tunnel.py)
+    LW_TUNNEL_PORTS  ports a tunnel may reach (default 22; "any" for all)
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from .. import __version__
 from ..common.discovery import TargetError, expand_targets
 from ..integrations import IntegrationError, build
-from . import mtr
+from . import mtr, tunnel
 from .discover import scan
 from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
@@ -82,6 +84,8 @@ class Poller:
         self.probe_wake = asyncio.Event()
         self.probe_sem = asyncio.Semaphore(4)
         self.probing: set[int] = set()
+        self.key: str | None = None
+        self.tunnels: set[asyncio.Task] = set()
 
     # identity -------------------------------------------------------------
     @property
@@ -111,13 +115,17 @@ class Poller:
         return ident
 
     @property
+    def ws_base(self) -> str:
+        return self.server.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+
+    @property
     def ws_url(self) -> str:
-        base = self.server.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
-        return f"{base}/api/poller/ws"
+        return f"{self.ws_base}/api/poller/ws"
 
     # main loop ------------------------------------------------------------
     async def run(self) -> None:
         ident = self.load_identity() or await self.enroll()
+        self.key = ident["key"]
         asyncio.create_task(self.schedule_loop())
         asyncio.create_task(self.probe_loop())
         backoff = 2.0
@@ -131,7 +139,7 @@ class Poller:
                     from ..integrations import REGISTRY
                     await ws.send(json.dumps({"type": "hello", "version": __version__, "hostname": socket.gethostname(),
                                               "spooled": len(self.spool), "integrations": sorted(REGISTRY),
-                                              "features": ["mtr"] if mtr.available() else []}))
+                                              "features": self.features()}))
                     for batch in self.spool.pending():
                         await ws.send(json.dumps(batch))
                     while self.outbox:
@@ -153,6 +161,14 @@ class Poller:
                 self.ws = None
             await asyncio.sleep(backoff + random.uniform(0, backoff / 2))
             backoff = min(backoff * 2, 120.0)
+
+    def features(self) -> list[str]:
+        feats = []
+        if mtr.available():
+            feats.append("mtr")
+        if tunnel.enabled():
+            feats.append("ssh")
+        return feats
 
     async def handle(self, msg: dict) -> None:
         t = msg.get("type")
@@ -181,6 +197,16 @@ class Poller:
             if any(p["id"] == pid for p in self.probes):
                 self.probe_due[pid] = 0.0
                 self.probe_wake.set()
+        elif t == "tunnel_open":
+            sid, host = str(msg.get("sid") or ""), str(msg.get("host") or "")
+            try:
+                port = int(msg.get("port") or 22)
+            except (TypeError, ValueError):
+                port = 0
+            if sid and self.key:
+                task = asyncio.create_task(tunnel.run(self.ws_base, self.key, sid, host, port))
+                self.tunnels.add(task)
+                task.add_done_callback(self.tunnels.discard)
         elif t == "ping" and self.ws:
             await self.ws.send(json.dumps({"type": "pong"}))
 

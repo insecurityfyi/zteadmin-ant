@@ -458,3 +458,26 @@ class ProcessedBatch(Base):
     batch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     poller_id: Mapped[int] = mapped_column(Integer)
     at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class SshTarget(Base):
+    """A host an admin has opened an SSH console to through a poller: its pinned host key and, if saved, the login.
+
+    The host key is trusted on first use and checked on every later connection. Saved credentials are sealed
+    with the server's Fernet key (``cred_enc``); only the user name is kept readable, to prefill the form."""
+    __tablename__ = "ssh_targets"
+    __table_args__ = (UniqueConstraint("poller_id", "host", "port", name="uq_ssh_target"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poller_id: Mapped[int] = mapped_column(ForeignKey("pollers.id", ondelete="CASCADE"))
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"))
+    host_key: Mapped[str | None] = mapped_column(Text)              # OpenSSH public key line
+    fingerprint: Mapped[str | None] = mapped_column(String(128))    # SHA256:...
+    username: Mapped[str | None] = mapped_column(String(128))
+    cred_enc: Mapped[str | None] = mapped_column(Text)              # sealed {"password", "key", "passphrase"}
+    cred_saved_by: Mapped[str | None] = mapped_column(String(64))
+    cred_saved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_used: Mapped[datetime | None] = mapped_column(DateTime)
+    last_user: Mapped[str | None] = mapped_column(String(64))

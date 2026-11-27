@@ -8,9 +8,13 @@ Server -> poller
     poll_now      {"type": "poll_now", "device_id": 12}
     ack           {"type": "ack", "batch_id": "..."}
     ping          {"type": "ping"}
+    tunnel_open   {"type": "tunnel_open", "sid": "...", "host": "10.0.0.1", "port": 22}
+                  The poller opens a second outbound WebSocket to /api/poller/ws/tunnel/<sid> (same Bearer key),
+                  connects to host:port, sends {"ok": true} or {"ok": false, "error": "..."} as a text frame,
+                  then relays raw TCP bytes as binary frames both ways until either side closes.
 
 Poller -> server
-    hello         {"type": "hello", "version": "0.1.0", "hostname": "..."}
+    hello         {"type": "hello", "version": "0.1.0", "hostname": "...", "features": ["mtr", "ssh"]}
     results       {"type": "results", "batch_id": "...", "items": [DeviceResult | IntegrationResult]}
     pong          {"type": "pong"}
 
