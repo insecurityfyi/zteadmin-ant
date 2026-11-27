@@ -8,9 +8,9 @@
   <div class="kpi"><span>Busiest guest</span><b>{{ ((data.top_guests or [{}])[0].cpu|pct) if data.top_guests else '–' }}</b><em>{{ (data.top_guests or [{}])[0].name if data.top_guests else '&nbsp;'|safe }}</em></div>
 </div>
 <div class="grid">
-  <div class="p c6"><div class="ph"><h2>Nodes</h2></div>
+  <div class="p c6"><div class="ph"><h2>Nodes</h2><a class="btn sm" href="/hypervisors?i={{ integ.id }}">Virtual machines and actions</a></div>
     <table><thead><tr><th></th><th>Node</th><th>CPU</th><th>Memory</th><th class="n">Guests</th><th class="n">Uptime</th></tr></thead><tbody>
-    {% for n in data.nodes or [] %}{% set dev = device_by_ext.get('node-' ~ n.name) %}<tr><td>{{ dot(n.status == 'online') }}</td><td>{% if dev %}<a class="row" href="/devices/{{ dev.id }}">{{ n.name }}</a>{% else %}<b>{{ n.name }}</b>{% endif %}<div class="dim" style="font-size:12px">{{ n.maxcpu }} vCPU · {{ n.maxmem|bytes }}</div></td>
+    {% for n in data.nodes or [] %}{% set dev = device_by_ext.get('node-' ~ n.name) %}<tr><td>{{ dot(n.status == 'online') }}</td><td><a class="row" href="/hypervisors/{{ integ.id }}/node/{{ n.name|urlencode }}">{{ n.name }}</a>{% if dev %} <a class="dim" style="font-size:12px" href="/devices/{{ dev.id }}">graphs</a>{% endif %}<div class="dim" style="font-size:12px">{{ n.maxcpu }} vCPU · {{ n.maxmem|bytes }}</div></td>
       <td class="nw">{{ meter(n.cpu) }}</td><td class="nw">{{ meter((100 * n.mem / n.maxmem) if n.maxmem else none) }}</td><td class="n">{{ n.running }} / {{ n.guests }}</td><td class="n">{{ n.uptime_s|duration }}</td></tr>{% endfor %}</tbody></table></div>
   <div class="p c6"><div class="ph"><h2>Guests running</h2></div>{{ legend([('Running', 'var(--up)'), ('Total', 'var(--off)')]) }}
     {{ chart(integ.id, 'guests', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false}], 'num', 170, 'Guests') }}</div>
@@ -22,7 +22,7 @@
     {{ chart(integ.id, s.series, [{"key":"a","color":"var(--s2)"}], 'pct', 150, s.name ~ ' used', 100) }}</div>{% endfor %}
   <div class="p"><div class="ph"><h2>Busiest guests</h2><span class="sub">by CPU now</span></div>
     <div class="scroll"><table><thead><tr><th>Guest</th><th>Node</th><th>CPU</th><th>Memory</th><th class="n">Net in</th><th class="n">Net out</th></tr></thead><tbody>
-    {% for x in data.top_guests or [] %}{% set dev = device_by_ext.get(x.type ~ '-' ~ x.vmid) %}<tr><td>{% if dev %}<a class="row" href="/devices/{{ dev.id }}">{{ x.name }}</a>{% else %}<b>{{ x.name }}</b>{% endif %} <span class="dim">{{ 'VM' if x.type == 'qemu' else 'CT' }} {{ x.vmid }}</span></td><td>{{ x.node }}</td>
+    {% for x in data.top_guests or [] %}{% set dev = device_by_ext.get(x.type ~ '-' ~ x.vmid) %}<tr><td><a class="row" href="/hypervisors/{{ integ.id }}/guest/{{ x.type }}/{{ x.vmid }}?node={{ x.node|urlencode }}">{{ x.name }}</a> <span class="dim">{{ 'VM' if x.type == 'qemu' else 'CT' }} {{ x.vmid }}</span></td><td>{{ x.node }}</td>
       <td class="nw">{{ meter(x.cpu) }}</td><td class="nw">{{ meter((100 * x.mem / x.maxmem) if x.maxmem else none) }}</td><td class="n">{{ x.netin|bytes }}</td><td class="n">{{ x.netout|bytes }}</td></tr>
     {% else %}<tr><td colspan="6" class="dim">No running guests.</td></tr>{% endfor %}</tbody></table></div></div>
 </div>

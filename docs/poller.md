@@ -6,7 +6,8 @@ API work. It needs:
 * **Outbound** TCP 443 to `utilz.perrego.net`. This is the only connection it
   makes to the internet.
 * UDP 161 (SNMP) and ICMP to the devices it polls, and HTTPS to the on-prem
-  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it. UniFi setup: [unifi.md](unifi.md).
+  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it. For Proxmox that is port 8006,
+  which also carries VM actions and consoles. Setup: [unifi.md](unifi.md), [proxmox.md](proxmox.md).
 * **Nothing inbound.** No port forwards, no VPN.
 
 One poller comfortably handles about 150 devices at a 5-minute interval. Add a
@@ -126,5 +127,5 @@ Without it, ping still works if the host allows ICMP datagram sockets
 | `LW_DATA_DIR` | `/var/lib/linkwatch` | Identity and spool |
 | `LW_CONCURRENCY` | `32` | Devices polled at the same time |
 | `LW_LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
-| `LW_TUNNEL` | `on` | `off` refuses SSH console tunnels through this poller (see [ssh.md](ssh.md)) |
-| `LW_TUNNEL_PORTS` | `22` | TCP ports a tunnel may reach, comma separated, or `any` |
+| `LW_TUNNEL` | `on` | `off` refuses SSH and remote desktop tunnels through this poller (see [ssh.md](ssh.md), [rdp.md](rdp.md)) |
+| `LW_TUNNEL_PORTS` | `22,3389` | TCP ports a tunnel may reach, comma separated, or `any` |

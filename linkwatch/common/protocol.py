@@ -17,12 +17,21 @@ Server -> poller
                   The poller opens a second outbound WebSocket to /api/poller/ws/tunnel/<sid> (same Bearer key),
                   connects to host:port, sends {"ok": true} or {"ok": false, "error": "..."} as a text frame,
                   then relays raw TCP bytes as binary frames both ways until either side closes.
+    pve_term_open {"type": "pve_term_open", "sid": "...", "integration_id": 3, "node": "pve-01",
+                   "vmtype": "lxc" | "qemu" | null, "vmid": 105, "cols": 120, "rows": 40}
+                  Like tunnel_open, but the poller opens a Proxmox text console itself (see poller/pveterm.py) and
+                  relays terminal bytes; text frames on the tunnel carry {"type": "resize", ...}.
+    rpc           {"type": "rpc", "id": "...", "op": "integration_action", "integration_id": 3,
+                   "action": "shutdown", "params": {"node": "pve-01", "type": "qemu", "vmid": 101}, "refresh": true}
+                  Runs Integration.action(action, params) for an integration assigned to this poller. With
+                  "refresh" the poller collects that integration again a few seconds later.
 
 Poller -> server
-    hello         {"type": "hello", "version": "0.1.0", "hostname": "...", "features": ["mtr", "ssh"]}
+    hello         {"type": "hello", "version": "0.1.0", "hostname": "...", "features": ["mtr", "ssh", "pveterm", "rpc"]}
     results       {"type": "results", "batch_id": "...", "items": [DeviceResult | IntegrationResult]}
     pong          {"type": "pong"}
     snmp_test_result {"type": "snmp_test_result", "req": "...", "rows": [{"index": "", "value": 42, "label": null}], "error": null}
+    rpc_result    {"type": "rpc_result", "id": "...", "ok": true, "result": {...}} or {"ok": false, "error": "..."}
 
 A ``DeviceResult`` (kind "device") carries one SNMP/ICMP poll of one device:
 

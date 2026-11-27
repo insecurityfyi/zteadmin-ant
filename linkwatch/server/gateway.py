@@ -48,6 +48,10 @@ class TunnelError(Exception):
     pass
 
 
+class RpcError(Exception):
+    """A request to a poller failed: not connected, too old, timed out, or the poller reported an error."""
+
+
 MAX_TUNNELS_PER_POLLER = 8
 
 
@@ -61,6 +65,8 @@ class Hub:
         self.pending_tunnels: dict[str, tuple[int, asyncio.Future]] = {}
         self.open_tunnels: dict[int, int] = {}
         self.tests: dict[str, asyncio.Future] = {}          # custom OID "Test" requests waiting for a poller's answer
+        # requests the server sends a poller and waits on (Proxmox actions and lookups)
+        self.pending_rpcs: dict[str, tuple[int, asyncio.Future]] = {}
 
     def interval(self, s) -> int:
         try:
@@ -160,14 +166,59 @@ class Hub:
         asyncio.run_coroutine_threadsafe(ws.send_text(json.dumps(message)), self.loop)
         return True
 
+    # requests to a poller ---------------------------------------------------
+    async def call(self, poller_id: int, payload: dict, timeout: float = 60.0) -> dict:
+        """Send ``{"type": "rpc", "id": ..., **payload}`` to a poller and wait for its ``rpc_result``.
+
+        Returns the result dict; raises RpcError when the poller is offline, times out or reports an error."""
+        ws = self.conns.get(poller_id)
+        if ws is None:
+            raise RpcError("The poller is not connected.")
+        rid = secrets.token_urlsafe(16)
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        self.pending_rpcs[rid] = (poller_id, fut)
+        try:
+            await ws.send_text(json.dumps({**payload, "type": "rpc", "id": rid}))
+            reply = await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            raise RpcError(f"The poller did not answer within {timeout:.0f} s.") from None
+        except RuntimeError:
+            raise RpcError("The poller disconnected.") from None
+        finally:
+            self.pending_rpcs.pop(rid, None)
+        if not reply.get("ok"):
+            raise RpcError(str(reply.get("error") or "The poller could not complete the request.")[:1000])
+        result = reply.get("result")
+        return result if isinstance(result, dict) else {}
+
+    def call_sync(self, poller_id: int, payload: dict, timeout: float = 60.0) -> dict:
+        """``call`` from a sync request handler (thread pool)."""
+        if self.loop is None or poller_id not in self.conns:
+            raise RpcError("The poller is not connected.")
+        fut = asyncio.run_coroutine_threadsafe(self.call(poller_id, payload, timeout), self.loop)
+        try:
+            return fut.result(timeout + 5)
+        except TimeoutError:
+            fut.cancel()
+            raise RpcError(f"The poller did not answer within {timeout:.0f} s.") from None
+
+    def _rpc_result(self, poller_id: int, msg: dict) -> None:
+        entry = self.pending_rpcs.get(str(msg.get("id") or ""))
+        if entry is not None and entry[0] == poller_id and not entry[1].done():
+            entry[1].set_result(msg)
+
     # reverse tunnels --------------------------------------------------------
-    async def open_tunnel(self, poller_id: int, host: str, port: int, timeout: float = 20.0) -> tuple[WebSocket, asyncio.Event]:
+    async def open_tunnel(self, poller_id: int, host: str = "", port: int = 0, timeout: float = 20.0,
+                          message: dict | None = None) -> tuple[WebSocket, asyncio.Event]:
         """Ask a connected poller for a TCP connection to host:port on its network.
 
         The poller connects to host:port itself and then opens a second outbound WebSocket to
         /api/poller/ws/tunnel/<sid> that carries the raw bytes, so nothing ever connects in to the poller's
         network. Returns that WebSocket (after the poller confirmed the TCP connection) and an Event to set when
-        the caller is done with it."""
+        the caller is done with it.
+
+        ``message`` replaces the ``tunnel_open`` request with another kind (e.g. ``pve_term_open``, where the poller
+        connects to a Proxmox console itself); the poller answers on the tunnel socket the same way."""
         ws = self.conns.get(poller_id)
         if ws is None:
             raise TunnelError("The poller is not connected.")
@@ -177,7 +228,8 @@ class Hub:
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending_tunnels[sid] = (poller_id, fut)
         try:
-            await ws.send_text(json.dumps({"type": "tunnel_open", "sid": sid, "host": host, "port": port}))
+            req = {**message, "sid": sid} if message else {"type": "tunnel_open", "sid": sid, "host": host, "port": port}
+            await ws.send_text(json.dumps(req))
             tws, done = await asyncio.wait_for(fut, timeout)
         except asyncio.TimeoutError:
             raise TunnelError(f"The poller did not open the tunnel within {timeout:.0f} s.") from None
@@ -332,6 +384,8 @@ class Hub:
                     fut = self.tests.get(str(msg.get("req") or ""))
                     if fut is not None and not fut.done():
                         fut.set_result(msg)
+                elif t == "rpc_result":
+                    self._rpc_result(poller.id, msg)
                 elif t == "pong":
                     await asyncio.to_thread(self._touch, poller.id)
         except (WebSocketDisconnect, RuntimeError):
@@ -342,5 +396,8 @@ class Hub:
         finally:
             if self.conns.get(poller.id) is ws:
                 del self.conns[poller.id]
+                for rid, (pid, fut) in list(self.pending_rpcs.items()):
+                    if pid == poller.id and not fut.done():
+                        fut.set_exception(RuntimeError("disconnected"))
                 await asyncio.to_thread(self._event, f"Poller {poller.name} disconnected", "warn")
             log.info("Poller %s disconnected", poller.name)

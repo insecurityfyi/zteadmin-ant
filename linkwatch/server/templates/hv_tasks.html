@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% import "_hv.html" as hv with context %}
+{% block title %}Tasks · {{ c.name }}{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/hypervisors">Hypervisors</a> · <a href="/hypervisors?i={{ c.id }}">{{ c.name }}</a></div><h1>Tasks</h1>
+  <p>The latest Proxmox tasks across the cluster, whoever started them. Click a row for its log.</p></div></div>
+{% if error %}<div class="flash warn" role="alert">{{ error }}</div>{% endif %}
+<div class="p"><div class="scroll"><table><thead><tr><th>Started</th><th>Task</th><th>Guest</th><th>Node</th><th>User</th><th>Result</th></tr></thead><tbody>
+{% for t in tasks %}<tr class="click" data-task-row="{{ t.upid }}" data-iid="{{ c.id }}" data-idx="{{ loop.index }}"><td class="nw">{{ t.start|ts if t.start else '' }}</td><td>{{ t.type }}</td><td>{{ t.id or '' }}</td><td>{{ t.node }}</td><td class="dim">{{ t.user }}</td>
+  <td>{% if t.status == 'running' %}<span class="tag">running</span>{% elif t.status == 'OK' %}<span class="okc">OK</span>{% else %}<span class="bad">{{ t.status }}</span>{% endif %}</td></tr>
+  <tr hidden><td colspan="6"><pre class="hv-log" id="task-{{ loop.index }}">Loading…</pre></td></tr>
+{% else %}<tr><td colspan="6" class="dim">{{ 'Not available.' if error else 'No recent tasks.' }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{{ hv.scaffolding(c) }}
+{% endblock %}

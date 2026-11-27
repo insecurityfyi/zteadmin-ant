@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme|default('auto') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console {{ label }} · Linkwatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.css?v={{ version }}">
+<style>
+  html,body{height:100%}
+  body{display:flex;flex-direction:column;overflow:hidden}
+  .sshbar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  .sshbar h1{font:600 14px var(--body);margin:0;display:flex;align-items:center;gap:8px}
+  .sshbar .via{color:var(--mute);font-size:12.5px}
+  .sshbar .sp{flex:1}
+  .pill{font:500 11.5px var(--mono);padding:2px 8px;border-radius:99px;background:var(--soft);border:1px solid var(--line);color:var(--mute)}
+  .pill.ok{color:var(--up);border-color:var(--up)} .pill.bad{color:var(--down);border-color:var(--down)}
+  .login{max-width:460px;margin:28px auto;padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:12px;width:calc(100% - 32px);overflow:auto}
+  .login h2{margin:0 0 4px;font:600 16px var(--body)}
+  .login label.f{display:block;margin-top:12px;font-weight:500;font-size:13px}
+  .login label.f input,.login label.f textarea{margin-top:4px}
+  .login textarea{font:12px var(--mono);min-height:110px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:12px}
+  .seg button{border:0;background:transparent;color:var(--mute);padding:5px 12px;font:500 12.5px var(--body);cursor:pointer}
+  .seg button[aria-pressed=true]{background:var(--accent);color:var(--onAccent)}
+  .row{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .msg{margin-top:12px;font-size:13px;overflow-wrap:anywhere}
+  .fp{font:12px var(--mono);overflow-wrap:anywhere}
+  #termwrap{flex:1;min-height:0;background:#0b0f14;padding:6px 4px 4px 8px;display:none}
+  #term{height:100%}
+  body.live #termwrap{display:block} body.live .login{display:none}
+  .saved{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:12px;background:var(--soft)}
+</style>
+</head>
+<body>
+<div class="sshbar">
+  <h1><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>{{ label }}</h1>
+  <span class="via">{% if vtype %}{{ 'VM' if vtype == 'qemu' else 'Container' }} {{ vmid }} on {{ node }}{% else %}Shell on node {{ node }}{% endif %} · {{ c.name }} through poller <b>{{ c.poller_name or '(none)' }}</b></span>
+  <span class="sp"></span>
+  {% if novnc %}<a class="btn sm" href="{{ novnc }}" target="_blank" rel="noopener" title="Opens the Proxmox web console. Your browser must be able to reach {{ c.web_url }}.">Graphical console</a>{% endif %}
+  <span class="pill" id="state">not connected</span>
+  <button class="btn sm" id="disconnect" type="button" hidden>Disconnect</button>
+</div>
+<div class="login" id="login">
+{% if error %}
+  <h2>Can't open a console</h2>
+  <p class="bad msg">{{ error }}</p>
+{% else %}
+  <h2>Text console</h2>
+  <p class="help" style="margin:0">The poller asks Proxmox for a console with the integration's API token and relays it here; nothing connects in to the site. {% if vtype == 'qemu' %}VMs need a serial port (<code>serial0: socket</code>) and a getty on it; otherwise use the graphical console.{% elif not vtype %}Proxmox asks non-root accounts to sign in to the node.{% endif %} The session is in the audit log.</p>
+  <div class="row"><button class="btn pri" type="button" id="connect">Connect</button></div>
+  <p class="msg" id="msg" role="status"></p>
+{% endif %}
+</div>
+<div id="termwrap"><div id="term"></div></div>
+{% if not error %}
+<script id="target" type="application/json">{{ target|tojson }}</script>
+<script src="/static/vendor/xterm/xterm.js?v={{ version }}"></script>
+<script src="/static/vendor/xterm/addon-fit.js?v={{ version }}"></script>
+<script src="/static/pveconsole.js?v={{ version }}"></script>
+{% endif %}
+</body>
+</html>

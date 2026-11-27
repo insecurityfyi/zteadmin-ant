@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "_hv.html" as hv with context %}
+{% from "_iv.html" import meter %}
+{% block title %}Virtual machines{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb">Hypervisors</div><h1>Virtual machines</h1>
+  <p>{% if shown|length == 1 %}{{ shown[0].name }} · {{ 'via poller ' ~ shown[0].poller_name if shown[0].poller_name else 'no poller' }} · last sync {{ shown[0].last_sync|ago }}{% else %}{{ shown|length }} Proxmox cluster{{ '' if shown|length == 1 else 's' }}{% endif %}</p></div>
+  <div class="actions">{% if shown|length == 1 %}
+    <form class="inline" method="post" action="/integrations/{{ shown[0].id }}/sync"><button class="btn" type="submit">Sync now</button></form>
+    <a class="btn" href="/hypervisors/{{ shown[0].id }}/tasks">Tasks</a>
+    <a class="btn" href="/integrations/{{ shown[0].id }}">Settings</a>{% endif %}</div></div>
+
+{% if not clusters %}<div class="p empty-state"><h2>No hypervisors connected</h2><p>Connect a Proxmox VE cluster under <a href="/integrations/new?kind=proxmox">Integrations</a> to see and control its virtual machines here.</p></div>
+{% else %}
+{% for c in shown %}{% if c.last_error %}<div class="flash {{ 'bad' if c.status == 'error' else 'warn' }}" role="alert"><b>{{ c.name }}:</b> {{ c.last_error }}</div>{% endif %}
+{% if c.why_offline() %}<div class="flash warn" role="status"><b>{{ c.name }}:</b> {{ c.why_offline() }}</div>{% endif %}
+{{ hv.control_off_note(c, is_admin) }}{% endfor %}
+
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Nodes online</span><b>{{ totals.nodes_online }} / {{ totals.nodes }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>Guests running</span><b>{{ totals.running }} / {{ totals.guests }}</b><em>{{ totals.vms }} VMs · {{ totals.cts }} containers</em></div>
+  <div class="kpi"><span>Stopped</span><b>{{ totals.guests - totals.running }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>Templates</span><b>{{ totals.templates }}</b><em><a href="?{{ 'i=' ~ f.i ~ '&' if f.i else '' }}type=template">show</a></em></div>
+</div>
+
+<div class="grid">
+  <div class="p"><div class="ph"><h2>Nodes</h2></div>
+    <div class="hv-nodes">{% for c in shown %}{% for n in c.nodes|sort(attribute='name') %}
+      <a class="hv-node" href="/hypervisors/{{ c.id }}/node/{{ n.name|urlencode }}"><b style="display:flex;gap:8px;align-items:center"><span class="dot {{ 'd-up' if n.status == 'online' else 'd-down' }}"></span>{{ n.name }}{% if shown|length > 1 %} <span class="dim" style="font-weight:400;font-size:12px">{{ c.name }}</span>{% endif %}</b>
+        <span class="sub">CPU {{ meter(n.cpu) }}</span><span class="sub">Memory {{ meter((100 * n.mem / n.maxmem) if n.maxmem else none) }}</span>
+        <span class="sub">{{ n.running }} of {{ n.guests }} guests running</span></a>
+    {% endfor %}{% endfor %}</div></div>
+
+  <div class="p"><div class="ph"><h2>Guests</h2><span class="sub">{{ rows|length }} shown</span>
+    <form method="get" class="filters" action="/hypervisors">
+      {% if clusters|length > 1 %}<select name="i" aria-label="Cluster" onchange="this.form.submit()"><option value="">All clusters</option>{% for c in clusters %}<option value="{{ c.id }}" {% if f.i == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>{% elif f.i %}<input type="hidden" name="i" value="{{ f.i }}">{% endif %}
+      <select name="node" aria-label="Node" onchange="this.form.submit()"><option value="">All nodes</option>{% for c in shown %}{% for n in c.nodes|sort(attribute='name') %}<option {% if f.node == n.name %}selected{% endif %}>{{ n.name }}</option>{% endfor %}{% endfor %}</select>
+      <select name="type" aria-label="Type" onchange="this.form.submit()"><option value="">VMs and containers</option><option value="qemu" {% if f.type == 'qemu' %}selected{% endif %}>VMs</option><option value="lxc" {% if f.type == 'lxc' %}selected{% endif %}>Containers</option><option value="template" {% if f.type == 'template' %}selected{% endif %}>Templates</option></select>
+      <select name="status" aria-label="State" onchange="this.form.submit()"><option value="">Any state</option><option value="running" {% if f.status == 'running' %}selected{% endif %}>Running</option><option value="stopped" {% if f.status == 'stopped' %}selected{% endif %}>Stopped</option><option value="paused" {% if f.status == 'paused' %}selected{% endif %}>Paused</option></select>
+      <input type="search" name="q" value="{{ f.q }}" placeholder="Name, VMID, tag" aria-label="Search guests">
+    </form></div>
+    <div class="scroll"><table id="guests"><thead><tr><th></th><th class="n">VMID</th><th>Name</th><th>Node</th><th>CPU</th><th>Memory</th><th class="n">Disk</th><th class="n">Uptime</th><th>Tags</th>{% if is_admin %}<th class="n">Actions</th>{% endif %}</tr></thead><tbody>
+    {% for c, v in rows %}{% set running = v.status == 'running' %}
+      <tr><td>{{ hv.power_dot(v.status) }}</td><td class="n mono">{{ v.vmid }}</td>
+        <td><a class="row" href="/hypervisors/{{ c.id }}/guest/{{ v.type }}/{{ v.vmid }}?node={{ v.node|urlencode }}">{{ v.name }}</a> <span class="tag">{{ 'VM' if v.type == 'qemu' else 'CT' }}</span>{% if v.template %} <span class="tag">template</span>{% endif %}{% if v.lock %} <span class="tag wa" title="Locked by a running task">{{ v.lock }}</span>{% endif %}{% if v.hastate %} <span class="tag" title="High availability">HA {{ v.hastate }}</span>{% endif %}</td>
+        <td><a href="/hypervisors/{{ c.id }}/node/{{ v.node|urlencode }}" style="color:inherit">{{ v.node }}</a></td>
+        <td class="nw">{{ meter(v.cpu) if running else '' }}</td><td class="nw">{{ meter((100 * v.mem / v.maxmem) if running and v.maxmem else none) if running else '' }}</td>
+        <td class="n">{{ v.maxdisk|bytes if v.maxdisk else '' }}</td><td class="n">{{ v.uptime_s|duration if running else '' }}</td>
+        <td>{% for t in v.tags %}<span class="tag">{{ t }}</span> {% endfor %}</td>
+        {% if is_admin %}<td class="n"><div class="hv-row-actions">{% if c.control and c.can_rpc and not v.template %}{% set what = ('VM ' if v.type == 'qemu' else 'container ') ~ v.vmid ~ ' (' ~ v.name ~ ')' %}
+          {% if running %}{{ hv.act(c, actions, 'shutdown', v.node, v.type, v.vmid, what) }}{{ hv.act(c, actions, 'reboot', v.node, v.type, v.vmid, what) }}
+          {% elif v.status == 'paused' %}{{ hv.act(c, actions, 'resume', v.node, v.type, v.vmid, what) }}
+          {% else %}{{ hv.act(c, actions, 'start', v.node, v.type, v.vmid, what) }}{% endif %}
+          {% if v.type == 'lxc' or running %}<a class="btn sm" data-popout="{{ v.vmid }}" href="/hypervisors/console?i={{ c.id }}&node={{ v.node|urlencode }}&type={{ v.type }}&vmid={{ v.vmid }}" title="Text console">Console</a>{% endif %}
+        {% endif %}<a class="btn sm" href="/hypervisors/{{ c.id }}/guest/{{ v.type }}/{{ v.vmid }}?node={{ v.node|urlencode }}">More</a></div></td>{% endif %}</tr>
+    {% else %}<tr><td colspan="10" class="dim">{% if shown and not (shown|map(attribute='vms')|sum(start=[])) %}No guests in the last sync yet. Press Sync now, or wait for the next poll.{% else %}No guests match.{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+</div>
+{% endif %}
+{% if clusters %}{{ hv.scaffolding(shown[0] if shown else clusters[0]) }}{% endif %}
+{% endblock %}

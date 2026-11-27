@@ -55,7 +55,7 @@ class Target:
         self.poller_features = list(poller.features or [])
         self.host, self.port = host, port
         self.device_id = device.id if device else None
-        self.label = (device.hostname if device else host) + (f":{port}" if port != 22 else "")
+        self.label = (device.hostname if device else host) + (f":{port}" if port not in (22, 3389) else "")
 
 
 def resolve_target(s, device: Any = None, poller: Any = None, host: Any = None, port: Any = None) -> Target:
@@ -97,14 +97,14 @@ def _admin_or_403(request: Request) -> User:
 
 
 @router.get("/ssh", response_class=HTMLResponse)
-def ssh_page(request: Request, device: int | None = None, poller: int | None = None, host: str = "", port: int = 22):
+def ssh_page(request: Request, device: int | None = None, poller: int | None = None, host: str = "", port: str = ""):
     _admin_or_403(request)
     from .themes import theme_for
     state = _lw(request)
     with state.db.session() as s:
         error, saved, t = None, None, None
         try:
-            t = resolve_target(s, device, poller, host, port)
+            t = resolve_target(s, device, poller, host, port or 22)
             row = find_saved(s, t)
             if row is not None:
                 saved = {"id": row.id, "username": row.username, "has_creds": bool(row.cred_enc),
@@ -136,7 +136,7 @@ def ssh_forget(request: Request, target_id: int = Form(...), what: str = Form("c
                 row.cred_enc, row.cred_saved_by, row.cred_saved_at = None, None, None
                 audit(s, user.username, request.client.host if request.client else None, "forgot saved SSH login",
                       f"{row.username or '?'}@{row.host}:{row.port}")
-    return RedirectResponse(back if back.startswith("/ssh") else "/", status_code=303)
+    return RedirectResponse(back if back.startswith(("/ssh", "/rdp")) else "/", status_code=303)
 
 
 # ------------------------------------------------------------------ browser WebSocket
@@ -157,11 +157,12 @@ def _ws_user(ws: WebSocket) -> User | None:
         return user
 
 
-def _same_origin(ws: WebSocket) -> bool:
-    origin = ws.headers.get("origin")
+def _same_origin(conn) -> bool:
+    """For a WebSocket or a fetch(): the browser's Origin must be this site."""
+    origin = conn.headers.get("origin")
     if not origin:
         return False
-    host = ws.headers.get("host", "")
+    host = conn.headers.get("host", "")
     return urlsplit(origin).netloc.lower() == host.lower()
 
 
