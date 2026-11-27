@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit custom OID' if c.id else 'Add custom OID' }}{% endblock %}
+{% block content %}
+<div class="head"><div><p class="crumbs"><a href="/oids">Custom OIDs</a></p><h1>{{ 'Edit ' ~ c.name if c.id else 'Add custom OID' }}</h1>
+  <p>Type a numeric OID or a MIB name such as <code>IF-MIB::ifHCInUcastPkts</code>, or search the MIBs. Test it against a device before saving.</p></div></div>
+{% if problems %}<div class="flash warn">{% for p in problems %}<div>{{ p }}</div>{% endfor %}</div>{% endif %}
+<div class="grid">
+<form class="p c7 stack" method="post" id="oid-form" action="{{ '/oids/' ~ c.id if c.id else '/oids/new' }}" autocomplete="off">
+  <h2 style="margin:0">What to read</h2>
+  <label class="f">Search MIBs <span class="help">(name, OID or words from the description)</span>
+    <input type="text" id="mib-q" role="searchbox" placeholder="ifHCInUcastPkts, cpu, 1.3.6.1.4.1.9.9.109"></label>
+  <div id="mib-hits" class="scroll" style="max-height:260px;overflow:auto" hidden><table><tbody></tbody></table></div>
+  <div class="row2">
+    <label class="f">OID or MIB name<input type="text" name="oid" id="o-oid" required value="{{ c.oid }}" placeholder="1.3.6.1.4.1.2021.10.1.5.1"></label>
+    <label class="f">Name <span class="help">(shown on graphs and alerts)</span><input type="text" name="name" id="o-name" maxlength="120" value="{{ c.name }}" placeholder="Sessions"></label>
+  </div>
+  <input type="hidden" name="mib_name" id="o-mib" value="{{ c.mib_name or '' }}">
+  <p class="help" id="o-mib-show" style="margin:-6px 0 0">{% if c.mib_name %}From {{ c.mib_name }}{% endif %}</p>
+  <div class="row2">
+    <label class="f">Read<select name="mode" id="o-mode">{% for k, label in modes.items() %}<option value="{{ k }}" {% if k == c.mode %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="f" data-for="walk">Name each row from <span class="help">(optional column, e.g. ifName or dskPath)</span><input type="text" name="label_oid" id="o-label" value="{{ c.label_oid or '' }}" placeholder="IF-MIB::ifName"></label>
+  </div>
+  <h2 style="margin:8px 0 0">How to show it</h2>
+  <div class="row2">
+    <label class="f">Value type<select name="value_type" id="o-type">{% for k, label in value_types.items() %}<option value="{{ k }}" {% if k == c.value_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="f">Unit <span class="help">(%, °C, ms, B/s ...)</span><input type="text" name="unit" id="o-unit" maxlength="16" value="{{ c.unit or '' }}"></label>
+  </div>
+  <div class="row2">
+    <label class="f">Multiply by <span class="help">(optional: 0.01 for hundredths, 8 for bytes to bits)</span><input type="text" name="scale" id="o-scale" value="{{ '%g'|format(c.scale) if c.scale else '' }}" placeholder="1"></label>
+    <label class="f">Group <span class="help">(optional label on the Health tab)</span><input type="text" name="category" maxlength="60" value="{{ c.category or '' }}" placeholder="VPN"></label>
+  </div>
+  <div class="row2" data-for="state">
+    <label class="f">State names <span class="help">(number=name, comma separated)</span><input type="text" name="states" id="o-states" value="{{ states_text }}" placeholder="1=up, 2=down"></label>
+    <label class="f">Healthy values <span class="help">(anything else raises a Sensor problem alert)</span><input type="text" name="ok_values" maxlength="120" value="{{ c.ok_values or '' }}" placeholder="1"></label>
+  </div>
+  <p class="help" data-for="counter" style="margin:0">Counters only ever go up; the graph shows the change per second between polls, times the multiplier.</p>
+  <h2 style="margin:8px 0 0">Which devices</h2>
+  <p class="help" style="margin:0">Leave a field empty to include every SNMP device. A device that does not have the OID simply shows nothing.</p>
+  <div class="row2">
+    <label class="f">Device type<select name="match_type"><option value="">Any type</option>{% for t in types %}<option {% if t == c.match_type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="f">Vendor (sysObjectID starts with)<input type="text" name="match_sys_oid" list="vendors" value="{{ c.match_sys_oid or '' }}" placeholder="1.3.6.1.4.1.9">
+      <datalist id="vendors">{% for oid, name in vendors %}<option value="{{ oid }}">{{ name }}</option>{% endfor %}</datalist></label>
+  </div>
+  <label class="f">Device names or IPs<input type="text" name="match_name" value="{{ c.match_name or '' }}" placeholder="core-*, 10.0.1.*"></label>
+  <label class="f">Notes<textarea name="description" rows="2">{{ c.description or '' }}</textarea></label>
+  <label class="chk"><input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}> Enabled</label>
+  <div class="actions"><button class="btn pri" type="submit">{{ 'Save' if c.id else 'Add custom OID' }}</button><a class="btn" href="/oids">Cancel</a></div>
+</form>
+<div class="c5">
+  <div class="p" id="test"><div class="ph"><h2>Test on a device</h2><span class="sub">reads it now, through the device's poller</span></div>
+    {% if devices %}<div class="stack"><label class="f">Device<select id="t-dev">{% for d in devices %}<option value="{{ d.id }}" data-sysoid="{{ d.sys_object_id or '' }}">{{ d.hostname }}{{ ' · ' ~ d.ip if d.ip and d.ip != d.hostname else '' }}</option>{% endfor %}</select></label>
+      <div><button class="btn" type="button" id="t-go">Test</button></div>
+      <p id="t-msg" class="help" aria-live="polite" style="margin:0"></p>
+      <div class="scroll" style="max-height:360px;overflow:auto"><table><tbody id="t-rows"></tbody></table></div></div>
+    {% else %}<p class="dim" style="margin:0">No devices are polled over SNMP yet.</p>{% endif %}</div>
+  <div class="p" style="margin-top:16px"><div class="ph"><h2>Tips</h2></div>
+    <ul class="help" style="margin:0;padding-left:18px">
+      <li>A single value usually ends in <code>.0</code>; picking a scalar from a MIB adds it for you.</li>
+      <li>For a table, choose the column (for example <code>ifHCInUcastPkts</code>), not the table or entry.</li>
+      <li>From a shell on the poller: <code>snmpwalk -v2c -c COMMUNITY HOST OID</code>, or <code>snmptranslate -On MIB::name</code> to turn a name into numbers.</li>
+      <li>Alert on it under Alerts &gt; rules: "Health sensor", type "custom OID", sensor name matching this name.</li>
+    </ul></div>
+  {% if c.id %}<p style="margin-top:12px"><a href="/oids/new?copy={{ c.id }}">Make a copy</a></p>{% endif %}
+</div>
+</div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const mode = $("o-mode"), type = $("o-type");
+  function sync() {
+    document.querySelectorAll("[data-for]").forEach((el) => {
+      const k = el.dataset.for;
+      el.hidden = !(k === mode.value || k === type.value);
+    });
+  }
+  mode.addEventListener("change", sync); type.addEventListener("change", sync); sync();
+
+  const q = $("mib-q"), hits = $("mib-hits"), body = hits.querySelector("tbody");
+  let timer = null, seq = 0;
+  function cell(text, cls) { const td = document.createElement("td"); td.textContent = text || ""; if (cls) td.className = cls; return td; }
+  function use(o) {
+    const s = o.suggest || {};
+    $("o-oid").value = o.node === "scalar" && (s.mode || "get") === "get" ? o.oid + ".0" : o.oid;
+    if (!$("o-name").value) $("o-name").value = o.name;
+    $("o-mib").value = o.module + "::" + o.name;
+    $("o-mib-show").textContent = "From " + o.module + "::" + o.name + (o.descr ? ". " + o.descr : "");
+    if (s.mode) mode.value = s.mode;
+    if (s.value_type) type.value = s.value_type;
+    if (s.unit !== undefined) $("o-unit").value = s.unit;
+    $("o-scale").value = s.scale ? String(s.scale) : "";
+    if (s.states) $("o-states").value = Object.entries(s.states).sort((a, b) => a[0] - b[0]).map(([k, v]) => k + "=" + v).join(", ");
+    hits.hidden = true; sync();
+  }
+  q.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const mine = ++seq, text = q.value.trim();
+      if (text.length < 2) { hits.hidden = true; return; }
+      const r = await fetch("/ui/mibs/search?q=" + encodeURIComponent(text), { credentials: "same-origin" });
+      if (mine !== seq || !r.ok) return;
+      const rows = await r.json();
+      body.replaceChildren(...(rows.length ? rows.map((o) => {
+        const tr = document.createElement("tr"); tr.className = "click";
+        const name = cell("", ""); const b = document.createElement("b"); b.textContent = o.name; name.append(b);
+        const sub = document.createElement("div"); sub.className = "dim"; sub.textContent = o.module + (o.descr ? " · " + o.descr.slice(0, 90) : ""); name.append(sub);
+        tr.append(name, cell(o.oid, "mono"), cell(o.node + (o.type ? ", " + o.type : ""), "dim nw"));
+        tr.addEventListener("click", () => use(o));
+        return tr;
+      }) : [(() => { const tr = document.createElement("tr"); tr.append(cell("Nothing matches. Upload the vendor's MIB on the Custom OIDs page.", "dim")); return tr; })()]));
+      hits.hidden = false;
+    }, 200);
+  });
+
+  const go = $("t-go");
+  if (go) go.addEventListener("click", async () => {
+    const msg = $("t-msg"), out = $("t-rows");
+    out.replaceChildren(); msg.textContent = "Asking the poller…"; go.disabled = true;
+    try {
+      const r = await fetch("/ui/oids/test", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id: $("t-dev").value, oid: $("o-oid").value, mode: mode.value, label_oid: $("o-label").value }) });
+      const res = await r.json();
+      if (res.error || res.detail) { msg.textContent = res.error || res.detail; return; }
+      msg.textContent = res.rows.length ? `${res.rows.length} value${res.rows.length === 1 ? "" : "s"} from ${res.device} at ${res.oid} (raw, before type and multiplier)` : (res.note || "No value.");
+      out.replaceChildren(...res.rows.map((x) => { const tr = document.createElement("tr"); tr.append(cell(x.label || x.index || "value", "dim"), cell(String(x.value), "mono n")); return tr; }));
+    } catch (e) { msg.textContent = "The test failed: " + e; }
+    finally { go.disabled = false; }
+  });
+})();
+</script>
+{% endblock %}

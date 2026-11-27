@@ -58,6 +58,10 @@
       <a href="/health?metric=power">Power</a>
       <a href="/health?metric=state">Component state</a>
       <a href="/health?metric=storage">Storage</a>
+      <hr><a href="/health?metric=system">Load and TCP/IP</a>
+      <a href="/health?metric=diskio">Disk I/O</a>
+      <a href="/health?metric=custom">Custom OID values</a>
+      <a href="/oids">Custom OIDs and MIBs</a>
     </div></details>
     <a class="m {{ 'cur' if sec == 'paths' }}" href="/probes">{{ ic('paths') }}<span class="lb">Paths</span></a>
     <details class="menu {{ 'cur' if sec == 'alerts' }}"{% if side and sec == 'alerts' %} open{% endif %}><summary>{{ ic('alerts') }}<span class="lb">Alerts</span>{% if open_alerts %} <span class="ct">{{ open_alerts }}</span>{% endif %}</summary><div class="dd">

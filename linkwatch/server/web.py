@@ -54,7 +54,8 @@ def st(request: Request):
 SECTIONS = {"dashboard": "overview", "eventlog": "overview", "devices": "devices", "device": "devices", "discovery": "devices",
             "ports": "ports", "port": "ports", "probes": "paths", "probe": "paths", "health": "health", "alerts": "alerts", "map": "map",
             "integrations": "integrations", "integration": "integrations", "unifi": "integrations",
-            "pollers": "admin", "settings": "admin", "admin": "admin", "account": "admin"}
+            "pollers": "admin", "settings": "admin", "admin": "admin", "account": "admin", "oids": "health", "oid": "health",
+            "mib": "health"}
 
 
 def render(request: Request, name: str, ctx: dict[str, Any] | None = None, status_code: int = 200) -> HTMLResponse:
@@ -428,7 +429,8 @@ async def discovery_add(request: Request, jid: int):
 
 DEVICE_TABS = [("overview", "Overview"), ("graphs", "Graphs"), ("ports", "Ports"), ("health", "Health"),
                ("inventory", "Inventory"), ("neighbours", "Neighbours"), ("events", "Events"), ("alerts", "Alerts")]
-SENSOR_ORDER = ["temperature", "fan", "power", "voltage", "current", "humidity", "frequency", "airflow", "state", "storage"]
+SENSOR_ORDER = ["temperature", "fan", "power", "voltage", "current", "humidity", "frequency", "airflow", "state", "storage",
+                "system", "diskio", "custom"]
 
 
 @router.get("/devices/{device_id}", response_class=HTMLResponse)

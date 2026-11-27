@@ -163,7 +163,7 @@ class Poller:
             backoff = min(backoff * 2, 120.0)
 
     def features(self) -> list[str]:
-        feats = []
+        feats = ["custom_oids"]
         if mtr.available():
             feats.append("mtr")
         if tunnel.enabled():
@@ -207,8 +207,37 @@ class Poller:
                 task = asyncio.create_task(tunnel.run(self.ws_base, self.key, sid, host, port))
                 self.tunnels.add(task)
                 task.add_done_callback(self.tunnels.discard)
+        elif t == "snmp_test":
+            asyncio.create_task(self.snmp_test(msg))
         elif t == "ping" and self.ws:
             await self.ws.send(json.dumps({"type": "pong"}))
+
+    async def snmp_test(self, msg: dict) -> None:
+        """Read one OID (or walk one column) from one device right now, for the custom OID page's Test button."""
+        out: dict[str, Any] = {"type": "snmp_test_result", "req": str(msg.get("req") or "")}
+        dev = next((d for d in self.devices if d.get("id") == msg.get("device_id")), None)
+        oid = str(msg.get("oid") or "").strip().strip(".")
+        try:
+            if dev is None or not dev.get("snmp"):
+                raise SnmpError("This poller has no SNMP credentials for that device")
+            sess = SnmpSession(dev["ip"], dev["snmp"], engine=self.engine)
+            if msg.get("mode") == "walk":
+                values = await asyncio.wait_for(sess.walk(oid, max_rows=50), timeout=20)
+                labels = {}
+                if msg.get("label_oid"):
+                    labels = await asyncio.wait_for(sess.walk(str(msg["label_oid"]).strip("."), max_rows=50), timeout=20)
+                out["rows"] = [{"index": k, "value": v, "label": labels.get(k)} for k, v in values.items()]
+            else:
+                got = await asyncio.wait_for(sess.get([oid]), timeout=20)
+                v = got.get(oid)
+                out["rows"] = [] if v is None else [{"index": "", "value": v, "label": None}]
+            out["rows"] = [{k: (x if isinstance(x, (int, float, str)) or x is None else str(x)) for k, x in r.items()}
+                           for r in out["rows"]]
+        except asyncio.TimeoutError:
+            out["error"] = "The device did not answer in time"
+        except Exception as exc:  # noqa: BLE001
+            out["error"] = f"{exc.__class__.__name__}: {exc}" if not isinstance(exc, SnmpError) else str(exc)
+        await self.send_or_queue(out, queue=False)
 
     async def send_or_queue(self, msg: dict, queue: bool = True) -> None:
         if self.ws:
@@ -284,7 +313,7 @@ class Poller:
             ping_task = asyncio.create_task(ping(dev["ip"])) if dev.get("ping", True) else None
             if dev.get("snmp"):
                 try:
-                    item.update(await poll_device(SnmpSession(dev["ip"], dev["snmp"], engine=self.engine)))
+                    item.update(await poll_device(SnmpSession(dev["ip"], dev["snmp"], engine=self.engine), dev.get("oids")))
                     item["ok"] = True
                 except SnmpError as exc:
                     item["error"] = f"SNMP: {exc}"

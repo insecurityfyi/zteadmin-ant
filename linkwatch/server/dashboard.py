@@ -167,7 +167,7 @@ def load_integrations(s: Session, o: dict) -> dict:
 
 
 def load_sensors(s: Session, o: dict) -> dict:
-    kind = o.get("kind") if o.get("kind") in ("temperature", "storage", "fan", "power") else "temperature"
+    kind = o.get("kind") if o.get("kind") in ("temperature", "storage", "fan", "power", "diskio", "custom") else "temperature"
     q = select(Sensor, Device).join(Device).where(Sensor.kind == kind, Device.disabled.is_(False))
     rows = s.execute(q).all()
     bad = [r for r in rows if r[0].status in ("warn", "crit")]
@@ -263,7 +263,8 @@ WIDGETS: dict[str, Widget] = {
     "integrations": Widget("Integrations", 4, load_integrations, "Each integration's sync state and object count."),
     "sensors": Widget("Health sensors", 4, load_sensors, "Sensors in alarm first, then the highest readings.",
                       [Opt("kind", "Sensor type", choices=(("temperature", "Temperature"), ("storage", "Storage"), ("fan", "Fans"),
-                                                           ("power", "Power")), default="temperature"), LIMIT]),
+                                                           ("power", "Power"), ("diskio", "Disk I/O"),
+                                                           ("custom", "Custom OIDs")), default="temperature"), LIMIT]),
     "map": Widget("Network map", 12, load_map, "The LLDP/CDP network map.", [SITE, Opt("height", "Height (px)", "number", default=420)]),
     "note": Widget("Note", 4, load_note, "Your own text: on-call numbers, links, reminders.", [Opt("text", "Text", "text")]),
     "cards": Widget("Status cards", 12, load_cards, "Total, online and offline devices, average latency and bandwidth, with trend lines."),

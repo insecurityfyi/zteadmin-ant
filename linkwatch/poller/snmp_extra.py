@@ -1,10 +1,15 @@
-"""The rest of an SNMP poll: health sensors, hardware inventory, storage and LLDP/CDP neighbours.
+"""The rest of an SNMP poll: health sensors, hardware inventory, storage, system and disk I/O counters,
+custom OIDs and LLDP/CDP neighbours.
 
 Every function takes a session with ``walk(base) -> {index_suffix: value}`` and ``get(oids) -> {oid: value}`` and
 never raises: a device that doesn't implement a MIB simply returns nothing for it.
 
 MIBs: ENTITY-MIB and ENTITY-SENSOR-MIB (standard), CISCO-ENVMON-MIB, LM-SENSORS-MIB (net-snmp on Linux),
-HOST-RESOURCES-MIB storage, LLDP-MIB and CISCO-CDP-MIB.
+HOST-RESOURCES-MIB storage and processes, TCP-MIB, IP-MIB and UDP-MIB scalars, UCD-SNMP-MIB load, swap and diskIOTable,
+LLDP-MIB and CISCO-CDP-MIB.
+
+System and disk I/O readings are returned as sensor rows. Counters are sent raw (``"counter": True``); the server turns
+two readings into a rate, so a poller never has to remember anything between polls.
 """
 from __future__ import annotations
 
@@ -34,6 +39,32 @@ LLDP_LOC_PORT = "1.0.8802.1.1.2.1.3.7.1"  # .3 port id .4 port desc
 LLDP_MAN = "1.0.8802.1.1.2.1.4.2.1.3"     # lldpRemManAddrIfSubtype, the address is in the index
 CDP = "1.3.6.1.4.1.9.9.23.1.2.1.1"        # .4 address .6 device id .7 device port .8 platform
 MAX_ROWS = 2000
+
+# Scalars for the "System" readings: (key, OID, name, unit, counter?, scale)
+SYSTEM = [
+    ("sys.load1", "1.3.6.1.4.1.2021.10.1.5.1", "Load average (1 min)", "", False, 0.01),      # UCD laLoadInt, x100
+    ("sys.load5", "1.3.6.1.4.1.2021.10.1.5.2", "Load average (5 min)", "", False, 0.01),
+    ("sys.load15", "1.3.6.1.4.1.2021.10.1.5.3", "Load average (15 min)", "", False, 0.01),
+    ("sys.procs", "1.3.6.1.2.1.25.1.6.0", "Processes", "", False, 1),                          # hrSystemProcesses
+    ("sys.tcp_estab", "1.3.6.1.2.1.6.9.0", "TCP connections established", "", False, 1),       # tcpCurrEstab
+    ("sys.tcp_active", "1.3.6.1.2.1.6.5.0", "TCP connections opened", "/s", True, 1),           # tcpActiveOpens
+    ("sys.tcp_passive", "1.3.6.1.2.1.6.6.0", "TCP connections accepted", "/s", True, 1),        # tcpPassiveOpens
+    ("sys.tcp_fails", "1.3.6.1.2.1.6.7.0", "TCP failed connection attempts", "/s", True, 1),    # tcpAttemptFails
+    ("sys.tcp_resets", "1.3.6.1.2.1.6.8.0", "TCP connection resets", "/s", True, 1),            # tcpEstabResets
+    ("sys.tcp_out", "1.3.6.1.2.1.6.11.0", "TCP segments sent", "/s", True, 1),                  # tcpOutSegs
+    ("sys.tcp_retrans", "1.3.6.1.2.1.6.12.0", "TCP retransmits", "/s", True, 1),                # tcpRetransSegs
+    ("sys.ip_in", "1.3.6.1.2.1.4.3.0", "IP packets received", "/s", True, 1),                   # ipInReceives
+    ("sys.ip_in_hdr", "1.3.6.1.2.1.4.4.0", "IP header errors", "/s", True, 1),                  # ipInHdrErrors
+    ("sys.ip_fwd", "1.3.6.1.2.1.4.6.0", "IP packets forwarded", "/s", True, 1),                 # ipForwDatagrams
+    ("sys.ip_in_disc", "1.3.6.1.2.1.4.8.0", "IP input discards", "/s", True, 1),                # ipInDiscards
+    ("sys.ip_out_disc", "1.3.6.1.2.1.4.11.0", "IP output discards", "/s", True, 1),             # ipOutDiscards
+    ("sys.udp_in_err", "1.3.6.1.2.1.7.3.0", "UDP receive errors", "/s", True, 1),               # udpInErrors
+    ("sys.udp_noport", "1.3.6.1.2.1.7.2.0", "UDP to closed ports", "/s", True, 1),              # udpNoPorts
+]
+UCD_SWAP_TOTAL, UCD_SWAP_AVAIL = "1.3.6.1.4.1.2021.4.3.0", "1.3.6.1.4.1.2021.4.4.0"
+DISKIO = "1.3.6.1.4.1.2021.13.15.1.1"     # .2 device .3/.4 read/written bytes (32-bit) .12/.13 the same, 64-bit
+DISKIO_SKIP = ("loop", "ram", "fd", "sr")
+MAX_CUSTOM_ROWS = 1000
 
 
 async def _walk(s, base: str) -> dict[str, Any]:
@@ -207,11 +238,112 @@ async def neighbours(s, ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out[:500]
 
 
-async def collect_extra(s, result: dict[str, Any]) -> None:
-    """Add sensors, inventory, storage and neighbours to a poll result."""
+# ------------------------------------------------------------------ system counters and disk I/O
+async def _get(s, oids: list[str]) -> dict[str, Any]:
+    try:
+        return await s.get(oids)
+    except Exception as exc:     # noqa: BLE001
+        log.debug("get failed: %s", exc)
+        return {}
+
+
+async def system_stats(s) -> list[dict[str, Any]]:
+    """Load, processes, swap and TCP/IP/UDP health. Counters come back raw for the server to turn into rates."""
+    got: dict[str, Any] = {}
+    oids = [o for _, o, *_ in SYSTEM] + [UCD_SWAP_TOTAL, UCD_SWAP_AVAIL]
+    for i in range(0, len(oids), 12):
+        got.update(await _get(s, oids[i:i + 12]))
+    out: list[dict[str, Any]] = []
+    for key, oid, name, unit, counter, scale in SYSTEM:
+        v = got.get(oid)
+        if not isinstance(v, int):
+            continue
+        row = {"key": key, "kind": "system", "name": name, "unit": unit, "status": "ok"}
+        if counter:
+            row.update(counter=True, raw=v, scale=scale, bits=32)
+        else:
+            row["value"] = round(v * scale, 2)
+        out.append(row)
+    total, avail = got.get(UCD_SWAP_TOTAL), got.get(UCD_SWAP_AVAIL)
+    if isinstance(total, int) and total > 0 and isinstance(avail, int):
+        out.append({"key": "sys.swap", "kind": "system", "name": "Swap used", "unit": "%", "status": "ok",
+                    "value": round(100.0 * max(total - avail, 0) / total, 1)})
+    return out
+
+
+async def disk_io(s) -> list[dict[str, Any]]:
+    """Bytes read and written per second for each physical disk (UCD diskIOTable, net-snmp on Linux and most NAS)."""
+    rows = await _cols(s, DISKIO, {"device": 2, "read32": 3, "written32": 4, "read": 12, "written": 13})
+    out: list[dict[str, Any]] = []
+    for idx, r in sorted(rows.items(), key=lambda kv: _int(kv[0]) or 0):
+        dev = str(r.get("device") or "")
+        if not dev or dev.startswith(DISKIO_SKIP):
+            continue
+        for col, label in (("read", "read"), ("written", "write")):
+            raw, bits = r.get(col), 64
+            if not isinstance(raw, int):
+                raw, bits = r.get(col + "32"), 32
+            if not isinstance(raw, int):
+                continue
+            out.append({"key": f"dio.{idx}.{col}", "kind": "diskio", "name": f"{dev} {label}", "unit": "B/s",
+                        "status": "ok", "counter": True, "raw": raw, "bits": bits, "scale": 1, "extra": {"disk": dev}})
+        if len(out) >= 100:
+            break
+    # a disk that has never been read or written (an empty slot, a partition alias) is noise
+    busy = {x["extra"]["disk"] for x in out if x["raw"]}
+    return [x for x in out if x["extra"]["disk"] in busy]
+
+
+# ------------------------------------------------------------------ custom OIDs
+def sys_oid_matches(prefix: str | None, sys_object_id: str) -> bool:
+    """Does a device's sysObjectID fall under a prefix such as 1.3.6.1.4.1.9 (Cisco)? An empty prefix matches all."""
+    p = str(prefix or "").strip().strip(".")
+    if not p:
+        return True
+    oid = str(sys_object_id or "").strip().strip(".")
+    return oid == p or oid.startswith(p + ".")
+
+
+async def custom_oids(s, defs: list[dict[str, Any]], sys_object_id: str = "") -> list[dict[str, Any]]:
+    """Raw values for the custom OIDs the server assigned to this device.
+
+    Each definition is ``{"id", "oid", "mode": "get"|"walk", "label_oid", "sys_object_id"}``. Returns rows of
+    ``{"id", "index", "value", "label"}``; the server applies the type, scaling and names.
+    """
+    out: list[dict[str, Any]] = []
+    defs = [d for d in defs or [] if isinstance(d, dict) and d.get("oid") and sys_oid_matches(d.get("sys_object_id"), sys_object_id)]
+    gets = [d for d in defs if d.get("mode") != "walk"]
+    for i in range(0, len(gets), 20):
+        chunk = gets[i:i + 20]
+        got = await _get(s, [str(d["oid"]) for d in chunk])
+        if len(chunk) > 1 and all(v is None for v in got.values()):
+            got = {}                                   # SNMPv1 fails a whole request on one bad OID: ask one at a time
+            for d in chunk:
+                got.update(await _get(s, [str(d["oid"])]))
+        for d in chunk:
+            v = got.get(str(d["oid"]))
+            if v is not None:
+                out.append({"id": d["id"], "index": "", "value": v, "label": None})
+    for d in defs:
+        if d.get("mode") != "walk" or len(out) >= MAX_CUSTOM_ROWS:
+            continue
+        values = await _walk(s, str(d["oid"]))
+        labels = await _walk(s, str(d["label_oid"])) if d.get("label_oid") else {}
+        for idx, v in list(values.items())[:200]:
+            if v is not None:
+                out.append({"id": d["id"], "index": idx, "value": v, "label": labels.get(idx)})
+    return out[:MAX_CUSTOM_ROWS]
+
+
+async def collect_extra(s, result: dict[str, Any], oids: list[dict[str, Any]] | None = None) -> None:
+    """Add sensors, inventory, storage, system and disk I/O counters, custom OIDs and neighbours to a poll result."""
     oid = str((result.get("system") or {}).get("sys_object_id") or "")
     ents = await entities(s)
     result["inventory"] = inventory_from(ents)
     result["sensors"] = await sensors(s, ents, oid)
     result["storage"] = await storage(s)
+    result["system_stats"] = await system_stats(s)
+    result["disk_io"] = await disk_io(s)
+    if oids is not None:
+        result["custom"] = await custom_oids(s, oids, oid)
     result["neighbors"] = await neighbours(s, result.get("ports") or [])

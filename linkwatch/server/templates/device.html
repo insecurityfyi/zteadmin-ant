@@ -147,6 +147,7 @@
   <div class="portgrid">{% for x in group %}<div class="pg"><div class="ph" style="margin-bottom:4px"><span>{{ x.name }}</span><span>{{ sensor_value(x) }}</span></div>{{ sensor_graph(x) }}</div>{% endfor %}</div>
   {% endif %}</div>
 {% endfor %}
+{% if d.snmp_profile_id %}<p class="help">Need a value that isn't here? <a href="/oids">Add a custom OID</a> or upload the vendor's MIB.</p>{% endif %}
 {% if not sensors and d.snmp_profile_id %}<p class="dim">No temperature, fan, power or storage sensors reported over SNMP yet. They appear after the next poll when the device supports ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, LM-SENSORS-MIB or HOST-RESOURCES storage.</p>{% endif %}
 
 {% elif tab == 'inventory' %}

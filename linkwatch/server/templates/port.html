@@ -23,11 +23,13 @@
 <div class="p"><div class="ph"><h2>Traffic</h2><div class="filters">{{ inout() }}{{ ranges() }}</div></div>
   {{ graph(src, [{"key":"in","color":"var(--s1)"},{"key":"out","color":"var(--s2)"}], 'bps', 230, 'Traffic') }}</div>
 <div class="grid">
-  <div class="p c6"><div class="ph"><h2>Utilisation</h2><span class="sub">{{ 'of ' ~ p.speed_mbps|speed if p.speed_mbps else 'speed unknown' }}</span></div>
+  <div class="p c4"><div class="ph"><h2>Utilisation</h2><span class="sub">{{ 'of ' ~ p.speed_mbps|speed if p.speed_mbps else 'speed unknown' }}</span></div>
     {% if p.speed_mbps %}{{ graph(src, [{"key":"util_in","color":"var(--s1)","area":false},{"key":"util_out","color":"var(--s2)","area":false}], 'pct', 170, 'Utilisation', 100) }}
     {% else %}<div class="fig"><div class="empty">The device doesn't report a speed for this port.</div></div>{% endif %}</div>
-  <div class="p c6"><div class="ph"><h2>Errors</h2><span class="sub">per poll, in and out</span></div>
+  <div class="p c4"><div class="ph"><h2>Errors</h2><span class="sub">per poll, in and out</span></div>
     {{ graph(src, [{"key":"in_err","color":"var(--warn)","area":false},{"key":"out_err","color":"var(--down)","area":false}], 'num', 170, 'Errors') }}</div>
+  <div class="p c4"><div class="ph"><h2>Discards</h2><span class="sub">per poll, in and out{% if p.in_disc_rate is not none or p.out_disc_rate is not none %} · now {{ (p.in_disc_rate or 0)|int }} / {{ (p.out_disc_rate or 0)|int }}{% endif %}</span></div>
+    {{ graph(src, [{"key":"in_disc","color":"var(--warn)","area":false},{"key":"out_disc","color":"var(--down)","area":false}], 'num', 170, 'Discards') }}</div>
 </div>
 <div class="p"><div class="ph"><h2>Events</h2></div>
   {% if events %}{{ event_rows(events) }}{% else %}<p class="dim" style="margin:0">No changes recorded for this port yet.</p>{% endif %}</div>

@@ -1,0 +1,42 @@
+ACME-MIB DEFINITIONS ::= BEGIN
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, Integer32, Gauge32, Counter64, enterprises FROM SNMPv2-SMI
+    DisplayString FROM SNMPv2-TC;
+acme MODULE-IDENTITY
+    LAST-UPDATED "202601010000Z"
+    ORGANIZATION "Acme"
+    CONTACT-INFO "x"
+    DESCRIPTION "Acme test MIB"
+    ::= { enterprises 99999 }
+acmeSystem OBJECT IDENTIFIER ::= { acme 1 }
+acmeCpuLoad OBJECT-TYPE
+    SYNTAX Gauge32 (0..100)
+    UNITS "percent"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "CPU load in percent."
+    ::= { acmeSystem 1 }
+acmeSessions OBJECT-TYPE
+    SYNTAX Counter64
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Total sessions."
+    ::= { acmeSystem 2 }
+acmeTunnelTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF AcmeTunnelEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Tunnels."
+    ::= { acmeSystem 3 }
+acmeTunnelEntry OBJECT-TYPE
+    SYNTAX AcmeTunnelEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "A tunnel."
+    INDEX { acmeTunnelIndex }
+    ::= { acmeTunnelTable 1 }
+AcmeTunnelEntry ::= SEQUENCE { acmeTunnelIndex Integer32, acmeTunnelName DisplayString, acmeTunnelState INTEGER }
+acmeTunnelIndex OBJECT-TYPE SYNTAX Integer32 MAX-ACCESS not-accessible STATUS current DESCRIPTION "i" ::= { acmeTunnelEntry 1 }
+acmeTunnelName OBJECT-TYPE SYNTAX DisplayString MAX-ACCESS read-only STATUS current DESCRIPTION "name" ::= { acmeTunnelEntry 2 }
+acmeTunnelState OBJECT-TYPE SYNTAX INTEGER { up(1), down(2) } MAX-ACCESS read-only STATUS current DESCRIPTION "state" ::= { acmeTunnelEntry 3 }
+END

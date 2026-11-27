@@ -194,7 +194,8 @@ def _device_series(request: Request, device_id: int, rng: str) -> dict[str, list
 def _port_series(request: Request, port_id: int, rng: str) -> dict[str, list]:
     since, hourly = _window(rng)
     with lw(request).db.session() as s:
-        rows = s.execute(select(PortMetric.ts, PortMetric.in_bps, PortMetric.out_bps, PortMetric.in_err, PortMetric.out_err)
+        rows = s.execute(select(PortMetric.ts, PortMetric.in_bps, PortMetric.out_bps, PortMetric.in_err, PortMetric.out_err,
+                                PortMetric.in_disc, PortMetric.out_disc)
                          .where(PortMetric.port_id == port_id, PortMetric.hourly.is_(hourly), PortMetric.ts >= since)
                          .order_by(PortMetric.ts)).all()
         speed = s.scalar(select(Port.speed_mbps).where(Port.id == port_id))
@@ -202,6 +203,7 @@ def _port_series(request: Request, port_id: int, rng: str) -> dict[str, list]:
     util = (lambda v: None if v is None or not cap else min(100.0, v / cap * 100))
     return {"ts": [r[0].isoformat() + "Z" for r in rows], "in": [r[1] for r in rows], "out": [r[2] for r in rows],
             "in_err": [r[3] for r in rows], "out_err": [r[4] for r in rows],
+            "in_disc": [r[5] for r in rows], "out_disc": [r[6] for r in rows],
             "util_in": [util(r[1]) for r in rows], "util_out": [util(r[2]) for r in rows]}
 
 

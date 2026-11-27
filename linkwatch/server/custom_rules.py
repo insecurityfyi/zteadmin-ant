@@ -46,6 +46,8 @@ METRICS: dict[str, dict[str, Metric]] = {
         "out_mbps": Metric("Outbound traffic", lambda p: None if p.out_bps is None else p.out_bps / 1e6, "Mb/s"),
         "errors": Metric("Errors per poll", lambda p: None if p.in_err_rate is None and p.out_err_rate is None
                          else (p.in_err_rate or 0) + (p.out_err_rate or 0), "errors"),
+        "discards": Metric("Discards per poll", lambda p: None if p.in_disc_rate is None and p.out_disc_rate is None
+                           else (p.in_disc_rate or 0) + (p.out_disc_rate or 0), "discards"),
         "oper": Metric("Link state", lambda p: p.oper, states=("up", "down")),
         "admin": Metric("Admin state", lambda p: p.admin, states=("up", "down")),
     },
@@ -57,7 +59,7 @@ METRICS: dict[str, dict[str, Metric]] = {
 ENTITIES = {"device": "Device", "port": "Port", "sensor": "Health sensor"}
 NUM_OPS = {">": "above", ">=": "at or above", "<": "below", "<=": "at or below", "==": "equal to", "!=": "not equal to"}
 STATE_OPS = {"==": "is", "!=": "is not"}
-SENSOR_KINDS = ("temperature", "fan", "power", "voltage", "current", "humidity", "state", "storage")
+SENSOR_KINDS = ("temperature", "fan", "power", "voltage", "current", "humidity", "state", "storage", "system", "diskio", "custom")
 SCOPE_KEYS = ("type", "site", "name", "source", "port", "sensor_kind", "sensor_name")
 
 

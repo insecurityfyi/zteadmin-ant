@@ -256,6 +256,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .rules_views import router as rules_router
     from .integration_views import router as integration_views_router
     from .nms_views import router as nms_router
+    from .oid_views import router as oid_router
     from .path_views import router as path_router
     from .ssh import router as ssh_router
     from .sso import router as sso_router
@@ -269,6 +270,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(sso_router)
     app.include_router(integration_views_router)
     app.include_router(nms_router)
+    app.include_router(oid_router)
     app.include_router(path_router)
     app.include_router(ssh_router)
     app.include_router(admin_router)

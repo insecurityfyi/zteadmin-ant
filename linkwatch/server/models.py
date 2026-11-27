@@ -239,6 +239,10 @@ class Port(Base):
     last_out_octets: Mapped[float | None] = mapped_column(Float)
     last_in_errors: Mapped[float | None] = mapped_column(Float)
     last_out_errors: Mapped[float | None] = mapped_column(Float)
+    in_disc_rate: Mapped[float | None] = mapped_column(Float)   # discards per poll interval
+    out_disc_rate: Mapped[float | None] = mapped_column(Float)
+    last_in_discards: Mapped[float | None] = mapped_column(Float)
+    last_out_discards: Mapped[float | None] = mapped_column(Float)
     last_ts: Mapped[float | None] = mapped_column(Float)
     device: Mapped[Device] = relationship(back_populates="ports")
 
@@ -250,7 +254,8 @@ class Sensor(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     device_id: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     key: Mapped[str] = mapped_column(String(80))
-    kind: Mapped[str] = mapped_column(String(24))       # temperature | fan | voltage | current | power | humidity | state | storage
+    # temperature | fan | voltage | current | power | humidity | state | storage | system | diskio | custom
+    kind: Mapped[str] = mapped_column(String(24))
     name: Mapped[str] = mapped_column(String(255))
     unit: Mapped[str] = mapped_column(String(16), default="")
     value: Mapped[float | None] = mapped_column(Float)
@@ -315,6 +320,8 @@ class PortMetric(Base):
     out_bps: Mapped[float | None] = mapped_column(Float)
     in_err: Mapped[float | None] = mapped_column(Float)
     out_err: Mapped[float | None] = mapped_column(Float)
+    in_disc: Mapped[float | None] = mapped_column(Float)
+    out_disc: Mapped[float | None] = mapped_column(Float)
 
 
 class IntegrationMetric(Base):
@@ -481,3 +488,39 @@ class SshTarget(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_used: Mapped[datetime | None] = mapped_column(DateTime)
     last_user: Mapped[str | None] = mapped_column(String(64))
+
+
+class CustomOid(Base):
+    """An OID people added themselves. Pollers read it from every device in scope; each value becomes a sensor
+    (kind "custom"), so it is graphed on the device's Health tab and can drive alert rules."""
+    __tablename__ = "custom_oids"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    oid: Mapped[str] = mapped_column(String(255))                   # numeric, no leading dot
+    mib_name: Mapped[str | None] = mapped_column(String(255))       # e.g. ACME-MIB::acmeCpuLoad, for display
+    mode: Mapped[str] = mapped_column(String(8), default="get")     # get (one value) | walk (a table column)
+    label_oid: Mapped[str | None] = mapped_column(String(255))      # walk only: the column that names each row
+    value_type: Mapped[str] = mapped_column(String(12), default="gauge")   # gauge | counter | state | text
+    scale: Mapped[float | None] = mapped_column(Float)              # multiply the reading (or the rate) by this
+    unit: Mapped[str | None] = mapped_column(String(16))
+    states: Mapped[dict | None] = mapped_column(JSON)               # state: {"1": "up", "2": "down"}
+    ok_values: Mapped[str | None] = mapped_column(String(120))      # state: "1" or "1,3"; anything else is critical
+    category: Mapped[str | None] = mapped_column(String(60))        # heading on the Health tab (default "Custom")
+    match_type: Mapped[str | None] = mapped_column(String(40))      # device type, e.g. Firewall
+    match_sys_oid: Mapped[str | None] = mapped_column(String(255))  # sysObjectID prefix, e.g. 1.3.6.1.4.1.9 (Cisco)
+    match_name: Mapped[str | None] = mapped_column(String(255))     # hostname or IP globs, comma separated
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class MibModule(Base):
+    """A MIB file someone uploaded, compiled to a list of its objects so names can be turned into OIDs."""
+    __tablename__ = "mib_modules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)     # the module name inside the file
+    filename: Mapped[str | None] = mapped_column(String(255))
+    text: Mapped[str] = mapped_column(Text)
+    objects: Mapped[list | None] = mapped_column(JSON)              # [{name, oid, node, type, units, access, states, descr}]
+    error: Mapped[str | None] = mapped_column(Text)                 # why it could not be compiled (often a missing import)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

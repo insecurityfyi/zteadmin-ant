@@ -28,6 +28,7 @@
   <div class="p c5"><div class="ph"><h2>Polling</h2></div>
     <form method="post" action="/settings/interval" class="stack">
       <label class="f">Poll every (seconds)<input type="number" name="interval" id="interval" min="60" max="3600" step="60" value="{{ interval }}"><small>300 seconds suits about 150 devices on one poller. Graph history is kept at full detail for 7 days, then as hourly averages for a year.</small></label>
+      <p class="help" style="margin:0">To poll extra SNMP values, see <a href="/oids">Custom OIDs and MIBs</a>.</p>
       <div><button class="btn" type="submit">Save</button></div></form></div>
 
   <div class="p c7" id="transports"><div class="ph"><h2>Where alerts are sent</h2></div>
