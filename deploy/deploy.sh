@@ -37,6 +37,7 @@ podman tag "$IMAGE:$TAG" "$IMAGE:current"
 
 echo "==> Starting database and app"
 systemctl --user start linkwatch-db.service
+systemctl --user start linkwatch-guacd.service || echo "   (guacd did not start; remote desktop will be unavailable)" >&2
 systemctl --user restart linkwatch-web.service
 
 if health; then

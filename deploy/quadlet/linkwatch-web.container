@@ -3,6 +3,8 @@
 Description=Linkwatch web app
 Requires=linkwatch-db.service
 After=linkwatch-db.service
+# remote desktop (RDP) consoles; the app still runs without it
+Wants=linkwatch-guacd.service
 
 [Container]
 ContainerName=linkwatch-web
