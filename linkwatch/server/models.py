@@ -226,6 +226,7 @@ class Device(Base):
     detail: Mapped[str | None] = mapped_column(String(500))
     extra: Mapped[dict] = mapped_column(JSON, default=dict)
     inventory: Mapped[list | None] = mapped_column(JSON)    # ENTITY-MIB parts: chassis, modules, PSUs, fans
+    access: Mapped[str | None] = mapped_column(String(8))   # remote access override: ssh | rdp | both | none (None = by OS)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     site: Mapped[Site | None] = relationship()
     poller: Mapped[Poller | None] = relationship()

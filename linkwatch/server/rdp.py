@@ -71,7 +71,7 @@ def rdp_page(request: Request, device: int | None = None, poller: int | None = N
     with state.db.session() as s:
         error, saved, t = None, None, None
         try:
-            t = resolve_target(s, device, poller, host, port or 3389)
+            t = resolve_target(s, device, poller, host, port or 3389, kind="rdp")
             row = find_saved(s, t)
             if row is not None:
                 extra = state.vault.open(row.cred_enc) if row.cred_enc else {}
@@ -102,7 +102,7 @@ async def rdp_session(request: Request):
 
     def prepare() -> dict:
         with state.db.session() as s:
-            t = resolve_target(s, body.get("device"), body.get("poller"), body.get("host"), body.get("port") or 3389)
+            t = resolve_target(s, body.get("device"), body.get("poller"), body.get("host"), body.get("port") or 3389, kind="rdp")
             row = find_saved(s, t)
             if body.get("use_saved"):
                 if row is None or not row.cred_enc:

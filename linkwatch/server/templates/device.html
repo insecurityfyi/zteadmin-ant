@@ -18,8 +18,12 @@
   </div>
   <div class="actions">
     {% if d.poller_id %}<form class="inline" method="post" action="/devices/{{ d.id }}/poll"><button class="btn" type="submit" {% if not connected %}disabled title="Poller not connected"{% endif %}>Poll now</button></form>{% endif %}
-    {% if d.poller_id and d.ip and me and me.role == 'admin' %}<a class="btn" href="/ssh?device={{ d.id }}" target="ssh-{{ d.id }}" onclick="window.open(this.href, this.target, 'popup,width=980,height=640'); return false" title="Open an SSH console in a new window, through poller {{ d.poller.name if d.poller else '' }}'s outbound tunnel">SSH</a>
-    <a class="btn" href="/rdp?device={{ d.id }}" target="rdp-{{ d.id }}" onclick="window.open(this.href, this.target, 'popup,width=1280,height=820'); return false" title="Open a remote desktop (RDP) in a new window, through poller {{ d.poller.name if d.poller else '' }}'s outbound tunnel">Remote desktop</a>{% endif %}
+    {% if d.poller_id and d.ip and me and me.role == 'admin' and access.mode != 'none' %}
+    {% if access.ssh %}<a class="btn" href="/ssh?device={{ d.id }}" target="ssh-{{ d.id }}" onclick="window.open(this.href, this.target, 'popup,width=980,height=640'); return false" title="Open an SSH console in a new window, through poller {{ d.poller.name if d.poller else '' }}'s outbound tunnel">SSH</a>
+    {% else %}<button class="btn" type="button" disabled title="{{ access.why }}">SSH</button>{% endif %}
+    {% if access.rdp %}<a class="btn" href="/rdp?device={{ d.id }}" target="rdp-{{ d.id }}" onclick="window.open(this.href, this.target, 'popup,width=1280,height=820'); return false" title="Open a remote desktop (RDP) in a new window, through poller {{ d.poller.name if d.poller else '' }}'s outbound tunnel">Remote desktop</a>
+    {% else %}<button class="btn" type="button" disabled title="{{ access.why }}">Remote desktop</button>{% endif %}
+    {% endif %}
     {% if d.integration_id and d.source not in ('snmp', 'ping') and me and me.role == 'admin' %}<a class="btn" href="/devices/add-snmp?ids={{ d.id }}" title="Poll this device over SNMP too, for interface traffic, sensors and LLDP. The API data stays on the same device.">Add SNMP</a>{% endif %}
     <a class="btn" href="/devices/{{ d.id }}/edit">Edit</a>
   </div>

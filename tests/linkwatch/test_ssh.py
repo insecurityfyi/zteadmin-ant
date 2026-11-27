@@ -43,12 +43,12 @@ def test_poller_advertises_ssh(tmp_path, monkeypatch):
     assert "ssh" not in LanPoller("http://x", tmp_path).features()
 
 
-def _add_device(app, poller_features=("ssh",)):
+def _add_device(app, poller_features=("ssh",), dtype="Firewall"):
     with app.state.lw.db.session() as s:
         p = Poller(name="site-a", key_hash="x" * 64, features=list(poller_features))
         s.add(p)
         s.flush()
-        d = Device(hostname="edge-fw", ip="10.9.9.1", type="Firewall", poller_id=p.id)
+        d = Device(hostname="edge-fw", ip="10.9.9.1", type=dtype, poller_id=p.id)
         s.add(d)
         s.flush()
         return p.id, d.id
