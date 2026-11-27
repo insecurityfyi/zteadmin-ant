@@ -130,7 +130,7 @@ def test_reload_on_old_poller_fails_with_reason(logged_in, app):
         asyncio.run(asyncio.sleep(0.3))
     with app.state.lw.db.session() as s:
         cmds = {c.kind: c for c in s.scalars(select(PollerCommand))}
-    assert cmds["update"].state == "failed" and "update helper" in cmds["update"].detail and "install-poller.sh" in cmds["update"].detail
+    assert cmds["update"].state == "failed" and "working update helper" in cmds["update"].detail and "install-poller.sh" in cmds["update"].detail
     assert cmds["reload"].state == "failed" and "too old to confirm" in cmds["reload"].detail
 
 
@@ -172,13 +172,26 @@ def test_update_through_host_helper(app, live_server, tmp_path, monkeypatch):
         await fake_helper(lan, ok=False, error="!! Could not pull ghcr.io/x")
         c = await _wait_cmd(app, pid, 20)
         assert c.state == "failed" and "Could not pull ghcr.io/x" in c.detail
+        # a control folder the poller can't write to (wrong owner or SELinux label on the host)
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_text("")
+        good_control, lan.control = lan.control, blocker / "control"
+        (good_control / "helper.json").rename(tmp_path / "helper.json")
+        assert not lan.control_writable()
+        lan.helper_info = lambda: {"version": 1}
+        await http.post("/pollers/commands", data={"kind": "update", "poller_ids": [str(pid)]})
+        c = await _wait_cmd(app, pid)
+        assert c.state == "failed" and "can't write to its control folder" in c.detail, c.detail
+        lan.control = good_control
+        del lan.helper_info
+        (tmp_path / "helper.json").rename(good_control / "helper.json")
         # a host without the helper
         (lan.control / "helper.json").unlink()
         with app.state.lw.db.session() as s:
             s.get(Poller, pid).features = [f for f in s.get(Poller, pid).features if f != "self_update"]
         await http.post("/pollers/commands", data={"kind": "update", "poller_ids": [str(pid)]})
         c = await _wait_cmd(app, pid)
-        assert c.state == "failed" and "doesn't have the update helper" in c.detail
+        assert c.state == "failed" and "doesn't have a working update helper" in c.detail
         task.cancel()
         await http.aclose()
     asyncio.run(scenario())

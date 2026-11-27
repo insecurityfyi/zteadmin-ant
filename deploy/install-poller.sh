@@ -183,7 +183,16 @@ install_helper() {
   # the helper's files make it non-empty, so give a new volume that owner ourselves.
   [ "$(stat -c %u "$mp")" = 10001 ] || [ -s "$mp/identity.json" ] || chown 10001:10001 "$mp" 2>/dev/null || true
   install -d -m 0755 "$lib"
-  install -d -m 0755 -o 10001 -g 10001 "$ctl" 2>/dev/null || install -d -m 0755 "$ctl"
+  # The poller (uid 10001) writes its update requests here. Use mkdir, not install -d: on SELinux hosts install
+  # gives the folder the policy's default label for that path (container_var_lib_t), which the container may read
+  # but not write. Copy the volume's own label (container_file_t, with its MCS categories) instead, and set the
+  # owner every time, so a folder left by an earlier install is fixed too.
+  mkdir -p "$ctl"
+  chown 10001:10001 "$ctl" 2>/dev/null || true
+  chmod 0755 "$ctl"
+  if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then
+    chcon -R --reference="$mp" "$ctl" 2>/dev/null || say "Couldn't copy the volume's SELinux label to $ctl"
+  fi
   # a copy of this script for the helper to fall back on when GitHub can't be reached (replaced atomically:
   # the helper may be running the old copy right now)
   tmp="$(mktemp "$lib/.install.XXXXXX")"
@@ -226,6 +235,7 @@ fi
 img="${after#sha256:}"
 printf '{"id":"%s","ok":%s,"changed":%s,"image":"%s","error":"%s","at":%s}\n' "$id" "$ok" "$changed" "${img:0:19}" "$err" "$(date +%s)" > "$CTL/.update.result.tmp"
 chmod 0644 "$CTL/.update.result.tmp"
+if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then chcon --reference="$CTL" "$CTL/.update.result.tmp" 2>/dev/null || true; fi
 mv -f "$CTL/.update.result.tmp" "$CTL/update.result"
 echo "Update $id finished: ok=$ok"
 HELPER
@@ -256,6 +266,7 @@ UNIT
   systemctl restart linkwatch-poller-helper.path 2>/dev/null || systemctl start linkwatch-poller-helper.path || true
   printf '{"version":1,"runtime":"%s","installed":%s}\n' "$RT" "$(date +%s)" > "$ctl/helper.json"
   chmod 0644 "$ctl/helper.json"
+  if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then chcon --reference="$mp" "$ctl/helper.json" 2>/dev/null || true; fi
   say "Installed the update helper (Pollers > Update in Linkwatch now works for this poller)"
 }
 

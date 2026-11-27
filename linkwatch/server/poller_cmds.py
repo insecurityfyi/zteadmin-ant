@@ -180,8 +180,9 @@ async def run_update(state, pid: int, cid: int) -> tuple[str, str | None]:
     if pid not in hub.conns:
         raise CommandFailed("The poller is not connected.")
     if "self_update" not in feats:
-        raise CommandFailed("This poller's host doesn't have the update helper yet. Run this once on the host, after "
-                            f"which Update works from here: {update_command(name)}")
+        raise CommandFailed("This poller's host doesn't have a working update helper yet (not installed, or the poller "
+                            "can't write to its control folder). Run this once on the host, after which Update works "
+                            f"from here: {update_command(name)}")
     req = f"u{cid}-{secrets.token_hex(6)}"
     fut: asyncio.Future = asyncio.get_running_loop().create_future()
     hub.update_waiters[req] = (pid, fut)
