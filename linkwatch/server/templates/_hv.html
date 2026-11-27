@@ -1,0 +1,25 @@
+{# Shared pieces for the Hypervisors pages. #}
+{% macro hidden(c, name, node, vtype=None, vmid=None, back='') %}<input type="hidden" name="action" value="{{ name }}"><input type="hidden" name="node" value="{{ node }}">{% if vtype %}<input type="hidden" name="type" value="{{ vtype }}"><input type="hidden" name="vmid" value="{{ vmid }}">{% endif %}<input type="hidden" name="back" value="{{ back or (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) }}"><input type="hidden" name="confirm" value=""><input type="hidden" name="confirm_text" value="">{% endmacro %}
+
+{% macro confirm_attrs(a, name, expect, what) %}{% if a.confirm %} data-confirm="{{ a.confirm }}" data-expect="{{ expect }}" data-title="{{ a.label }} {{ what }}?" data-help="{{ a.help }}"{% endif %}{% endmacro %}
+
+{# One button that posts one action. #}
+{% macro act(c, actions, name, node, vtype=None, vmid=None, what='', label=None, cls='btn sm', back='') %}{% set a = actions[name] %}<form class="inline" method="post" action="/hypervisors/{{ c.id }}/action"{{ confirm_attrs(a, name, node if a.scope == 'node' else vmid, what) }}>{{ hidden(c, name, node, vtype, vmid, back) }}<button class="{{ cls }}{{ ' danger' if a.confirm == 'typed' else '' }}" type="submit"{% if a.help %} title="{{ a.help }}"{% endif %}>{{ label or a.label }}</button></form>{% endmacro %}
+
+{# The confirmation dialog, the live task panel and the script; include once per page. #}
+{% macro scaffolding(c, task=None) %}
+<dialog id="hv-confirm" class="hv-dialog" aria-labelledby="hv-confirm-title">
+  <form method="dialog">
+    <h2 id="hv-confirm-title">Are you sure?</h2>
+    <p class="help" id="hv-confirm-help"></p>
+    <div id="hv-confirm-typed" hidden><label for="hv-confirm-input" style="display:block;font-size:13px;margin-bottom:6px">Type <b class="mono" id="hv-confirm-expect"></b> to confirm</label><input type="text" autocomplete="off" spellcheck="false" id="hv-confirm-input" style="width:100%"></div>
+    <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn" value="cancel" type="submit">Cancel</button><button class="btn pri" value="ok" type="submit" id="hv-confirm-ok">Confirm</button></div>
+  </form>
+</dialog>
+{% if task %}<div class="p hv-task" data-task="{{ task }}" data-iid="{{ c.id }}" role="status" aria-live="polite"><div class="ph"><h2>Task <span class="hv-task-state tag">running</span></h2><span class="sub mono" style="overflow-wrap:anywhere">{{ task }}</span></div><pre class="hv-log">Waiting for the task log…</pre></div>{% endif %}
+<script src="/static/hv.js?v={{ version }}" defer></script>
+{% endmacro %}
+
+{% macro power_dot(status) %}<span class="dot {{ {'running':'d-up','stopped':'d-off','paused':'d-warn','suspended':'d-warn'}.get(status, 'd-off') }}" title="{{ status }}"></span>{% endmacro %}
+
+{% macro control_off_note(c, is_admin) %}{% if is_admin and not c.control %}<div class="flash warn" role="status">Control actions are off for <b>{{ c.name }}</b>, so this page is read-only. To start, stop, migrate, clone or snapshot guests, tick <i>Allow control actions</i> in <a href="/integrations/{{ c.id }}">the integration's settings</a> and give the API token the privileges listed in the <a href="https://github.com/insecurityfyi/zteadmin-ant/blob/main/docs/proxmox.md" target="_blank" rel="noopener">Proxmox guide</a>.</div>{% endif %}{% endmacro %}

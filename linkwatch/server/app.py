@@ -7,7 +7,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import jinja2
@@ -67,6 +67,17 @@ def fmt_ago(dt: datetime | None) -> str:
     return f"{int(secs // 86400)} d ago"
 
 
+def fmt_ts(epoch) -> str:
+    """A Unix timestamp (as Proxmox reports them): "3 h ago" when recent, else the date."""
+    try:
+        dt = datetime.fromtimestamp(float(epoch), timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "–"
+    if (utcnow() - dt).total_seconds() < 86400 * 2:
+        return fmt_ago(dt)
+    return dt.strftime("%d %b %Y %H:%M UTC")
+
+
 def fmt_duration(seconds) -> str:
     if seconds is None:
         return "–"
@@ -124,7 +135,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         # a key an integration didn't send renders as "–", not a template error
         return lambda v, *a: fn(None if isinstance(v, jinja2.Undefined) else v, *a)
     templates.env.filters.update({k: missing_is_none(f) for k, f in dict(
-        bps=fmt_bps, ago=fmt_ago, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
+        bps=fmt_bps, ago=fmt_ago, ts=fmt_ts, duration=fmt_duration, speed=fmt_speed, bytes=fmt_bytes,
         num=lambda n: f"{int(n or 0):,}", pct=lambda v: "–" if v is None else f"{v:.0f}%").items()})
     from . import gateway
     gateway.PUBLIC_URL = config.public_url.rstrip("/")
@@ -254,6 +265,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .api import router as api_router
     from .dashboard import router as dashboard_router
     from .rules_views import router as rules_router
+    from .hypervisor_views import router as hypervisor_router
     from .integration_views import router as integration_views_router
     from .nms_views import router as nms_router
     from .path_views import router as path_router
@@ -273,5 +285,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(path_router)
     app.include_router(ssh_router)
     app.include_router(rdp_router)
+    app.include_router(hypervisor_router)
     app.include_router(admin_router)
     return app
