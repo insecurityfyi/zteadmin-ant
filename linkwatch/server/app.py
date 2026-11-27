@@ -272,12 +272,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .path_views import router as path_router
     from .rdp import router as rdp_router
     from .ssh import router as ssh_router
+    from .snmp_views import router as snmp_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
     app.include_router(api_router)
     app.include_router(dashboard_router)
     app.include_router(rules_router)
+    app.include_router(snmp_router)      # before web: /devices/add-snmp must not be read as /devices/{id}
     app.include_router(web_router)
     app.include_router(unifi_router)
     app.include_router(sso_router)

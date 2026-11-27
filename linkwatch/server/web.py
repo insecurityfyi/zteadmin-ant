@@ -40,11 +40,10 @@ from .notify import send_one
 from .alerts import AlertEvent
 from . import events
 from .security import mask, new_secret, sha256
+from .snmp_attach import SNMP_AUTH, SNMP_PRIV, read_snmp_creds
 from .themes import layout_for, theme_for
 
 router = APIRouter(include_in_schema=False)
-SNMP_AUTH = ["SHA", "SHA224", "SHA256", "SHA384", "SHA512", "MD5"]
-SNMP_PRIV = ["AES", "AES192", "AES256", "DES"]
 
 
 def st(request: Request):
@@ -125,6 +124,8 @@ async def devices_bulk(request: Request):
     form = await request.form()
     action = str(form.get("action") or "")
     ids = [int(v) for v in form.getlist("device_id") if str(v).isdigit()]
+    if action == "add_snmp" and ids:
+        return back("/devices/add-snmp?ids=" + ",".join(str(i) for i in ids))
     if action not in ("disable", "enable", "delete") or not ids:
         flash(request, "Tick some devices and choose what to do with them.", "warn")
         return back(str(form.get("back") or "/devices"))
@@ -881,25 +882,13 @@ def settings_interval(request: Request, interval: int = Form(...)):
 async def snmp_profile_save(request: Request):
     form = await request.form()
     name = (form.get("name") or "").strip()
-    version = form.get("version") or "2c"
     if not name:
         flash(request, "Give the credential set a name.", "warn")
         return back("/settings#snmp")
-    if version == "2c":
-        cfg = {"version": "2c", "community": form.get("community") or ""}
-        if not cfg["community"]:
-            flash(request, "Enter the community string.", "warn")
-            return back("/settings#snmp")
-    else:
-        cfg = {"version": "3", "username": form.get("username") or "", "level": form.get("level") or "authPriv",
-               "auth_protocol": form.get("auth_protocol") or "SHA", "auth_key": form.get("auth_key") or "",
-               "priv_protocol": form.get("priv_protocol") or "AES", "priv_key": form.get("priv_key") or ""}
-        if not cfg["username"] or (cfg["level"] != "noAuthNoPriv" and len(cfg["auth_key"]) < 8) or \
-                (cfg["level"] == "authPriv" and len(cfg["priv_key"]) < 8):
-            flash(request, "SNMPv3 needs a username, and passphrases of at least 8 characters.", "warn")
-            return back("/settings#snmp")
-    if form.get("port"):
-        cfg["port"] = int(form["port"])
+    cfg, err = read_snmp_creds(form)
+    if err:
+        flash(request, err, "warn")
+        return back("/settings#snmp")
     with st(request).db.session() as s:
         if s.scalar(select(SnmpProfile).where(SnmpProfile.name == name)):
             flash(request, "A credential set with that name already exists.", "warn")

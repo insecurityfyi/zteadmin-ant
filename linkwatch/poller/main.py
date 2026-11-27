@@ -47,6 +47,10 @@ from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
 from .spool import Spool
 
+# what the "Add SNMP" Test button reads to prove a set of credentials works
+SYSTEM_OIDS = {"1.3.6.1.2.1.1.5.0": "sysName", "1.3.6.1.2.1.1.1.0": "sysDescr", "1.3.6.1.2.1.1.2.0": "sysObjectID",
+               "1.3.6.1.2.1.1.3.0": "sysUpTime"}
+
 log = logging.getLogger("linkwatch.poller")
 
 
@@ -170,7 +174,7 @@ class Poller:
             feats += ["ssh", "pveterm"]
         if tunnel.allows(3389):
             feats.append("rdp")
-        feats.append("rpc")
+        feats += ["rpc", "snmp_probe"]
         return feats
 
     async def handle(self, msg: dict) -> None:
@@ -232,12 +236,20 @@ class Poller:
         """Read one OID (or walk one column) from one device right now, for the custom OID page's Test button."""
         out: dict[str, Any] = {"type": "snmp_test_result", "req": str(msg.get("req") or "")}
         dev = next((d for d in self.devices if d.get("id") == msg.get("device_id")), None)
+        if isinstance(msg.get("snmp"), dict) and msg.get("ip"):
+            dev = {"ip": str(msg["ip"]), "snmp": msg["snmp"]}     # credentials being tried before they are saved
         oid = str(msg.get("oid") or "").strip().strip(".")
         try:
             if dev is None or not dev.get("snmp"):
                 raise SnmpError("This poller has no SNMP credentials for that device")
             sess = SnmpSession(dev["ip"], dev["snmp"], engine=self.engine)
-            if msg.get("mode") == "walk":
+            if msg.get("mode") == "system":
+                got = await asyncio.wait_for(sess.get(list(SYSTEM_OIDS)), timeout=20)
+                if all(v is None for v in got.values()):
+                    raise SnmpError("The device answered but returned no system information")
+                out["rows"] = [{"index": oid_, "value": got.get(oid_), "label": label} for oid_, label in SYSTEM_OIDS.items()
+                               if got.get(oid_) is not None]
+            elif msg.get("mode") == "walk":
                 values = await asyncio.wait_for(sess.walk(oid, max_rows=50), timeout=20)
                 labels = {}
                 if msg.get("label_oid"):

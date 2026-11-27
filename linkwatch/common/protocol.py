@@ -13,6 +13,8 @@ Server -> poller
     ping          {"type": "ping"}
     snmp_test     {"type": "snmp_test", "req": "...", "device_id": 12, "oid": "1.3.6...", "mode": "get"|"walk", "label_oid": null}
                   Read one OID now; answered with snmp_test_result.
+                  With "ip" and "snmp" (credentials) instead of a configured device, and "mode": "system", it reads
+                  sysName, sysDescr, sysObjectID and sysUpTime: the "Add SNMP" Test button (poller feature "snmp_probe").
     tunnel_open   {"type": "tunnel_open", "sid": "...", "host": "10.0.0.1", "port": 22}
                   The poller opens a second outbound WebSocket to /api/poller/ws/tunnel/<sid> (same Bearer key),
                   connects to host:port, sends {"ok": true} or {"ok": false, "error": "..."} as a text frame,
