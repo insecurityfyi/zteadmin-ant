@@ -53,6 +53,22 @@ class Poller(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     integrations: Mapped[list | None] = mapped_column(JSON)    # integration kinds its image supports (None = too old to say)
     features: Mapped[list | None] = mapped_column(JSON)        # optional tools its image has, e.g. ["mtr"]
+    build: Mapped[str | None] = mapped_column(String(64))       # image build id (e.g. sha-0123abcd4567), "dev" for local builds
+
+
+class PollerCommand(Base):
+    """A command pushed to a poller from the Pollers page (reload config, update) and how it ended."""
+    __tablename__ = "poller_commands"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poller_id: Mapped[int] = mapped_column(ForeignKey("pollers.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))                  # reload | update
+    state: Mapped[str] = mapped_column(String(12), default="pending")   # pending | ok | failed
+    detail: Mapped[str | None] = mapped_column(String(1000))
+    username: Mapped[str | None] = mapped_column(String(64))
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    before: Mapped[str | None] = mapped_column(String(120))        # version/build when it was sent
+    after: Mapped[str | None] = mapped_column(String(120))         # version/build it reported back
 
 
 class EnrollToken(Base):

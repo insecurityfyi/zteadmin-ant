@@ -17,4 +17,8 @@ COPY linkwatch/poller linkwatch/poller
 RUN useradd --create-home --uid 10001 linkwatch && mkdir -p /var/lib/linkwatch && chown linkwatch /var/lib/linkwatch
 USER linkwatch
 VOLUME ["/var/lib/linkwatch"]
+# The build id the poller reports to the server (CI passes sha-<commit>), so an update can be verified.
+# Last, so a new id doesn't invalidate the cached layers above.
+ARG LW_BUILD=dev
+ENV LW_BUILD=${LW_BUILD}
 CMD ["python", "-m", "linkwatch.poller"]

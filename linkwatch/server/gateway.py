@@ -67,6 +67,9 @@ class Hub:
         self.tests: dict[str, asyncio.Future] = {}          # custom OID "Test" requests waiting for a poller's answer
         # requests the server sends a poller and waits on (Proxmox actions and lookups)
         self.pending_rpcs: dict[str, tuple[int, asyncio.Future]] = {}
+        # update requests waiting for the poller host's helper to report back (see poller_cmds.run_update)
+        self.update_waiters: dict[str, tuple[int, asyncio.Future]] = {}
+        self.cmd_tasks: set[asyncio.Task] = set()
 
     def interval(self, s) -> int:
         try:
@@ -80,10 +83,15 @@ class Hub:
             row = s.scalar(select(EnrollToken).where(EnrollToken.token_hash == sha256(token or "")))
             if row is None or row.used_at is not None or row.expires_at < utcnow():
                 raise EnrollError("The enrollment token is invalid, used or expired. Create a new one on the Pollers page.")
-            base = (name or hostname or "poller").strip()[:100] or "poller"
-            final, n = base, 2
-            while s.scalar(select(Poller.id).where(Poller.name == final)):
-                final, n = f"{base}-{n}", n + 1
+            from .poller_cmds import next_poller_name
+            scheme = (get_setting(s, "poller_base_name", "") or "").strip()
+            if scheme:
+                final = next_poller_name(s, scheme)       # <base>.1, <base>.2, ...: the lowest number not in use
+            else:
+                base = (name or hostname or "poller").strip()[:100] or "poller"
+                final, n = base, 2
+                while s.scalar(select(Poller.id).where(Poller.name == final)):
+                    final, n = f"{base}-{n}", n + 1
             key = new_secret("lwp", 32)
             poller = Poller(name=final, key_hash=sha256(key), hostname=hostname, version=version, last_ip=ip)
             s.add(poller)
@@ -158,6 +166,13 @@ class Hub:
             return {"error": "No answer from the poller within 30 seconds."}
         finally:
             self.tests.pop(req, None)
+
+    async def send(self, poller_id: int, message: dict) -> bool:
+        ws = self.conns.get(poller_id)
+        if ws is None:
+            return False
+        await ws.send_text(json.dumps(message))
+        return True
 
     def send_soon(self, poller_id: int | None, message: dict) -> bool:
         ws = self.conns.get(poller_id or 0)
@@ -372,7 +387,8 @@ class Hub:
                     kinds = [str(k)[:32] for k in msg.get("integrations") or []][:50] or None
                     feats = [str(k)[:32] for k in msg.get("features") or []][:20]
                     await asyncio.to_thread(self._touch, poller.id, version=str(msg.get("version") or "")[:32] or None,
-                                            hostname=str(msg.get("hostname") or "")[:255] or None, integrations=kinds)
+                                            hostname=str(msg.get("hostname") or "")[:255] or None, integrations=kinds,
+                                            build=str(msg.get("build") or "")[:64] or None)
                     await asyncio.to_thread(self._set_features, poller.id, feats)
                     await asyncio.to_thread(self._check_support, poller.id, kinds)
                 elif t == "results":
@@ -386,6 +402,10 @@ class Hub:
                         fut.set_result(msg)
                 elif t == "rpc_result":
                     self._rpc_result(poller.id, msg)
+                elif t == "update_result":
+                    entry = self.update_waiters.get(str(msg.get("id") or ""))
+                    if entry is not None and entry[0] == poller.id and not entry[1].done():
+                        entry[1].set_result(msg)
                 elif t == "pong":
                     await asyncio.to_thread(self._touch, poller.id)
         except (WebSocketDisconnect, RuntimeError):

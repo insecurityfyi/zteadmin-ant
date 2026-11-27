@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Pollers{% endblock %}
+{% macro cmd_status(c) -%}
+{% if c %}<span class="{{ 'okc' if c.state == 'ok' else ('bad' if c.state == 'failed' else 'wa') }}"><b>{{ cmd_kinds.get(c.kind, c.kind) }}</b> {{ {'ok': 'passed', 'failed': 'failed', 'pending': 'in progress…'}[c.state] }}</span>
+<span class="sub">· {{ c.username or 'someone' }}, {{ (c.finished_at or c.requested_at)|ago }}</span>{% if c.detail %}<br><span class="sub">{{ c.detail }}</span>{% endif %}{% endif %}
+{%- endmacro %}
 {% block content %}
 <div class="head"><div><h1>Pollers</h1><p>A poller runs on your local network, polls devices over SNMP, ping and local APIs, and sends results out to this server over HTTPS. Nothing connects in to your network.</p></div>
   <form method="post" action="/pollers/token"><button class="btn pri" type="submit">Add poller</button></form></div>
@@ -7,26 +11,36 @@
 <div class="p" id="install"><div class="ph"><h2>Install the new poller</h2><span class="sub">This token is shown once, works once, and expires in 24 hours</span></div>
   <p style="margin-top:0">On any Linux machine on the LAN (a small VM, an LXC container on Proxmox, or a Raspberry Pi), run this as root. It installs Podman if needed, checks it can reach this server, and starts the poller so it comes back after a reboot:</p>
 <pre class="cmd">curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh \
-  | sudo bash -s -- --server {{ public_url }} --token {{ new_token }} --name poller-hq-01</pre>
-  <p class="help">Change <code>poller-hq-01</code> to a name for this site. To update the poller later, run the same <code>curl ... | sudo bash</code> with no arguments. In a Proxmox LXC container, turn on Options &gt; Features &gt; Nesting first.</p>
+  | sudo bash -s -- --server {{ public_url }} --token {{ new_token }}{% if not base_name %} --name poller-hq-01{% endif %}</pre>
+  <p class="help">{% if base_name %}It will be named <b class="mono">{{ next_name }}</b> (the naming scheme in <a href="/settings#pollers">Settings</a>).{% else %}Change <code>poller-hq-01</code> to a name for this site, or set a naming scheme in <a href="/settings#pollers">Settings</a>.{% endif %} The script also installs a small update helper on the host, so the poller can be updated from this page later. In a Proxmox LXC container, turn on Options &gt; Features &gt; Nesting first.</p>
   <details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Or start the container by hand</summary>
 <pre class="cmd" style="margin-top:8px">podman run -d --name linkwatch-poller --restart=always \
   --network host --cap-add=NET_RAW \
   -e LW_SERVER={{ public_url }} \
   -e LW_ENROLL_TOKEN={{ new_token }} \
-  -e LW_POLLER_NAME=poller-hq-01 \
-  -v linkwatch-poller:/var/lib/linkwatch \
+{% if not base_name %}  -e LW_POLLER_NAME=poller-hq-01 \
+{% endif %}  -v linkwatch-poller:/var/lib/linkwatch \
   ghcr.io/insecurityfyi/linkwatch-poller:latest</pre>
-  <p class="help">Replace <code>podman</code> with <code>docker</code> if that is what the machine has. The first start enrolls the poller and saves its own key in the volume; after that the token is no longer needed. See <code>docs/poller.md</code> for a systemd setup.</p></details>
+  <p class="help">Replace <code>podman</code> with <code>docker</code> if that is what the machine has. The first start enrolls the poller and saves its own key in the volume; after that the token is no longer needed. A poller started by hand has no update helper, so Update on this page can't reach it until you run the install script on it once. See <code>docs/poller.md</code> for a systemd setup.</p></details>
 </div>
 {% endif %}
 {% if pollers %}
+{% set admin = me and me.role == 'admin' %}
+{% if admin %}
+<form id="bulk" method="post" action="/pollers/commands" class="p" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+  <label class="chk"><input type="checkbox" id="bulk-all"> Select all connected</label>
+  <span class="sub" id="bulk-count">None selected</span>
+  <button class="btn sm" type="submit" name="kind" value="reload" id="bulk-reload" disabled>Reload config</button>
+  <button class="btn sm" type="submit" name="kind" value="update" id="bulk-update" disabled>Update</button>
+  <span class="help" style="flex-basis:100%;margin:0"><b>Reload config</b> sends each poller its devices, credentials and probes again and checks it holds what it was sent. <b>Update</b> has the poller's host pull the latest image and restart it, then confirms the version it reconnects with (needs the update helper the install script adds). Results show on each poller.</span>
+</form>
+{% endif %}
 <div class="grid">
 {% for p in pollers %}
   {% set live = p.id in connected %}
-  <div class="p c6"><div class="ph" style="margin-bottom:8px"><div><h2 style="display:flex;align-items:center;gap:8px"><span class="dot {{ 'd-up' if live else ('d-off' if p.revoked or not p.last_seen else 'd-down') }}"></span>{{ p.name }}</h2>
+  <div class="p c6" data-poller="{{ p.id }}"><div class="ph" style="margin-bottom:8px"><div><h2 style="display:flex;align-items:center;gap:8px">{% if admin and not p.revoked %}<input type="checkbox" name="poller_ids" value="{{ p.id }}" form="bulk" class="pick" data-live="{{ 1 if live else 0 }}" aria-label="Select {{ p.name }}">{% endif %}<span class="dot {{ 'd-up' if live else ('d-off' if p.revoked or not p.last_seen else 'd-down') }}"></span>{{ p.name }}</h2>
       <div class="sub">{{ 'Revoked' if p.revoked else ('Connected' if live else ('Waiting for first connection' if not p.last_seen else 'Offline, last seen ' ~ (p.last_seen|ago))) }}</div></div>
-      <span>{% if p.version %}<span class="tag">v{{ p.version }}</span>{% endif %}
+      <span>{% if p.version %}<span class="tag" title="{{ 'Build ' ~ p.build if p.build else '' }}">v{{ p.version }}{% if p.build and p.build != 'dev' %} · {{ p.build[4:11] if p.build.startswith('sha-') else p.build }}{% endif %}</span>{% endif %}
       {% set missing = poller_kinds|reject('in', p.integrations or [])|list %}
       {% if p.last_seen and missing %}<span class="tag" style="color:var(--warn);border-color:var(--warn)" title="Its image doesn't support: {{ missing|join(', ') }}">update available</span>{% endif %}</span></div>
     {% if p.last_seen and missing and not p.revoked %}<p class="help wa" style="margin:0 0 10px">This poller's image is older than the server and can't run {{ missing|join(', ') }}. On the poller host run <code>{{ update_command(p.name) }}</code> (no token needed: it keeps the poller's key).</p>{% endif %}
@@ -35,6 +49,8 @@
       <div class="kpi"><span>Local APIs</span><b>{{ integ_counts.get(p.id, 0) }}</b></div>
       <div class="kpi"><span>Last cycle</span><b>{{ ((p.last_cycle_ms or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if (p.last_cycle_ms or 0) > interval * 1000 else '' }}">of {{ interval }} s</em></div>
     </div>
+    {% set c = commands.get(p.id) %}
+    <p class="help cmd-status" id="cmd-{{ p.id }}" data-state="{{ c.state if c else '' }}" data-id="{{ c.id if c else '' }}" style="margin:0 0 10px{% if not c %};display:none{% endif %}">{{ cmd_status(c) }}</p>
     <dl class="kv"><dt>Host</dt><dd>{{ p.hostname or '–' }}</dd><dt>Connects from</dt><dd class="mono">{{ p.last_ip or '–' }}</dd><dt>Last heard</dt><dd>{{ p.last_seen|ago }}</dd><dt>Enrolled</dt><dd>{{ p.created_at.strftime('%d %b %Y') }}</dd></dl>
     {% if not p.revoked and me and me.role == 'admin' %}
     <form class="sshto" method="get" action="/ssh" target="ssh-poller-{{ p.id }}" onsubmit="var b=event.submitter; this.target=(b&&b.value==='rdp'?'rdp':'ssh')+'-poller-{{ p.id }}'; window.open('', this.target, b&&b.value==='rdp'?'popup,width=1280,height=820':'popup,width=980,height=640')" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px">
@@ -47,13 +63,69 @@
     </form>
     <p class="help" style="margin:4px 0 0">Leave the port empty for the standard one (22 for SSH, 3389 for RDP). 127.0.0.1 is the poller host itself when the poller runs with host networking. Devices also have SSH and Remote desktop buttons on their page.</p>
     {% endif %}
-    <div class="actions" style="margin-top:12px">
-      {% if not p.revoked %}<form class="inline" method="post" action="/pollers/{{ p.id }}/revoke" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn sm danger" type="submit">Revoke</button></form>
+    <div class="actions" style="margin-top:12px;flex-wrap:wrap">
+      {% if not p.revoked %}
+      {% if admin %}
+      {% for k, label in cmd_kinds.items() %}<form class="inline" method="post" action="/pollers/commands"><input type="hidden" name="poller_ids" value="{{ p.id }}"><button class="btn sm" type="submit" name="kind" value="{{ k }}" {% if not live %}disabled title="Poller not connected"{% elif k == 'update' and 'self_update' not in (p.features or []) %}title="This host has no update helper yet; pressing Update explains how to add it"{% endif %}>{{ label }}</button></form>
+      {% endfor %}{% endif %}
+      <form class="inline" method="post" action="/pollers/{{ p.id }}/revoke" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn sm danger" type="submit">Revoke</button></form>
       {% else %}<form class="inline" method="post" action="/pollers/{{ p.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form>{% endif %}
     </div>
+    {% if admin %}
+    <details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Rename</summary>
+      <form method="post" action="/pollers/{{ p.id }}/rename" style="display:flex;gap:6px;margin-top:8px"><input type="text" name="name" value="{{ p.name }}" maxlength="120" required aria-label="New name" style="flex:1;font-size:13px;padding:4px 8px"><button class="btn sm" type="submit">Save</button></form>
+      {% if base_name %}<p class="help" style="margin:4px 0 0">The naming scheme only applies to new pollers; the next free name is <code>{{ next_name }}</code>.</p>{% endif %}</details>
+    <details style="margin-top:6px"><summary class="sub bad" style="cursor:pointer">Factory reset</summary>
+      <form method="post" action="/pollers/{{ p.id }}/factory-reset" class="stack" style="margin-top:8px" data-name="{{ p.name }}" onsubmit="return this.confirm_name.value.trim() === this.dataset.name">
+        <p class="help" style="margin:0">The poller deletes its key, its buffered results and its update state, and goes back to waiting for an enrollment token, as if it had just been installed. It is then removed from this server and its devices, local APIs and path probes are left without a poller. To use the machine again, press Add poller and run the install command with the new token. This can't be undone.</p>
+        <label class="f"><span>Type <b class="mono">{{ p.name }}</b> to confirm</span><input type="text" name="confirm_name" autocomplete="off" spellcheck="false" required></label>
+        <label class="chk"><input type="checkbox" name="force"> Remove it from the server even if the poller doesn't answer</label>
+        <div><button class="btn sm danger" type="submit" {% if not live %}title="Not connected: only works with the box above ticked"{% endif %}>Factory reset {{ p.name }}</button></div>
+      </form></details>
+    {% endif %}
   </div>
 {% endfor %}
 </div>
+<script>
+(function () {
+  var bulk = document.getElementById('bulk');
+  if (bulk) {
+    var picks = function () { return Array.prototype.slice.call(document.querySelectorAll('input.pick')); };
+    var sync = function () {
+      var n = picks().filter(function (c) { return c.checked; }).length;
+      document.getElementById('bulk-count').textContent = n ? n + ' selected' : 'None selected';
+      document.getElementById('bulk-reload').disabled = document.getElementById('bulk-update').disabled = !n;
+    };
+    document.getElementById('bulk-all').addEventListener('change', function (e) {
+      picks().forEach(function (c) { c.checked = e.target.checked && c.dataset.live === '1'; });
+      sync();
+    });
+    picks().forEach(function (c) { c.addEventListener('change', sync); });
+    sync();
+  }
+  // follow commands that are still running
+  var esc = function (t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; };
+  var pending = function () { return document.querySelector('.cmd-status[data-state="pending"]'); };
+  var tick = function () {
+    fetch('/ui/pollers/status', {credentials: 'same-origin'}).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+      if (!data) return;
+      Object.keys(data).forEach(function (pid) {
+        var c = data[pid].command, el = document.getElementById('cmd-' + pid);
+        if (!c || !el || (el.dataset.state !== 'pending' && el.dataset.id === String(c.id))) return;
+        var word = {ok: 'passed', failed: 'failed', pending: 'in progress…'}[c.state];
+        var cls = c.state === 'ok' ? 'okc' : (c.state === 'failed' ? 'bad' : 'wa');
+        el.innerHTML = '<span class="' + cls + '"><b>' + esc(c.label) + '</b> ' + word + '</span> <span class="sub">· ' + esc(c.username || 'someone') +
+          (c.state === 'pending' ? ', waiting' : ', just now') + '</span>' + (c.detail ? '<br><span class="sub">' + esc(c.detail) + '</span>' : '');
+        el.dataset.state = c.state;
+        el.dataset.id = String(c.id);
+        el.style.display = '';
+      });
+      if (pending()) setTimeout(tick, 3000);
+    }).catch(function () { setTimeout(tick, 10000); });
+  };
+  if (pending()) setTimeout(tick, 2000);
+})();
+</script>
 {% elif not new_token %}
 <div class="p empty-state"><h2>No pollers yet</h2><p>Press Add poller to get a one-time install command.</p></div>
 {% endif %}

@@ -71,6 +71,7 @@ jobs:
           context: .
           file: Dockerfile.poller
           platforms: linux/amd64,linux/arm64
+          build-args: LW_BUILD=${{ steps.tag.outputs.tag }}
           push: true
           tags: |
             ${{ env.POLLER_IMAGE }}:${{ steps.tag.outputs.tag }}
