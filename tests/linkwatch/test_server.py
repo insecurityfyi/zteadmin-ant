@@ -235,6 +235,58 @@ def test_integration_pages(logged_in, app):
     assert series["a"] == [1.0] and series["b"] == [3.0] and series["c"] == [1.0]
 
 
+def test_sse_integration_pages(logged_in, app):
+    import copy
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Integration, IntegrationMetric
+    from linkwatch.integrations import REGISTRY
+    from tests.linkwatch.sample_integrations import DATA, RECORDS, SSE_KINDS
+
+    ids = {}
+    with app.state.lw.db.session() as s:
+        for kind in SSE_KINDS:
+            integ = Integration(kind=kind, name=f"My {kind}", config_enc=app.state.lw.vault.seal({}), status="never")
+            s.add(integ)
+            s.flush()
+            ingest_integration(s, Alerter(s), integ, {"ok": True, "records": RECORDS[kind], "data": copy.deepcopy(DATA[kind])})
+            ids[kind] = integ.id
+        keys = {(m.integration_id, m.key) for m in s.scalars(select(IntegrationMetric))}
+    for kind, iid in ids.items():
+        assert {(iid, k) for k in ("sites:status", "private:status", "users:devices", "apps:ai", "site:s1")} <= keys, kind
+        page = logged_in.get(f"/integrations/{iid}/overview").text
+        assert "AI apps in use" in page and "DLP events refused" in page and "Prompts sent to AI apps" in page, kind
+        assert '?tab=dlp' in page and "1 optional panel" in page
+        assert "built-in method" not in logged_in.get(f"/integrations/{iid}/overview?tab=sites").text
+        for tab, text in [("sites", "Austin Lab"), ("sites", "Phase 1 down"), ("sites", "DFW1"), ("private", "not registered"), ("users", "LT-0042"),
+                          ("policy", "Block DeepSeek"), ("apps", "ChatGPT Enterprise"), ("apps", "unsanctioned"), ("dlp", "DLP profile definitions")]:
+            if tab not in REGISTRY[kind].sections:
+                continue          # Cato has no private-access connectors, so no tab for them
+            r = logged_in.get(f"/integrations/{iid}/overview?tab={tab}")
+            assert r.status_code == 200 and text in r.text, (kind, tab)
+        if "private" in REGISTRY[kind].sections:
+            inv = logged_in.get(f"/integrations/{iid}/overview?tab=private").text
+            assert "pub-dc1" in inv and "Dallas HQ" not in inv
+    for kind in SSE_KINDS:
+        assert logged_in.get(f"/integrations/new?kind={kind}").status_code == 200
+
+
+def test_sse_pages_with_sparse_data(logged_in, app):
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Integration
+    with app.state.lw.db.session() as s:
+        integ = Integration(kind="cato", name="Sparse cato", config_enc=app.state.lw.vault.seal({}))
+        s.add(integ)
+        s.flush()
+        data = {"type": "cato", "sse": True, "products": {k: {"ok": True, "objects": 0} for k in ("sites", "users", "policy", "apps", "dlp")},
+                "sites": {"items": []}, "users": {"total": 0}, "policy": {}, "apps": {"items": []}, "dlp": {}}
+        ingest_integration(s, Alerter(s), integ, {"ok": True, "records": [], "data": data})
+        iid = integ.id
+    for tab in ("overview", "sites", "users", "policy", "apps", "dlp", "private"):
+        assert logged_in.get(f"/integrations/{iid}/overview?tab={tab}").status_code == 200, tab
+
+
 def test_integration_page_before_first_sync(logged_in, app):
     from linkwatch.server.models import Integration
     with app.state.lw.db.session() as s:

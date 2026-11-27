@@ -41,4 +41,11 @@ def integration_overview(request: Request, iid: int, tab: str = "overview"):
         ctx.update(tabs=tabs, tab=tab if tab in dict(tabs) else "overview")
         if ctx["tab"] != "overview":
             ctx["devices"] = [d for d in devices if (d.extra or {}).get("product") == ctx["tab"]]
+    elif getattr(ctx["cls"], "sse", False):
+        cls = ctx["cls"]
+        products = data.get("products") or {}
+        tabs = [("overview", "Overview")] + [(k, (data.get("labels") or {}).get(k) or cls.tab_label(k)) for k in cls.sections if k in products]
+        ctx.update(tabs=tabs, tab=tab if tab in dict(tabs) else "overview", sse=True)
+        if ctx["tab"] != "overview":
+            ctx["devices"] = [d for d in devices if (d.extra or {}).get("product") == ctx["tab"]]
     return render(request, "integration_view.html", ctx)

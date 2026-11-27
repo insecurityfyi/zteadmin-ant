@@ -18,7 +18,7 @@
 
 {% if not data_ts and integ.kind not in [] %}<div class="p empty-state"><h2>No telemetry yet</h2><p>{% if integ.status == 'never' %}This integration hasn't synced yet. Press Sync now.{% else %}The last sync didn't return details. Fix the problem above, then press Sync now.{% endif %}</p></div>{% endif %}
 
-{% if data_ts %}{% include "views/" ~ integ.kind ~ ".html" ignore missing %}{% endif %}
+{% if data_ts %}{% if sse %}{% include "views/_sse.html" %}{% else %}{% include "views/" ~ integ.kind ~ ".html" ignore missing %}{% endif %}{% endif %}
 
 {% if not tabs or tab == 'overview' or devices %}
 <div class="grid">

@@ -120,3 +120,40 @@ RECORDS = {
                 {"external_id": "lxc-105", "hostname": "poller-hq-01", "type": "Container", "status": "up"}],
 }
 DATA = {"zscaler": ZSCALER, "meraki": MERAKI, "panos": PANOS, "fortigate": FORTIGATE, "sonicwall": SONICWALL, "proxmox": PROXMOX}
+
+
+def sse_sample(kind: str, vendor: str) -> dict:
+    """One payload in the shared SSE shape (integrations/sse.py), reused for every SSE platform."""
+    return {
+        "type": kind, "sse": True, "vendor": vendor, "unavailable": ["GRE tunnels: GET /api/v2/steering/gre/tunnels returned HTTP 404"],
+        "products": {"sites": {"ok": True, "objects": 2}, "private": {"ok": True, "objects": 2}, "users": {"ok": True, "objects": 1},
+                     "policy": {"ok": True, "objects": 1}, "apps": {"ok": True, "objects": 1}, "dlp": {"ok": False, "error": "DLP events refused (HTTP 403)"}},
+        "labels": {"sites": "Sites & tunnels", "private": "Connectors", "users": "Endpoints", "policy": "Policies", "apps": "Apps & AI", "dlp": "DLP"},
+        "gaps": {"apps": [["Prompts sent to AI apps", "Only in the admin console."]], "dlp": [["DLP profile definitions", "No API."]]},
+        "sites": {"items": [
+            {"id": "s1", "name": "Dallas HQ", "type": "IPsec tunnel", "status": "up", "pop": "DFW1", "rtt_ms": 11.2, "loss_pct": 0.0, "down_bps": 8e6, "up_bps": 1e6,
+             "tunnels": [{"name": "IPsec DFW1", "status": "up", "peer": "203.0.113.4"}, {"name": "IPsec IAH1", "status": "up"}]},
+            {"id": "s2", "name": "Austin Lab", "type": "IPsec tunnel", "status": "down", "pop": "DFW1", "tunnels": [{"name": "IPsec DFW1", "status": "down"}],
+             "detail": "Phase 1 down"}]},
+        "private": {"items": [{"id": "p1", "name": "pub-dc1", "status": "up", "version": "118.0", "ip": "10.0.0.5", "detail": "4 apps"},
+                              {"id": "p2", "name": "pub-dc2", "status": "down", "state": "not registered"}], "apps": 7},
+        "users": {"total": 2, "connected": 1, "versions": [["120.1", 2]], "os": [["Windows", 1], ["Mac", 1]], "states": [["connected", 1], ["disconnected", 1]],
+                  "devices": [{"hostname": "LT-0042", "user": "ada@contoso.com", "os": "Windows 11", "version": "120.1", "state": "connected", "last_seen": "2026-11-26T14:58:00Z"}]},
+        "policy": {"rulebases": [{"name": "Internet firewall", "rules": [
+            {"order": 1, "name": "Block DeepSeek", "enabled": True, "action": "block", "match": "DeepSeek", "scope": "everyone"},
+            {"order": 2, "name": "Old rule", "enabled": False, "action": "allow", "match": "any", "scope": "Contractors"}]}]},
+        "apps": {"window": {"days": 7, "end": "2026-11-26 15:00 UTC"}, "refreshed": "2026-11-26T15:00:00Z", "items": [
+            {"name": "Microsoft 365", "category": "Business", "ai": False, "users": 400, "events": 9000, "bytes": 9e10, "up": 1e10, "down": 8e10},
+            {"name": "ChatGPT", "category": "Generative AI", "ai": True, "users": 214, "events": 3000, "bytes": 6.2e9, "up": 1.4e9, "down": 4.8e9,
+             "sanctioned": "sanctioned", "action": "allow", "rule": "ChatGPT Enterprise"},
+            {"name": "DeepSeek", "category": "Generative AI", "ai": True, "users": 3, "events": 9, "bytes": 2e6, "up": 1e6, "down": 1e6,
+             "sanctioned": "unsanctioned", "action": "block"}], "categories_seen": [["Business", 1], ["Generative AI", 2]]},
+    }
+
+
+SSE_KINDS = {"netskope": "Netskope", "cato": "Cato", "prisma": "Prisma Access", "cloudflare": "Cloudflare"}
+for _k, _v in SSE_KINDS.items():
+    DATA[_k] = sse_sample(_k, _v)
+    RECORDS[_k] = [{"external_id": "sites-s1", "hostname": "Dallas HQ", "type": _v, "status": "up", "extra": {"product": "sites"}},
+                   {"external_id": "sites-s2", "hostname": "Austin Lab", "type": _v, "status": "down", "extra": {"product": "sites"}},
+                   {"external_id": "private-p1", "hostname": "pub-dc1", "type": _v, "status": "up", "extra": {"product": "private"}}]

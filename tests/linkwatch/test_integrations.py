@@ -8,8 +8,9 @@ from linkwatch.integrations.panos import parse_top, parse_uptime
 
 
 def test_registry_has_every_platform():
-    assert set(REGISTRY) == {"zscaler", "meraki", "panos", "fortigate", "sonicwall", "pfsense", "vyos", "unifi", "proxmox"}
-    assert {k for k, c in REGISTRY.items() if c.runs_on == "server"} == {"zscaler", "meraki"}
+    assert set(REGISTRY) == {"zscaler", "netskope", "cato", "prisma", "cloudflare", "meraki", "panos", "fortigate", "sonicwall",
+                             "pfsense", "vyos", "unifi", "proxmox"}
+    assert {k for k, c in REGISTRY.items() if c.runs_on == "server"} == {"zscaler", "netskope", "cato", "prisma", "cloudflare", "meraki"}
 
 
 def test_missing_required_field():
