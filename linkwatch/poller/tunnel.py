@@ -4,11 +4,13 @@ The server never connects in. When an admin opens an SSH console, the server sen
 poller's existing WebSocket. The poller then opens a *second* outbound WebSocket to
 ``/api/poller/ws/tunnel/<sid>`` (authenticated with its key), connects to the requested host and port, and
 copies bytes both ways until either side closes. SSH itself runs end to end between the server and the device,
-so the poller only ever sees encrypted traffic and never the login.
+so the poller only ever sees encrypted traffic and never the login. Remote desktop (RDP) uses the same
+tunnels; see linkwatch/server/rdp.py.
 
 Environment:
     LW_TUNNEL        "on" (default) or "off" to refuse every tunnel request
-    LW_TUNNEL_PORTS  TCP ports the server may ask for, comma separated (default "22"); "any" allows every port
+    LW_TUNNEL_PORTS  TCP ports the server may ask for, comma separated (default "22,3389": SSH and RDP);
+                     "any" allows every port
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from websockets.exceptions import ConnectionClosed
 log = logging.getLogger("linkwatch.poller.tunnel")
 CONNECT_TIMEOUT = 10.0
 CHUNK = 64 * 1024
+DEFAULT_PORTS = "22,3389"
 
 
 def enabled() -> bool:
@@ -31,7 +34,7 @@ def enabled() -> bool:
 
 def allowed_ports() -> set[int] | None:
     """None means any port."""
-    raw = os.environ.get("LW_TUNNEL_PORTS", "22").strip().lower()
+    raw = os.environ.get("LW_TUNNEL_PORTS", DEFAULT_PORTS).strip().lower()
     if raw in ("any", "*", "all"):
         return None
     ports = set()
@@ -39,6 +42,11 @@ def allowed_ports() -> set[int] | None:
         if part.isdigit() and 0 < int(part) < 65536:
             ports.add(int(part))
     return ports
+
+
+def allows(port: int) -> bool:
+    ports = allowed_ports()
+    return enabled() and (ports is None or port in ports)
 
 
 def refusal(host: str, port: int) -> str | None:
@@ -49,7 +57,7 @@ def refusal(host: str, port: int) -> str | None:
     ports = allowed_ports()
     if ports is not None and port not in ports:
         allowed = ", ".join(str(p) for p in sorted(ports)) or "none"
-        return f"This poller only allows tunnels to port {allowed}. Set LW_TUNNEL_PORTS on the poller to allow {port}."
+        return f"This poller only allows tunnels to ports {allowed}. Set LW_TUNNEL_PORTS on the poller to allow {port}."
     return None
 
 

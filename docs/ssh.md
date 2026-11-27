@@ -46,8 +46,8 @@ Both WebSockets live under `/api/poller/ws`, so the nginx site config needs no c
   reinstalled, press **Forget host key** in the window and connect again.
 * **Credentials.** Typed logins are used for that session only and cleared from the form. Saved logins are
   sealed with `LW_SECRET_KEY` in the `ssh_targets` table; only the user name is stored readable.
-* **Poller-side limits.** A poller only opens tunnels to port 22 unless you set `LW_TUNNEL_PORTS`
-  (for example `22,2222`, or `any`). Set `LW_TUNNEL=off` on a poller to refuse tunnels altogether; its Pollers
+* **Poller-side limits.** A poller only opens tunnels to ports 22 and 3389 (remote desktop, see
+  [rdp.md](rdp.md)) unless you set `LW_TUNNEL_PORTS` (for example `22,2222`, or `any`). Set `LW_TUNNEL=off` on a poller to refuse tunnels altogether; its Pollers
   card then shows SSH as unavailable. At most 8 sessions run through one poller at a time.
 
 ## Requirements
@@ -61,7 +61,7 @@ Both WebSockets live under `/api/poller/ws`, so the nginx site config needs no c
 | Message | Meaning |
 | --- | --- |
 | Poller ... is not connected | The poller is offline; check it on the Pollers page. |
-| This poller only allows tunnels to port 22 | Set `LW_TUNNEL_PORTS` on the poller and restart it. |
+| This poller only allows tunnels to ports 22, 3389 | Set `LW_TUNNEL_PORTS` on the poller and restart it. |
 | Could not connect to ... / No answer from ... | The poller can't reach that address and port: firewall, wrong IP or SSH off on the device. |
 | Sign-in refused | Wrong user name, password or key. |
 | HOST KEY CHANGED | The device presents a different key than the first time. Check why before forgetting the key. |

@@ -330,7 +330,7 @@ def test_no_menu_without_proxmox(logged_in):
 
 
 # ------------------------------------------------------------------ end to end: real server, real poller
-from tests.linkwatch.test_ssh import _free_port, live_server  # noqa: E402,F401  (fixture reuse)
+from tests.linkwatch.test_ssh import _free_port  # noqa: E402  (live_server comes from conftest)
 
 
 async def _enroll(base, app, tmp_path, name="site-a"):

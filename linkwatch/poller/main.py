@@ -18,7 +18,7 @@ Environment:
     LW_DATA_DIR      /var/lib/linkwatch
     LW_CONCURRENCY   simultaneous device polls (default 32)
     LW_TUNNEL        on (default) / off: allow SSH consoles through this poller (see tunnel.py)
-    LW_TUNNEL_PORTS  ports a tunnel may reach (default 22; "any" for all)
+    LW_TUNNEL_PORTS  ports a tunnel may reach (default 22,3389; "any" for all)
 """
 from __future__ import annotations
 
@@ -168,6 +168,8 @@ class Poller:
             feats.append("mtr")
         if tunnel.enabled():
             feats += ["ssh", "pveterm"]
+        if tunnel.allows(3389):
+            feats.append("rdp")
         feats.append("rpc")
         return feats
 
