@@ -84,11 +84,13 @@ def rollup_and_prune(app_state) -> None:
         for dev_id, b, cpu, mem, png, loss in rows:
             s.add(DeviceMetric(device_id=dev_id, ts=_as_dt(b), hourly=True, cpu=cpu, mem=mem, ping_ms=png, loss_pct=loss))
         rows = s.execute(select(PortMetric.port_id, bucket_p, func.avg(PortMetric.in_bps), func.avg(PortMetric.out_bps),
-                                func.sum(PortMetric.in_err), func.sum(PortMetric.out_err))
+                                func.sum(PortMetric.in_err), func.sum(PortMetric.out_err),
+                                func.sum(PortMetric.in_disc), func.sum(PortMetric.out_disc))
                          .where(PortMetric.hourly.is_(False), PortMetric.ts >= start, PortMetric.ts < hour_end)
                          .group_by(PortMetric.port_id, bucket_p)).all()
-        for port_id, b, i, o, ei, eo in rows:
-            s.add(PortMetric(port_id=port_id, ts=_as_dt(b), hourly=True, in_bps=i, out_bps=o, in_err=ei, out_err=eo))
+        for port_id, b, i, o, ei, eo, di, do in rows:
+            s.add(PortMetric(port_id=port_id, ts=_as_dt(b), hourly=True, in_bps=i, out_bps=o, in_err=ei, out_err=eo,
+                             in_disc=di, out_disc=do))
         bucket_i = func.date_trunc("hour", IntegrationMetric.ts) if s.bind.dialect.name == "postgresql" \
             else func.strftime("%Y-%m-%d %H:00:00", IntegrationMetric.ts)
         rows = s.execute(select(IntegrationMetric.integration_id, IntegrationMetric.key, bucket_i, func.avg(IntegrationMetric.a),

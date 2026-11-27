@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ m.name }}{% endblock %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+<div class="head"><div><p class="crumbs"><a href="/oids#mibs">Custom OIDs · MIB files</a></p><h1>{{ m.name }}</h1>
+  <p>{{ (m.objects or [])|length }} objects{% if m.filename %} from {{ m.filename }}{% endif %}, uploaded {{ m.uploaded_at|ago }}.</p></div></div>
+{% if m.error %}<div class="flash warn">{{ m.error }}</div>{% endif %}
+<div class="p"><div class="ph"><h2>Objects</h2>
+  <form method="get" class="filters"><input type="search" name="q" value="{{ q }}" placeholder="Filter by name or OID" aria-label="Filter"></form></div>
+  {% if objs %}<div class="scroll"><table><thead><tr><th>Name</th><th>OID</th><th>Kind</th><th>Type</th><th>Description</th><th></th></tr></thead><tbody>
+  {% for o in objs %}<tr><td class="mono"><b>{{ o.name }}</b></td><td class="mono">{{ o.oid }}</td><td class="dim">{{ o.node }}</td>
+    <td class="dim">{{ o.type or '' }}{% if o.units %} ({{ o.units }}){% endif %}{% if o.states %}<div>{{ o.states.items()|map('join', '=')|join(', ')|truncate(60) }}</div>{% endif %}</td>
+    <td class="dim">{{ (o.descr or '')|truncate(140) }}</td>
+    <td class="nw">{% if admin and o.node in ('scalar', 'column') %}<a class="btn sm" href="/oids/new?oid={{ (m.name ~ '::' ~ o.name)|urlencode }}">Poll this</a>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="dim" style="margin:0">{{ 'Nothing matches.' if q else 'No objects. ' ~ (m.error or '') }}</p>{% endif %}
+</div>
+{% endblock %}

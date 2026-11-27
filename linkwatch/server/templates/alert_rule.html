@@ -38,7 +38,7 @@
   </div>
   <div class="row2" data-for="port"><label class="f">Port name or description<input type="text" name="port" value="{{ sc.get('port', '') }}" placeholder="uplink, Te1/1/*"></label><span></span></div>
   <div class="row2" data-for="sensor">
-    <label class="f">Sensor type<select name="sensor_kind"><option value="">Any type</option>{% for k in sensor_kinds %}<option {% if k == sc.get('sensor_kind') %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
+    <label class="f">Sensor type<select name="sensor_kind"><option value="">Any type</option>{% set kl = {'diskio': 'disk I/O', 'system': 'system (load, TCP/IP)', 'custom': 'custom OID'} %}{% for k in sensor_kinds %}<option value="{{ k }}" {% if k == sc.get('sensor_kind') %}selected{% endif %}>{{ kl.get(k, k) }}</option>{% endfor %}</select></label>
     <label class="f">Sensor name<input type="text" name="sensor_name" value="{{ sc.get('sensor_name', '') }}" placeholder="CPU*, inlet"></label>
   </div>
   <label class="chk"><input type="checkbox" name="enabled" {% if rule.enabled %}checked{% endif %}> Enabled</label>

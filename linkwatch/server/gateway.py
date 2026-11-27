@@ -64,6 +64,7 @@ class Hub:
         # reverse tunnels: the server asks a poller to open one, the poller dials back in on its own WebSocket
         self.pending_tunnels: dict[str, tuple[int, asyncio.Future]] = {}
         self.open_tunnels: dict[int, int] = {}
+        self.tests: dict[str, asyncio.Future] = {}          # custom OID "Test" requests waiting for a poller's answer
         # requests the server sends a poller and waits on (Proxmox actions and lookups)
         self.pending_rpcs: dict[str, tuple[int, asyncio.Future]] = {}
 
@@ -99,15 +100,20 @@ class Hub:
 
     # config -----------------------------------------------------------------
     def build_config(self, poller_id: int) -> dict[str, Any]:
+        from .oids import enabled_defs, poller_defs
         with self.db.session() as s:
             devices = []
+            defs = enabled_defs(s)
             for d in s.scalars(select(Device).where(Device.poller_id == poller_id, Device.disabled.is_(False))):
                 if d.integration_id is not None and d.source not in ("snmp", "ping"):
                     continue
                 if not d.ip:
                     continue
                 snmp = self.vault.open(d.snmp_profile.config_enc) if d.snmp_profile else None
-                devices.append({"id": d.id, "ip": d.ip, "hostname": d.hostname, "ping": d.ping, "snmp": snmp})
+                dev = {"id": d.id, "ip": d.ip, "hostname": d.hostname, "ping": d.ping, "snmp": snmp}
+                if snmp:
+                    dev["oids"] = poller_defs(defs, d)
+                devices.append(dev)
             integrations = []
             for i in s.scalars(select(Integration).where(Integration.poller_id == poller_id, Integration.enabled.is_(True))):
                 cls = REGISTRY.get(i.kind)
@@ -131,6 +137,27 @@ class Hub:
         """Callable from sync request handlers (thread pool)."""
         if poller_id and self.loop and poller_id in self.conns:
             asyncio.run_coroutine_threadsafe(self.push_config(poller_id), self.loop)
+
+    def push_all_soon(self) -> None:
+        """Send fresh config to every connected poller (after a change that affects all of them)."""
+        for pid in list(self.conns):
+            self.push_config_soon(pid)
+
+    async def snmp_test(self, poller_id: int, message: dict, timeout: float = 30.0) -> dict:
+        """Ask a poller to read an OID from a device now and wait for the answer."""
+        ws = self.conns.get(poller_id)
+        if ws is None:
+            return {"error": "That device's poller is not connected."}
+        req = secrets.token_hex(8)
+        fut = asyncio.get_running_loop().create_future()
+        self.tests[req] = fut
+        try:
+            await ws.send_text(json.dumps({**message, "type": "snmp_test", "req": req}))
+            return await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            return {"error": "No answer from the poller within 30 seconds."}
+        finally:
+            self.tests.pop(req, None)
 
     def send_soon(self, poller_id: int | None, message: dict) -> bool:
         ws = self.conns.get(poller_id or 0)
@@ -353,6 +380,10 @@ class Hub:
                     await ws.send_text(json.dumps({"type": "ack", "batch_id": msg.get("batch_id")}))
                 elif t in ("discovery_progress", "discovery_result"):
                     await asyncio.to_thread(self._discovery, poller.id, msg)
+                elif t == "snmp_test_result":
+                    fut = self.tests.get(str(msg.get("req") or ""))
+                    if fut is not None and not fut.done():
+                        fut.set_result(msg)
                 elif t == "rpc_result":
                     self._rpc_result(poller.id, msg)
                 elif t == "pong":
