@@ -11,7 +11,7 @@
   <p class="help">Change <code>poller-hq-01</code> to a name for this site. To update the poller later, run the same <code>curl ... | sudo bash</code> with no arguments. In a Proxmox LXC container, turn on Options &gt; Features &gt; Nesting first.</p>
   <details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Or start the container by hand</summary>
 <pre class="cmd" style="margin-top:8px">podman run -d --name linkwatch-poller --restart=always \
-  --cap-add=NET_RAW \
+  --network host --cap-add=NET_RAW \
   -e LW_SERVER={{ public_url }} \
   -e LW_ENROLL_TOKEN={{ new_token }} \
   -e LW_POLLER_NAME=poller-hq-01 \
