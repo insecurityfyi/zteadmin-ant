@@ -40,13 +40,30 @@ curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/dep
 ```
 
 It installs Podman, curl and the SNMP tools (apt, dnf/yum or zypper), checks it
-can reach `/healthz`, pulls the image, starts the container with `NET_RAW`,
-a key volume and restart-on-boot (`podman-restart.service`), and waits for
+can reach `/healthz`, pulls the image, starts the container on the host's
+network with `NET_RAW`, a key volume and restart-on-boot (`podman-restart.service`), and waits for
 "Connected". It saves the server and name in `/etc/linkwatch-poller.env`, so
 running it again with no arguments updates the poller to the latest image
-without a new token. `--uninstall` removes the container and keeps the key.
+without a new token, and moves a poller that was on Podman's bridge network
+onto the host's network. `--uninstall` removes the container and keeps the key.
+`--network bridge` keeps the container on the runtime's own network instead
+(remembered for later updates).
 In a Proxmox LXC container, turn on *Options > Features > Nesting* (and
 *keyctl* if it is unprivileged) before running it.
+
+## Host networking
+
+The install script runs the poller with `--network host`. The poller then
+polls, pings and traces from the machine's own address and interfaces. On
+Podman's default bridge network it would instead appear behind NAT, with the
+bridge gateway 10.88.0.1 as its first hop in path probes. The poller never
+listens on a port, so there are no port mappings to keep, and `NET_RAW` still
+lets ping and `mtr` open raw sockets.
+
+This applies to rootful containers (the install script runs as root). In a
+rootless container (below), leave out `Network=host`: the host's network
+belongs to the host's user namespace, so the container's `NET_RAW` doesn't
+count there and ping and path probes stop working.
 
 ## Running under systemd as a non-root user
 

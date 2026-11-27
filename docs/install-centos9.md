@@ -410,7 +410,7 @@ small VM or LXC container on Proxmox works well.
 
 ```sh
 podman run -d --name linkwatch-poller --restart=always \
-  --cap-add=NET_RAW \
+  --network host --cap-add=NET_RAW \
   -e LW_SERVER=https://utilz.perrego.net \
   -e LW_ENROLL_TOKEN=enr_xxxxxxxx \
   -e LW_POLLER_NAME=poller-hq-01 \
@@ -419,7 +419,9 @@ podman run -d --name linkwatch-poller --restart=always \
 ```
 
 The poller needs outbound TCP 443 to `utilz.perrego.net`, plus UDP 161 and
-ICMP to your devices. It needs nothing inbound. See `docs/poller.md` for
+ICMP to your devices. It needs nothing inbound. `--network host` makes it use
+the machine's own address, so devices and path probes see that address rather
+than Podman's internal 10.88.0.1 bridge. See `docs/poller.md` for
 running it under systemd and for updating it.
 
 Then:

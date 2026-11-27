@@ -61,7 +61,8 @@ Only the hop addresses are sent. If the server can't reach RIPEstat, it stops tr
 
 Probes run `mtr` inside the poller container, and its packet helper needs the `NET_RAW` capability.
 
-- The install script already starts the poller with `--cap-add=NET_RAW`.
+- The install script already starts the poller with `--cap-add=NET_RAW` and `--network host`.
+- On Podman's default bridge network the first hop is the bridge gateway, 10.88.0.1, not your LAN router. Host networking (the install script's default) starts the trace at your real gateway. Run the install command again with no arguments to move an older poller onto the host's network; it keeps its key.
 - If you run the container by hand, add `--cap-add=NET_RAW` (in a Quadlet `.container` file, `AddCapability=NET_RAW`).
 - Pollers on an image from before path probes show **needs update** when you pick pollers. Update them with the one-line command on the Pollers page. The poller keeps its key.
 

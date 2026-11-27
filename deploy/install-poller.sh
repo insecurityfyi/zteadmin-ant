@@ -9,13 +9,16 @@
 #   install-poller.sh                                            update to the latest image (keeps its key); the server
 #                                                                and name come from the last install or the running container
 #   install-poller.sh --uninstall                                remove the container (keeps the key volume)
+#   install-poller.sh --network bridge                           use the container runtime's own network instead of
+#                                                                the host's (remembered for later updates)
 #
 # What it does:
 #   1. installs Podman, curl and the SNMP command-line tools (apt, dnf/yum or zypper),
 #      or uses Docker if that is already installed and Podman isn't
 #   2. checks it can reach the server's /healthz over HTTPS
-#   3. pulls the poller image and (re)creates the container with NET_RAW so ping works,
-#      a volume for its key, and restart-on-boot
+#   3. pulls the poller image and (re)creates the container on the host's network (so ping,
+#      SNMP and path probes go out from the machine's own address, not the 10.88.0.1 Podman
+#      bridge), with NET_RAW so ping and mtr work, a volume for its key, and restart-on-boot
 #   4. waits for "Connected" in the logs
 #
 # The enrollment token is shown once by the server (Pollers > Add poller), works
@@ -30,9 +33,10 @@ CONF="/etc/linkwatch-poller.env"
 SERVER="${LW_SERVER:-}"
 TOKEN="${LW_ENROLL_TOKEN:-}"
 PNAME="${LW_POLLER_NAME:-}"
+NETWORK="${LW_POLLER_NETWORK:-}"
 UNINSTALL=0
 
-usage() { sed -n '2,23p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; }
+usage() { sed -n '2,26p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; }
 die() { echo "!! $*" >&2; exit 1; }
 say() { echo "==> $*"; }
 
@@ -42,6 +46,7 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --name) PNAME="${2:-}"; shift 2 ;;
     --image) IMAGE="${2:-}"; shift 2 ;;
+    --network) NETWORK="${2:-}"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     enr_*) TOKEN="$1"; shift ;;          # a bare token is accepted too
@@ -56,7 +61,12 @@ if [ -f "$CONF" ]; then
   # shellcheck disable=SC1090
   . "$CONF"
   SERVER="${SERVER:-${LW_SERVER:-}}"; PNAME="${PNAME:-${LW_POLLER_NAME:-}}"
+  NETWORK="${NETWORK:-${LW_POLLER_NETWORK:-}}"
 fi
+# Host networking by default: the poller then uses the machine's real address and interfaces,
+# so devices, ACLs and path probes see it as itself rather than as the runtime's NAT bridge.
+NETWORK="${NETWORK:-host}"
+case "$NETWORK" in host|bridge) ;; *) die "--network takes host or bridge" ;; esac
 
 # ------------------------------------------------------------------ packages
 pkg_install() {
@@ -102,6 +112,10 @@ if [ -n "$EXISTING" ]; then
     VOLUME="$ct_vol"
   fi
   [ -n "$SERVER" ] && say "Found the existing poller container '$EXISTING' (server $SERVER)"
+  ct_net="$($RT container inspect -f '{{.HostConfig.NetworkMode}}' "$EXISTING" 2>/dev/null || true)"
+  if [ "$NETWORK" = host ] && [ -n "$ct_net" ] && [ "$ct_net" != host ]; then
+    say "Moving it from the container network ($ct_net) to the host's network"
+  fi
 fi
 PNAME="${PNAME:-$(hostname -s 2>/dev/null || echo poller)}"
 SERVER="${SERVER%/}"
@@ -135,14 +149,15 @@ fi
 
 # ------------------------------------------------------------------ run
 umask 077
-printf 'LW_SERVER=%s\nLW_POLLER_NAME=%s\n' "$SERVER" "$PNAME" > "$CONF"
+printf 'LW_SERVER=%s\nLW_POLLER_NAME=%s\nLW_POLLER_NETWORK=%s\n' "$SERVER" "$PNAME" "$NETWORK" > "$CONF"
 
-say "Starting $NAME_CT (name: $PNAME)"
+say "Starting $NAME_CT (name: $PNAME, network: $NETWORK)"
 $RT rm -f "$NAME_CT" >/dev/null 2>&1 || true
 if [ -n "$EXISTING" ] && [ "$EXISTING" != "$NAME_CT" ]; then
   $RT rm -f "$EXISTING" >/dev/null 2>&1 || true      # one poller per key: replace the hand-started container
 fi
 args=(run -d --name "$NAME_CT" --restart=always --cap-add=NET_RAW
+      --network "$NETWORK"
       -e "LW_SERVER=$SERVER" -e "LW_POLLER_NAME=$PNAME" -v "$VOLUME:/var/lib/linkwatch")
 if [ "$have_identity" -eq 0 ]; then args+=(-e "LW_ENROLL_TOKEN=$TOKEN"); fi
 if ! $RT "${args[@]}" "$IMAGE" >/dev/null; then
