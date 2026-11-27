@@ -84,8 +84,13 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
             chassis = next((e for e in item["inventory"] if e.get("class") == "chassis" and e.get("serial")), None)
             if chassis and not dev.serial:
                 dev.serial = str(chassis["serial"])[:128]
-        if item.get("sensors") is not None or item.get("storage") is not None:
-            update_sensors(s, dev, item.get("sensors") or [], item.get("storage") or [], ts)
+        if any(item.get(k) is not None for k in ("sensors", "storage", "system_stats", "disk_io", "custom")):
+            more = [x for x in list(item.get("system_stats") or []) + list(item.get("disk_io") or []) if isinstance(x, dict)]
+            if isinstance(item.get("custom"), list):
+                from .oids import sensor_rows
+                more += sensor_rows(s, item["custom"])
+            update_sensors(s, dev, item.get("sensors") or [], item.get("storage") or [], ts, more,
+                           float(item.get("ts") or ts.timestamp()))
         if item.get("neighbors") is not None:
             update_neighbors(s, dev, item["neighbors"])
 
@@ -109,10 +114,16 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
     return dev
 
 
-def update_sensors(s: Session, dev: Device, sensors: list[dict], storage: list[dict], ts: datetime) -> None:
+def update_sensors(s: Session, dev: Device, sensors: list[dict], storage: list[dict], ts: datetime,
+                   more: list[dict] | None = None, epoch: float | None = None) -> None:
+    """Replace a device's sensors with what was just polled. ``more`` holds system, disk I/O and custom OID rows.
+
+    A row with ``"counter": True`` carries a raw counter in ``raw``; its value is the rate since the last poll
+    (times ``scale``), and the raw reading is kept in the sensor's ``extra`` for next time."""
     rows = [dict(x) for x in sensors] + [
         {"key": x["key"], "kind": "storage", "name": x.get("name"), "unit": "%", "value": x.get("pct"), "status": "ok",
-         "extra": {"size": x.get("size"), "used": x.get("used"), "type": x.get("kind")}} for x in storage]
+         "extra": {"size": x.get("size"), "used": x.get("used"), "type": x.get("kind")}} for x in storage] + [dict(x) for x in more or []]
+    epoch = epoch if epoch is not None else ts.timestamp()
     existing = {x.key: x for x in s.scalars(select(Sensor).where(Sensor.device_id == dev.id))}
     seen = set()
     for r in rows:
@@ -125,13 +136,17 @@ def update_sensors(s: Session, dev: Device, sensors: list[dict], storage: list[d
             sen = Sensor(device_id=dev.id, key=key, kind=str(r.get("kind") or "other")[:24], name="", status="ok")
             s.add(sen)
         old = sen.status
+        extra = r.get("extra") or ({"label": r["label"]} if r.get("label") else None)
+        value = r.get("value")
+        if r.get("counter"):
+            value, extra = _counter_rate(r, sen.extra or {}, epoch), {**(extra or {}), "raw": _num(r.get("raw")), "raw_ts": epoch}
         sen.kind = str(r.get("kind") or sen.kind)[:24]
         sen.name = str(r.get("name") or key)[:255]
         sen.unit = str(r.get("unit") or "")[:16]
-        sen.value = r.get("value")
+        sen.value = value if isinstance(value, (int, float)) else _num(value)
         sen.high = r.get("high")
         sen.status = r.get("status") if r.get("status") in ("ok", "warn", "crit") else "ok"
-        sen.extra = r.get("extra") or ({"label": r["label"]} if r.get("label") else None)
+        sen.extra = extra
         sen.updated_at = ts
         if sen.id is not None and old != sen.status:
             events.log(s, "sensor", f"{sen.name}: {sen.status} (was {old})", "ok" if sen.status == "ok" else sen.status, dev)
@@ -141,6 +156,17 @@ def update_sensors(s: Session, dev: Device, sensors: list[dict], storage: list[d
     for key, sen in existing.items():
         if key not in seen:
             s.delete(sen)
+
+
+def _counter_rate(row: dict, prev: dict, epoch: float) -> float | None:
+    """Per-second rate of a raw counter since the reading kept from the last poll."""
+    raw, last, last_ts = _num(row.get("raw")), _num(prev.get("raw")), _num(prev.get("raw_ts"))
+    if raw is None or last is None or not last_ts or epoch <= last_ts:
+        return None
+    delta = counter_delta(raw, last, int(row.get("bits") or 64))
+    if delta is None:
+        return None
+    return round(delta / (epoch - last_ts) * float(row.get("scale") or 1), 4)
 
 
 def _short(name: str | None) -> str:
@@ -210,13 +236,17 @@ def _update_ports(s: Session, dev: Device, ports: list[dict], ts_epoch: float, t
             p.in_bps = d_in * 8 / dt if d_in is not None else None
             p.out_bps = d_out * 8 / dt if d_out is not None else None
             p.in_err_rate, p.out_err_rate = e_in, e_out
+            p.in_disc_rate = counter_delta(data.get("in_discards"), p.last_in_discards, 32)
+            p.out_disc_rate = counter_delta(data.get("out_discards"), p.last_out_discards, 32)
             p.util_pct = (max(p.in_bps or 0, p.out_bps or 0) / (p.speed_mbps * 1e6) * 100) if p.speed_mbps else None
             if p.id is None:
                 s.flush()
             if p.in_bps is not None or p.out_bps is not None:
-                s.add(PortMetric(port_id=p.id, ts=ts, in_bps=p.in_bps, out_bps=p.out_bps, in_err=e_in, out_err=e_out))
+                s.add(PortMetric(port_id=p.id, ts=ts, in_bps=p.in_bps, out_bps=p.out_bps, in_err=e_in, out_err=e_out,
+                                 in_disc=p.in_disc_rate, out_disc=p.out_disc_rate))
         p.last_in_octets, p.last_out_octets = data.get("in_octets"), data.get("out_octets")
         p.last_in_errors, p.last_out_errors = data.get("in_errors"), data.get("out_errors")
+        p.last_in_discards, p.last_out_discards = data.get("in_discards"), data.get("out_discards")
         p.last_ts = ts_epoch
     if ports:
         for idx, p in existing.items():

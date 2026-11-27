@@ -20,7 +20,8 @@ HEALTH = {
 
 
 SENSOR_PAGES = {"temperature": ("Temperature", "°C"), "fan": ("Fans", "rpm"), "power": ("Power", "W"),
-                "voltage": ("Voltage", "V"), "state": ("Component state", ""), "storage": ("Storage", "%")}
+                "voltage": ("Voltage", "V"), "state": ("Component state", ""), "storage": ("Storage", "%"),
+                "system": ("Load and TCP/IP", ""), "diskio": ("Disk I/O", "B/s"), "custom": ("Custom OID values", "")}
 
 
 def _page(v) -> int:
@@ -79,7 +80,10 @@ def health_page(request: Request, metric: str = "cpu"):
                 Device.disabled.is_(False))
             q = q.where(Sensor.kind == metric) if metric != "voltage" else q.where(Sensor.kind.in_(("voltage", "current")))
             rows = s.scalars(q).all()
-            rows = sorted(rows, key=lambda x: ({"crit": 0, "warn": 1}.get(x.status, 2), -(x.value or 0)))
+            if metric in ("system", "custom"):     # mixed units: group by device, then name
+                rows = sorted(rows, key=lambda x: ({"crit": 0, "warn": 1}.get(x.status, 2), x.device.hostname.lower(), x.name))
+            else:
+                rows = sorted(rows, key=lambda x: ({"crit": 0, "warn": 1}.get(x.status, 2), -(x.value or 0)))
             kinds = dict(s.execute(select(Sensor.kind, func.count(Sensor.id)).group_by(Sensor.kind)).all())
         return render(request, "health.html", {"metric": metric, "metrics": HEALTH, "sensor_pages": SENSOR_PAGES,
                                                "kinds": kinds, "sensor_rows": rows, "title": SENSOR_PAGES[metric][0],

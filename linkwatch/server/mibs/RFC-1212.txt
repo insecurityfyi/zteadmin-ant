@@ -1,0 +1,5 @@
+-- RFC 1212 only defines the SMIv1 OBJECT-TYPE macro, which the MIB compiler (pysmi) supplies itself.
+-- This stub exists so that SMIv1 vendor MIBs that say "IMPORTS OBJECT-TYPE FROM RFC-1212" compile.
+RFC-1212 DEFINITIONS ::= BEGIN
+IMPORTS ObjectName FROM RFC1155-SMI;
+END

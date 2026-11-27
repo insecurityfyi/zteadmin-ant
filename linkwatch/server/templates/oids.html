@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Custom OIDs{% endblock %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+<div class="head"><div><p class="crumbs"><a href="/health">Health</a> · custom OIDs</p><h1>Custom OIDs and MIBs</h1>
+  <p>Poll any SNMP value without changing code: add an OID (or pick it from a MIB), choose which devices it applies to, and pollers start reading it on their next poll. Every value is kept as history, graphed on the device's Health tab and usable in alert rules.</p></div>
+  {% if admin %}<div class="actions"><a class="btn pri" href="/oids/new">Add custom OID</a></div>{% endif %}</div>
+{% if old_pollers %}<div class="flash warn">These pollers run an older image that ignores custom OIDs: {{ old_pollers|join(', ') }}. Update them from the Pollers page.</div>{% endif %}
+<div class="grid">
+  <div class="p c12" id="defs"><div class="ph"><h2>Custom OIDs</h2><span class="sub">{{ defs|length }} defined</span></div>
+    {% if defs %}<div class="scroll"><table><thead><tr><th>Name</th><th>OID</th><th>Read as</th><th>Applies to</th><th class="n">Devices</th><th class="n">Values</th><th></th></tr></thead><tbody>
+    {% for c in defs %}<tr class="{{ '' if c.enabled else 'dim' }}">
+      <td><a class="row" href="/oids/{{ c.id }}"><b>{{ c.name }}</b></a>{% if not c.enabled %} <span class="dim">(off)</span>{% endif %}{% if c.category %}<div class="dim">{{ c.category }}</div>{% endif %}</td>
+      <td><span class="mono">{{ c.oid }}</span>{% if c.mib_name %}<div class="dim mono">{{ c.mib_name }}</div>{% endif %}</td>
+      <td>{{ 'Table column' if c.mode == 'walk' else 'One value' }}, {{ c.value_type }}{% if c.unit %} ({{ c.unit }}){% endif %}{% if c.scale %} ×{{ '%g'|format(c.scale) }}{% endif %}</td>
+      <td>{{ describe_scope(c) }}</td>
+      <td class="n">{{ devices.get(c.id, 0) }}</td>
+      <td class="n">{% if counts.get(c.id) %}<a href="/health?metric=custom">{{ counts[c.id] }}</a>{% else %}<span class="dim">none yet</span>{% endif %}</td>
+      <td class="nw">{% if admin %}<a class="btn sm" href="/oids/{{ c.id }}">Edit</a>
+        <form class="inline" method="post" action="/oids/{{ c.id }}/delete" onsubmit="return confirm('Delete {{ c.name|e }} and its history?')"><button class="btn sm danger" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<p class="dim" style="margin-top:0">None yet. Start from a common one below, or add your own.</p>{% endif %}
+    {% if admin %}<details style="margin-top:12px" {% if not defs %}open{% endif %}><summary class="btn" style="display:inline-flex">Start from a common OID</summary>
+      <div class="scroll" style="margin-top:12px"><table><tbody>{% for p in presets %}<tr><td><b>{{ p.name }}</b><div class="dim mono">{{ p.mib_name }}</div></td><td class="mono">{{ p.oid }}</td><td class="nw"><a class="btn sm" href="/oids/new?preset={{ loop.index0 }}">Use</a></td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
+  </div>
+
+  <div class="p c7" id="mibs"><div class="ph"><h2>MIB files</h2><span class="sub">for looking up names; pollers only ever use numeric OIDs</span></div>
+    {% if modules %}<div class="scroll"><table><thead><tr><th>Module</th><th>File</th><th class="n">Objects</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for m in modules %}<tr><td><a class="row" href="/mibs/{{ m.id }}"><b>{{ m.name }}</b></a></td><td class="dim">{{ m.filename or '' }}</td><td class="n">{{ (m.objects or [])|length }}</td>
+      <td>{% if m.error %}<span class="wa">{{ m.error }}</span>{% else %}<span class="okc">Loaded</span>{% endif %}</td>
+      <td class="nw">{% if admin %}<form class="inline" method="post" action="/mibs/{{ m.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="margin-top:0">No vendor MIBs uploaded. The standard MIBs listed on the right are already searchable.</p>{% endif %}
+    {% if admin %}<form method="post" action="/mibs/upload" enctype="multipart/form-data" class="stack" style="margin-top:12px">
+      <label class="f">Upload MIB files <span class="help">(.mib, .my or .txt; select several at once if one imports another)</span><input type="file" name="files" multiple accept=".mib,.my,.txt,.MIB,text/plain"></label>
+      <div><button class="btn" type="submit">Upload</button></div></form>{% endif %}
+  </div>
+  <div class="p c5"><div class="ph"><h2>Already polled</h2><span class="sub">no need to add these</span></div>
+    <p class="help" style="margin-top:0">Every SNMP device is asked for these on every poll; values appear on its Health tab when the device answers.</p>
+    <table><tbody>
+      <tr><td>CPU and memory</td><td class="dim">HOST-RESOURCES, UCD-SNMP, Cisco, SonicWall</td></tr>
+      <tr><td>Interfaces</td><td class="dim">64-bit traffic, errors, discards, status, speed</td></tr>
+      <tr><td>Load and TCP/IP</td><td class="dim">load average, processes, swap, TCP connections, retransmits, resets, IP/UDP errors and discards</td></tr>
+      <tr><td>Disk I/O</td><td class="dim">bytes read and written per disk (UCD diskIOTable)</td></tr>
+      <tr><td>Hardware health</td><td class="dim">ENTITY-SENSOR, Cisco ENVMON, LM-SENSORS, storage</td></tr>
+      <tr><td>Neighbours</td><td class="dim">LLDP and CDP</td></tr>
+    </tbody></table>
+    <p class="help">Standard MIBs available for lookups: {{ bundled|join(', ') }}.</p></div>
+</div>
+{% endblock %}

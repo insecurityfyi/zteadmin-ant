@@ -1,7 +1,7 @@
 """SNMP v2c / v3 collection with pysnmp's asyncio API.
 
 Collects the system group, interface table (64-bit counters where the device
-has them), CPU and memory. CPU and memory are tried in this order:
+has them, plus errors and discards), CPU and memory. CPU and memory are tried in this order:
 HOST-RESOURCES-MIB, UCD-SNMP-MIB (Linux, Proxmox, Synology, many appliances),
 then Cisco's process and memory pool MIBs.
 """
@@ -47,8 +47,10 @@ IF = {
     "admin": "1.3.6.1.2.1.2.2.1.7",
     "oper": "1.3.6.1.2.1.2.2.1.8",
     "in_octets32": "1.3.6.1.2.1.2.2.1.10",
+    "in_discards": "1.3.6.1.2.1.2.2.1.13",
     "in_errors": "1.3.6.1.2.1.2.2.1.14",
     "out_octets32": "1.3.6.1.2.1.2.2.1.16",
+    "out_discards": "1.3.6.1.2.1.2.2.1.19",
     "out_errors": "1.3.6.1.2.1.2.2.1.20",
     "name": "1.3.6.1.2.1.31.1.1.1.1",
     "in_octets": "1.3.6.1.2.1.31.1.1.1.6",
@@ -175,8 +177,10 @@ class SnmpSession:
         return out
 
 
-async def poll_device(session: SnmpSession) -> dict[str, Any]:
-    """One full poll. Raises SnmpError if the device does not answer at all."""
+async def poll_device(session: SnmpSession, oids: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """One full poll. Raises SnmpError if the device does not answer at all.
+
+    ``oids`` are the custom OIDs the server assigned to this device (see snmp_extra.custom_oids)."""
     started = time.monotonic()
     sysv = await session.get(list(SYS.values()))
     if all(v is None for v in sysv.values()):
@@ -210,6 +214,7 @@ async def poll_device(session: SnmpSession) -> dict[str, Any]:
             "out_octets": c("out_octets") if c("out_octets") is not None else c("out_octets32"),
             "counter_bits": 64 if c("in_octets") is not None else 32,
             "in_errors": c("in_errors"), "out_errors": c("out_errors"),
+            "in_discards": c("in_discards"), "out_discards": c("out_discards"),
         })
 
     oid = str(by["sys_object_id"] or "")
@@ -220,7 +225,7 @@ async def poll_device(session: SnmpSession) -> dict[str, Any]:
         result["cpu"] = result["cpu"] if result["cpu"] is not None else cpu
         result["mem"] = result["mem"] if result["mem"] is not None else mem
     from .snmp_extra import collect_extra
-    await collect_extra(session, result)
+    await collect_extra(session, result, oids)
     result["poll_ms"] = int((time.monotonic() - started) * 1000)
     return result
 
