@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_hv.html" as hv with context %}
+{% from "_iv.html" import meter %}
+{% block title %}{{ node }}{% endblock %}
+{% block content %}
+{% set s = d.status or {} %}
+{% set ctl = is_admin and c.control and c.can_rpc %}
+{% set mem = s.memory or {} %}{% set root = s.rootfs or {} %}
+<div class="head"><div><div class="crumb"><a href="/hypervisors">Hypervisors</a> · <a href="/hypervisors?i={{ c.id }}">{{ c.name }}</a></div>
+  <h1 style="display:flex;align-items:center;gap:10px"><span class="dot {{ 'd-up' if n.status == 'online' else ('d-down' if n.status else 'd-off') }}"></span>{{ node }} <span class="tag">node</span></h1>
+  <p>{{ (n.status or 'unknown')|capitalize }}{% if s.uptime or n.uptime_s %} for {{ (s.uptime or n.uptime_s)|duration }}{% endif %}{% if d.version %} · Proxmox VE {{ d.version }}{% endif %}{% if n.ip %} · {{ n.ip }}{% endif %}{% if device_id %} · <a href="/devices/{{ device_id }}">graphs and alerts</a>{% endif %}</p></div>
+  {% if ctl %}<div class="hv-bar">
+    <a class="btn" data-popout="node-{{ node }}" href="/hypervisors/console?i={{ c.id }}&node={{ node|urlencode }}">Shell</a>
+    {{ hv.act(c, actions, 'node_startall', node, what=node, cls='btn') }}{{ hv.act(c, actions, 'node_stopall', node, what='on ' ~ node, cls='btn') }}
+    {{ hv.act(c, actions, 'node_reboot', node, what=node, cls='btn') }}{{ hv.act(c, actions, 'node_shutdown', node, what=node, cls='btn') }}
+  </div>{% endif %}</div>
+{% if error %}<div class="flash warn" role="alert">{{ error }}</div>{% endif %}
+{{ hv.control_off_note(c, is_admin) }}
+{{ hv.scaffolding(c, task) }}
+
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>CPU</span><b>{{ ((s.cpu or 0) * 100)|pct if s.cpu is not none else n.cpu|pct }}</b><em>{{ s.cpus or n.maxcpu or '?' }} threads{% if s.cpu_model %} · {{ s.cpu_model }}{% endif %}</em></div>
+  <div class="kpi"><span>Memory</span><b>{{ (mem.used or n.mem)|bytes }}</b><em>of {{ (mem.total or n.maxmem)|bytes }}</em></div>
+  <div class="kpi"><span>Root disk</span><b>{{ root.used|bytes if root.used else '–' }}</b><em>{% if root.total %}of {{ root.total|bytes }}{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>Load</span><b style="font-size:18px">{{ (s.loadavg or [])|join(' ') or '–' }}</b><em>1, 5, 15 min</em></div>
+</div>
+
+<div class="grid">
+  <div class="p"><div class="ph"><h2>Guests on {{ node }}</h2><span class="sub">{{ guests|selectattr('status', 'equalto', 'running')|list|length }} of {{ guests|length }} running</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th class="n">VMID</th><th>Name</th><th>CPU</th><th>Memory</th><th class="n">Uptime</th>{% if ctl %}<th class="n">Actions</th>{% endif %}</tr></thead><tbody>
+    {% for v in guests %}{% set running = v.status == 'running' %}{% set what = ('VM ' if v.type == 'qemu' else 'container ') ~ v.vmid ~ ' (' ~ v.name ~ ')' %}
+      <tr><td>{{ hv.power_dot(v.status) }}</td><td class="n mono">{{ v.vmid }}</td><td><a class="row" href="/hypervisors/{{ c.id }}/guest/{{ v.type }}/{{ v.vmid }}?node={{ node|urlencode }}">{{ v.name }}</a> <span class="tag">{{ 'VM' if v.type == 'qemu' else 'CT' }}</span>{% if v.template %} <span class="tag">template</span>{% endif %}</td>
+        <td class="nw">{{ meter(v.cpu) if running else '' }}</td><td class="nw">{{ meter((100 * v.mem / v.maxmem) if running and v.maxmem else none) if running else '' }}</td><td class="n">{{ v.uptime_s|duration if running else '' }}</td>
+        {% if ctl %}<td class="n"><div class="hv-row-actions">{% if not v.template %}{% if running %}{{ hv.act(c, actions, 'shutdown', node, v.type, v.vmid, what) }}{% else %}{{ hv.act(c, actions, 'start', node, v.type, v.vmid, what) }}{% endif %}{% endif %}</div></td>{% endif %}</tr>
+    {% else %}<tr><td colspan="7" class="dim">No guests on this node.</td></tr>{% endfor %}</tbody></table></div>
+    {% if ctl and guests %}<form method="post" action="/hypervisors/{{ c.id }}/action" class="filters" style="margin-top:12px"{{ hv.confirm_attrs(actions.node_migrateall, 'node_migrateall', node, 'from ' ~ node) }}>{{ hv.hidden(c, 'node_migrateall', node) }}
+      <span class="sub">Evacuate before maintenance:</span>
+      <select name="target" required aria-label="Target node">{% for o in other_nodes %}<option>{{ o }}</option>{% else %}<option value="">No other online node</option>{% endfor %}</select>
+      <input type="hidden" name="has_with_local_disks" value="1"><label class="chk"><input type="checkbox" name="with_local_disks"> Copy local disks</label>
+      <button class="btn" type="submit">Migrate all guests</button></form>{% endif %}</div>
+
+  <div class="p c6"><div class="ph"><h2>Storage</h2></div>
+    <div class="scroll"><table><thead><tr><th>Storage</th><th>Type</th><th>Content</th><th>Used</th><th class="n">Size</th></tr></thead><tbody>
+    {% for x in d.storages or [] %}<tr><td><b>{{ x.name }}</b>{% if x.shared %} <span class="tag">shared</span>{% endif %}{% if not x.active %} <span class="tag bad">inactive</span>{% endif %}</td><td class="dim">{{ x.type }}</td><td class="dim" style="font-size:12px">{{ x.content|join(', ') }}</td>
+      <td class="nw">{{ meter((100 * x.used / x.total) if x.total else none, 80, 90) }}</td><td class="n">{{ x.total|bytes }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">Not available.</td></tr>{% endfor %}</tbody></table></div></div>
+
+  <div class="p c6"><div class="ph"><h2>Recent tasks</h2><a class="sub" href="/hypervisors/{{ c.id }}/tasks">All tasks</a></div>
+    <div class="scroll"><table><thead><tr><th>Started</th><th>Task</th><th>Guest</th><th>Result</th></tr></thead><tbody>
+    {% for t in d.tasks or [] %}<tr><td class="nw">{{ t.start|ts if t.start else '' }}</td><td>{{ t.type }}</td><td>{{ t.id or '' }}</td>
+      <td>{% if t.status == 'running' %}<span class="tag">running</span>{% elif t.status == 'OK' %}<span class="okc">OK</span>{% else %}<span class="bad">{{ t.status }}</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">No recent tasks.</td></tr>{% endfor %}</tbody></table></div></div>
+  {% if s.kversion or s.pveversion %}<div class="p"><dl class="kv"><dt>Proxmox</dt><dd>{{ s.pveversion }}</dd><dt>Kernel</dt><dd>{{ s.kversion }}</dd>{% if s.sockets %}<dt>CPU sockets</dt><dd>{{ s.sockets }}</dd>{% endif %}</dl></div>{% endif %}
+</div>
+{% endblock %}

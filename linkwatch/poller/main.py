@@ -41,7 +41,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from .. import __version__
 from ..common.discovery import TargetError, expand_targets
 from ..integrations import IntegrationError, build
-from . import mtr, tunnel
+from . import mtr, pveterm, tunnel
 from .discover import scan
 from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
@@ -167,7 +167,8 @@ class Poller:
         if mtr.available():
             feats.append("mtr")
         if tunnel.enabled():
-            feats.append("ssh")
+            feats += ["ssh", "pveterm"]
+        feats.append("rpc")
         return feats
 
     async def handle(self, msg: dict) -> None:
@@ -207,8 +208,68 @@ class Poller:
                 task = asyncio.create_task(tunnel.run(self.ws_base, self.key, sid, host, port))
                 self.tunnels.add(task)
                 task.add_done_callback(self.tunnels.discard)
+        elif t == "rpc":
+            task = asyncio.create_task(self.rpc(msg))
+            self.tunnels.add(task)
+            task.add_done_callback(self.tunnels.discard)
+        elif t == "pve_term_open":
+            sid = str(msg.get("sid") or "")
+            if sid and self.key:
+                integ = next((i for i in self.integrations if i.get("id") == msg.get("integration_id")), None)
+                vtype = msg.get("vmtype") if msg.get("vmtype") in ("qemu", "lxc") else None
+                task = asyncio.create_task(pveterm.run(self.ws_base, self.key, sid, integ, str(msg.get("node") or ""), vtype,
+                                                       msg.get("vmid"), int(msg.get("cols") or 80), int(msg.get("rows") or 24)))
+                self.tunnels.add(task)
+                task.add_done_callback(self.tunnels.discard)
         elif t == "ping" and self.ws:
             await self.ws.send(json.dumps({"type": "pong"}))
+
+    async def rpc(self, msg: dict) -> None:
+        """Answer one request from the server. Only integrations assigned to this poller can be used, with the
+        configuration the server pushed; ``op`` "integration_action" runs ``Integration.action``."""
+        rid = msg.get("id")
+        reply: dict[str, Any] = {"type": "rpc_result", "id": rid, "ok": False}
+        try:
+            if msg.get("op") != "integration_action":
+                raise IntegrationError(f"This poller doesn't know the request {msg.get('op')!r}. Update it.")
+            integ = next((i for i in self.integrations if i.get("id") == msg.get("integration_id")), None)
+            if integ is None:
+                raise IntegrationError("This poller doesn't run that integration. Press Sync now and try again.")
+            name, params = str(msg.get("action") or ""), msg.get("params") or {}
+
+            def work():
+                client = build(integ["kind"], integ["config"])
+                try:
+                    if not hasattr(client, "action"):
+                        raise IntegrationError(f"{integ['kind']} has no actions.")
+                    return client.action(name, params)
+                finally:
+                    client.close()
+            reply["result"] = await asyncio.wait_for(asyncio.to_thread(work), 90)
+            reply["ok"] = True
+            log.info("Request %s on integration %s done", name, integ["id"])
+            if msg.get("refresh"):
+                asyncio.create_task(self.refresh_integration(integ, delay=6.0))
+        except IntegrationError as exc:
+            reply["error"] = str(exc)
+        except asyncio.TimeoutError:
+            reply["error"] = "The request took longer than 90 seconds."
+        except Exception as exc:
+            log.exception("Request failed")
+            reply["error"] = f"{exc.__class__.__name__}: {exc}"
+        await self.send_or_queue(reply, queue=False)
+
+    async def refresh_integration(self, integ: dict, delay: float = 0.0) -> None:
+        """Collect one integration now (after an action) instead of waiting for the next cycle."""
+        await asyncio.sleep(delay)
+        item = await self.run_integration(integ)
+        batch = {"type": "results", "batch_id": new_batch_id(), "partial": True, "items": [item]}
+        self.spool.put(batch)
+        if self.ws:
+            try:
+                await self.ws.send(json.dumps(batch))
+            except ConnectionClosed:
+                pass
 
     async def send_or_queue(self, msg: dict, queue: bool = True) -> None:
         if self.ws:

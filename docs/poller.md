@@ -6,7 +6,8 @@ API work. It needs:
 * **Outbound** TCP 443 to `utilz.perrego.net`. This is the only connection it
   makes to the internet.
 * UDP 161 (SNMP) and ICMP to the devices it polls, and HTTPS to the on-prem
-  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it. UniFi setup: [unifi.md](unifi.md).
+  APIs (PAN-OS, FortiGate, UniFi, Proxmox) you assign to it. For Proxmox that is port 8006,
+  which also carries VM actions and consoles. Setup: [unifi.md](unifi.md), [proxmox.md](proxmox.md).
 * **Nothing inbound.** No port forwards, no VPN.
 
 One poller comfortably handles about 150 devices at a 5-minute interval. Add a

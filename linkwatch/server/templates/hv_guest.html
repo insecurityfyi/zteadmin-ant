@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% import "_hv.html" as hv with context %}
+{% from "_iv.html" import meter %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+{% set s = d.status or {} %}
+{% set cfg = d.config or {} %}
+{% set what = ('VM ' if vtype == 'qemu' else 'container ') ~ vmid ~ ' (' ~ name ~ ')' %}
+{% set ctl = is_admin and c.control and c.can_rpc %}
+{% set is_template = s.template or row.template %}
+<div class="head"><div><div class="crumb"><a href="/hypervisors">Hypervisors</a> · <a href="/hypervisors?i={{ c.id }}">{{ c.name }}</a> · <a href="/hypervisors/{{ c.id }}/node/{{ node|urlencode }}">{{ node }}</a></div>
+  <h1 style="display:flex;align-items:center;gap:10px">{{ hv.power_dot(status) }}{{ name }} <span class="tag">{{ 'VM' if vtype == 'qemu' else 'Container' }} {{ vmid }}</span>{% if is_template %} <span class="tag">template</span>{% endif %}</h1>
+  <p>{{ status|capitalize }}{% if s.qmpstatus and s.qmpstatus != status %} ({{ s.qmpstatus }}){% endif %}{% if running and s.uptime %} for {{ s.uptime|duration }}{% endif %} · on node {{ node }}{% if s.lock %} · <span class="wa">locked: {{ s.lock }}</span>{% endif %}{% if s.ha and s.ha.managed %} · HA {{ s.ha.state }}{% endif %}{% if device_id %} · <a href="/devices/{{ device_id }}">graphs and alerts</a>{% endif %}</p></div>
+  {% if ctl and not is_template %}<div class="hv-bar">
+    {% if running %}{{ hv.act(c, actions, 'shutdown', node, vtype, vmid, what, cls='btn') }}{{ hv.act(c, actions, 'reboot', node, vtype, vmid, what, cls='btn') }}{{ hv.act(c, actions, 'suspend', node, vtype, vmid, what, cls='btn') }}{% if vtype == 'qemu' %}{{ hv.act(c, actions, 'hibernate', node, vtype, vmid, what, cls='btn') }}{{ hv.act(c, actions, 'reset', node, vtype, vmid, what, cls='btn') }}{% endif %}{{ hv.act(c, actions, 'stop', node, vtype, vmid, what, cls='btn danger') }}
+    {% elif status in ('paused', 'suspended') or s.qmpstatus in ('paused', 'suspended') %}{{ hv.act(c, actions, 'resume', node, vtype, vmid, what, cls='btn pri') }}{{ hv.act(c, actions, 'stop', node, vtype, vmid, what, cls='btn danger') }}
+    {% else %}{{ hv.act(c, actions, 'start', node, vtype, vmid, what, cls='btn pri') }}{% endif %}
+    {% if vtype == 'lxc' or (running and d.serial) %}<a class="btn" data-popout="{{ vmid }}" href="/hypervisors/console?i={{ c.id }}&node={{ node|urlencode }}&type={{ vtype }}&vmid={{ vmid }}">Console</a>{% elif running and c.web_url %}<a class="btn" target="_blank" rel="noopener" href="{{ c.web_url }}/?console=kvm&novnc=1&vmid={{ vmid }}&node={{ node|urlencode }}&resize=scale" title="Graphical console in the Proxmox web UI. Your browser must be able to reach {{ c.web_url }}.">Console (Proxmox)</a>{% endif %}
+  </div>{% endif %}</div>
+
+{% if error %}<div class="flash warn" role="alert">{{ error }}</div>{% endif %}
+{{ hv.control_off_note(c, is_admin) }}
+{{ hv.scaffolding(c, task) }}
+{% if d.unavailable %}<details class="p" style="padding:10px 16px"><summary class="sub" style="cursor:pointer">{{ d.unavailable|length }} detail{{ '' if d.unavailable|length == 1 else 's' }} not available with this API token</summary>
+  <ul class="dim" style="margin:8px 0 0;font-size:12.5px">{% for u in d.unavailable %}<li>{{ u }}</li>{% endfor %}</ul></details>{% endif %}
+
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>CPU</span><b>{{ ((s.cpu or 0) * 100)|pct if running and s.cpu is not none else ((row.cpu|pct) if running else '–') }}</b><em>{{ s.cpus or row.maxcpu or '?' }} vCPU</em></div>
+  <div class="kpi"><span>Memory</span><b>{{ (s.mem or row.mem)|bytes if running else '–' }}</b><em>of {{ (s.maxmem or row.maxmem)|bytes }}</em></div>
+  <div class="kpi"><span>Network in / out</span><b style="font-size:18px">{{ (s.netin or row.netin)|bytes }} / {{ (s.netout or row.netout)|bytes }}</b><em>since start</em></div>
+  <div class="kpi"><span>Disk</span><b>{{ (s.maxdisk or row.maxdisk)|bytes }}</b><em>{% if vtype == 'lxc' and (s.disk or row.disk) %}{{ (s.disk or row.disk)|bytes }} used{% else %}&nbsp;{% endif %}</em></div>
+</div>
+
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Hardware</h2></div>
+    {% if cfg %}<dl class="kv">
+      {% if cfg.ostype %}<dt>OS type</dt><dd>{{ cfg.ostype }}</dd>{% endif %}
+      <dt>CPU</dt><dd>{{ cfg.cores or 1 }} core{{ '' if (cfg.cores or 1) == 1 else 's' }}{% if cfg.sockets and cfg.sockets > 1 %} × {{ cfg.sockets }} sockets{% endif %}{% if cfg.cpu %} · {{ cfg.cpu }}{% endif %}</dd>
+      <dt>Memory</dt><dd>{{ cfg.memory or '?' }} MiB{% if cfg.balloon is defined and cfg.balloon != 0 and cfg.balloon %} (balloon min {{ cfg.balloon }} MiB){% endif %}{% if cfg.swap is defined %} · swap {{ cfg.swap }} MiB{% endif %}</dd>
+      {% for k, v in d.disks|dictsort %}<dt>{{ k }}</dt><dd class="mono" style="font-size:12px">{{ v }}</dd>{% endfor %}
+      {% for k, v in d.nets|dictsort %}<dt>{{ k }}</dt><dd class="mono" style="font-size:12px">{{ v }}</dd>{% endfor %}
+      {% if cfg.onboot is defined %}<dt>Start at boot</dt><dd>{{ 'yes' if cfg.onboot else 'no' }}</dd>{% endif %}
+      {% if cfg.agent %}<dt>Guest agent</dt><dd>{{ cfg.agent }}</dd>{% endif %}
+      {% if cfg.tags %}<dt>Tags</dt><dd>{% for t in cfg.tags.replace(',', ';').split(';') if t %}<span class="tag">{{ t }}</span> {% endfor %}</dd>{% endif %}
+      {% if cfg.description %}<dt>Notes</dt><dd style="white-space:pre-wrap">{{ cfg.description }}</dd>{% endif %}
+    </dl>{% else %}<p class="dim" style="margin:0">Live details are not available right now.</p>{% endif %}</div>
+
+  <div class="p c6"><div class="ph"><h2>Snapshots</h2><span class="sub">{{ (d.snapshots or [])|length }}</span></div>
+    <div class="scroll"><table><thead><tr><th>Name</th><th>Taken</th><th>Notes</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for x in (d.snapshots or [])|reverse %}<tr><td><b>{{ x.name }}</b>{% if x.name == d.snapshot_parent %} <span class="tag" title="The guest's current state is based on this snapshot">current</span>{% endif %}{% if x.vmstate %} <span class="tag" title="Includes RAM">RAM</span>{% endif %}</td>
+      <td class="nw">{{ x.snaptime|ts if x.snaptime else '' }}</td><td class="dim" style="font-size:12.5px">{{ x.description or '' }}</td>
+      {% if ctl %}<td class="n nw">{% for a in ['snapshot_rollback', 'snapshot_delete'] %}<form class="inline" method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions[a], a, vmid, what ~ ' to ' ~ x.name if a == 'snapshot_rollback' else x.name ~ ' of ' ~ what) }}>{{ hv.hidden(c, a, node, vtype, vmid) }}<input type="hidden" name="snapname" value="{{ x.name }}"><button class="btn sm{{ ' danger' if a == 'snapshot_rollback' else '' }}" type="submit">{{ 'Roll back' if a == 'snapshot_rollback' else 'Delete' }}</button></form> {% endfor %}</td>{% endif %}</tr>
+    {% else %}<tr><td colspan="4" class="dim">No snapshots.</td></tr>{% endfor %}</tbody></table></div>
+    {% if ctl and not is_template %}<form method="post" action="/hypervisors/{{ c.id }}/action" class="filters" style="margin-top:12px">{{ hv.hidden(c, 'snapshot_create', node, vtype, vmid) }}
+      <input type="text" name="snapname" placeholder="Snapshot name, e.g. before-upgrade" pattern="[A-Za-z][A-Za-z0-9_\-]{1,39}" required aria-label="Snapshot name" style="flex:1;min-width:180px">
+      <input type="text" name="description" placeholder="Notes (optional)" aria-label="Snapshot notes" style="flex:1;min-width:140px">
+      {% if vtype == 'qemu' %}<input type="hidden" name="has_vmstate" value="1"><label class="chk"><input type="checkbox" name="vmstate"{% if not running %} disabled{% endif %}> Include RAM</label>{% endif %}
+      <button class="btn" type="submit">Take snapshot</button></form>{% endif %}</div>
+
+  <div class="p"><div class="ph"><h2>Backups</h2><span class="sub">{{ (d.backups or [])|length }} on storage this node can see</span></div>
+    <div class="scroll"><table><thead><tr><th>Backup</th><th>Storage</th><th>Taken</th><th class="n">Size</th><th>Notes</th>{% if ctl %}<th class="n">Restore</th>{% endif %}</tr></thead><tbody>
+    {% for b in d.backups or [] %}<tr><td class="mono" style="font-size:12px;overflow-wrap:anywhere">{{ b.volid.split('/')[-1] }}{% if b.protected %} <span class="tag">protected</span>{% endif %}</td><td>{{ b.storage }}</td><td class="nw">{{ b.ctime|ts if b.ctime else '' }}</td><td class="n">{{ b.size|bytes }}</td><td class="dim" style="font-size:12.5px">{{ b.notes or '' }}</td>
+      {% if ctl %}<td class="n nw"><form class="inline" method="post" action="/hypervisors/{{ c.id }}/action">{{ hv.hidden(c, 'restore', node, vtype, vmid) }}<input type="hidden" name="volid" value="{{ b.volid }}"><input type="number" name="newid" value="{{ d.nextid or '' }}" min="100" required aria-label="New VMID" style="width:90px;font-size:13px;padding:3px 6px"> <button class="btn sm" type="submit" title="{{ actions.restore.help }}">Restore as new</button></form></td>{% endif %}</tr>
+    {% else %}<tr><td colspan="6" class="dim">No backups found.</td></tr>{% endfor %}</tbody></table></div></div>
+
+  {% if ctl %}
+  <div class="p"><div class="ph"><h2>Manage</h2><span class="sub">Long-running jobs run as Proxmox tasks; their progress shows at the top of this page.</span></div>
+    <div class="hv-forms">
+      {% if not is_template %}
+      <form method="post" action="/hypervisors/{{ c.id }}/action">{{ hv.hidden(c, 'backup', node, vtype, vmid) }}<h3>Back up now</h3>
+        <label class="f">Storage<select name="storage" required>{% for st_ in d.storages or [] if 'backup' in st_.content %}<option>{{ st_.name }}</option>{% else %}<option value="">No backup storage on {{ node }}</option>{% endfor %}</select></label>
+        <label class="f">Mode<select name="mode"><option value="snapshot">Snapshot (no downtime)</option><option value="suspend">Suspend</option><option value="stop">Stop</option></select></label>
+        <label class="f">Notes <span class="help">(optional)</span><input type="text" name="notes" value="{{ '{{guestname}}' }} via Linkwatch"></label>
+        <button class="btn" type="submit">Back up</button></form>
+      <form method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions.migrate, 'migrate', vmid, what) }}>{{ hv.hidden(c, 'migrate', node, vtype, vmid) }}<h3>Migrate</h3>
+        {% set allowed = d.migrate.allowed if d.migrate else other_nodes %}
+        <label class="f">To node<select name="target" required>{% for n in other_nodes %}<option {% if n not in allowed %}disabled{% endif %}>{{ n }}</option>{% else %}<option value="">No other online node</option>{% endfor %}</select></label>
+        {% if d.migrate and d.migrate.not_allowed %}<small class="help">Not possible to: {% for k, v in d.migrate.not_allowed.items() %}{{ k }} ({{ v if v is string else v|join(', ') }}){{ ', ' if not loop.last }}{% endfor %}</small>{% endif %}
+        {% if vtype == 'qemu' %}<input type="hidden" name="has_online" value="1"><label class="chk"><input type="checkbox" name="online" {% if running %}checked{% else %}disabled{% endif %}> Live migration</label>
+        <input type="hidden" name="has_with_local_disks" value="1"><label class="chk"><input type="checkbox" name="with_local_disks" {% if d.migrate and d.migrate.local_disks %}checked{% endif %}> Copy local disks{% if d.migrate and d.migrate.local_disks %} <span class="help">({{ d.migrate.local_disks|length }} local)</span>{% endif %}</label>
+        {% else %}<input type="hidden" name="has_restart" value="1"><label class="chk"><input type="checkbox" name="restart" checked> Restart mode <span class="help">(a running container is stopped and started again)</span></label>{% endif %}
+        <button class="btn" type="submit">Migrate</button></form>
+      {% endif %}
+      <form method="post" action="/hypervisors/{{ c.id }}/action">{{ hv.hidden(c, 'clone', node, vtype, vmid) }}<h3>Clone</h3>
+        <div class="row2"><label class="f">New VMID<input type="number" name="newid" value="{{ d.nextid or '' }}" min="100" required></label>
+          <label class="f">Name<input type="text" name="name" value="{{ name ~ '-clone' }}" pattern="[A-Za-z0-9][A-Za-z0-9\-.]*"></label></div>
+        <label class="f">On node<select name="target"><option value="">{{ node }} (same)</option>{% for n in other_nodes %}<option>{{ n }}</option>{% endfor %}</select></label>
+        <label class="f">Storage <span class="help">(full clones)</span><select name="storage"><option value="">Same as source</option>{% for st_ in d.storages or [] if ('images' in st_.content or 'rootdir' in st_.content) %}<option>{{ st_.name }}</option>{% endfor %}</select></label>
+        {% if d.snapshots %}<label class="f">From snapshot <span class="help">(optional)</span><select name="snapname"><option value="">Current state</option>{% for x in d.snapshots %}<option>{{ x.name }}</option>{% endfor %}</select></label>{% endif %}
+        <input type="hidden" name="has_full" value="1"><label class="chk"><input type="checkbox" name="full" {% if not is_template %}checked{% endif %}> Full clone <span class="help">(otherwise linked{{ ', templates only' if not is_template else '' }})</span></label>
+        <button class="btn" type="submit">Clone</button></form>
+      {% if not is_template %}
+      <form method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions.resize, 'resize', vmid, what) }}>{{ hv.hidden(c, 'resize', node, vtype, vmid) }}<h3>CPU and memory</h3>
+        <div class="row2"><label class="f">Cores<input type="number" name="cores" min="1" max="512" value="{{ cfg.cores or '' }}"></label>
+          <label class="f">Memory (MiB)<input type="number" name="memory" min="16" step="16" value="{{ cfg.memory or '' }}"></label></div>
+        <small class="help">{{ actions.resize.help }}</small>
+        <button class="btn" type="submit">Apply</button></form>
+      <form method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions.disk_grow, 'disk_grow', vmid, what) }}>{{ hv.hidden(c, 'disk_grow', node, vtype, vmid) }}<h3>Grow a disk</h3>
+        <div class="row2"><label class="f">Disk<select name="disk" required>{% for k in d.disks|sort %}<option>{{ k }}</option>{% else %}<option value="">No disks found</option>{% endfor %}</select></label>
+          <label class="f">Add<input type="text" name="size" placeholder="+10G" pattern="\+?[0-9.]+ ?[KMGTkmgt]?" required></label></div>
+        <small class="help">{{ actions.disk_grow.help }}</small>
+        <button class="btn" type="submit">Grow</button></form>
+      {% endif %}
+    </div>
+    <h3 style="margin:18px 0 8px;font:600 13.5px var(--body)" class="bad">Danger zone</h3>
+    <div class="hv-bar">
+      {% if not is_template %}{% if running %}<span class="help">Stop the guest to convert it to a template or delete it.</span>{% else %}{{ hv.act(c, actions, 'template', node, vtype, vmid, what, cls='btn') }}{% endif %}{% endif %}
+      {% if not running %}<form class="inline" method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions.delete, 'delete', vmid, what) }}>{{ hv.hidden(c, 'delete', node, vtype, vmid, '/hypervisors?i=' ~ c.id) }}<input type="hidden" name="has_purge" value="1"><input type="hidden" name="purge" value="on"><button class="btn danger" type="submit">Delete {{ 'template' if is_template else ('VM' if vtype == 'qemu' else 'container') }}</button></form>{% endif %}
+    </div></div>
+  {% endif %}
+
+  <div class="p"><div class="ph"><h2>Recent tasks</h2><a class="sub" href="/hypervisors/{{ c.id }}/tasks">All tasks</a></div>
+    <div class="scroll"><table><thead><tr><th>Started</th><th>Task</th><th>Node</th><th>User</th><th>Result</th></tr></thead><tbody>
+    {% for t in d.tasks or [] %}<tr><td class="nw">{{ t.start|ts if t.start else '' }}</td><td>{{ t.type }}</td><td>{{ t.node }}</td><td class="dim">{{ t.user }}</td>
+      <td>{% if t.status == 'running' %}<span class="tag">running</span>{% elif t.status == 'OK' %}<span class="okc">OK</span>{% else %}<span class="bad">{{ t.status }}</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">No recent tasks for this guest.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endblock %}
