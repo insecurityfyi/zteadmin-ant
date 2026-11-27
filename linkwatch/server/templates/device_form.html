@@ -4,7 +4,7 @@
 {% set v = form or {} %}
 {% set api_only = device and device.source not in ('snmp','ping') %}
 <div class="head"><div><div class="crumb"><a href="/devices">Devices</a></div><h1>{{ 'Edit ' ~ device.hostname if device else 'Add a device' }}</h1>
-  <p>{% if api_only %}This device comes from the {{ device.integration.name if device.integration else 'integration' }} integration, so only its site and whether it is monitored can be changed here.{% else %}The poller you choose must be able to reach the device's address over SNMP (UDP 161) and ping.{% endif %}</p></div></div>
+  <p>{% if api_only %}This device comes from the {{ device.integration.name if device.integration else 'integration' }} integration, so only its site and whether it is monitored can be changed here. To poll it over SNMP as well, use <a href="/devices/add-snmp?ids={{ device.id }}">Add SNMP</a>.{% else %}The poller you choose must be able to reach the device's address over SNMP (UDP 161) and ping.{% endif %}</p></div></div>
 {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
 <div class="p">
 <form method="post" class="stack">
@@ -29,6 +29,13 @@
   <datalist id="sites">{% for s in site_names %}<option value="{{ s }}">{% endfor %}</datalist>
   <div class="actions"><button class="btn pri" type="submit">{{ 'Save' if device else 'Add device' }}</button><a class="btn" href="{{ '/devices/' ~ device.id if device else '/devices' }}">Cancel</a></div>
 </form>
+{% if device and device.integration_id and device.source in ('snmp', 'ping') %}
+<form method="post" action="/devices/{{ device.id }}/snmp/remove" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px" onsubmit="return this.querySelector('[name=confirm]').checked">
+  <p class="help" style="margin-top:0">{{ device.integration.name if device.integration else 'An integration' }} also reports this device. You can stop polling it here and keep only the API data; its SNMP interfaces and sensors are removed.</p>
+  <label class="chk"><input type="checkbox" name="confirm" id="confirm_snmp"> Stop SNMP and ping polling for {{ device.hostname }}</label>
+  <button class="btn" type="submit" style="margin-top:8px">Use API data only</button>
+</form>
+{% endif %}
 {% if device %}
 <form method="post" action="/devices/{{ device.id }}/delete" style="margin-top:24px;border-top:1px solid var(--line);padding-top:16px" onsubmit="return this.querySelector('[name=confirm]').checked">
   <label class="chk"><input type="checkbox" name="confirm" id="confirm"> Delete {{ device.hostname }} and all of its graphs and alert history</label>

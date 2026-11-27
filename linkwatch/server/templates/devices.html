@@ -23,7 +23,7 @@
   <input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}">
   {% if me and me.role == 'admin' %}<div class="actions" style="margin-bottom:10px">
     <label class="chk"><input type="checkbox" data-check-all="device_id"> Select all {{ devices|length }}</label>
-    <select name="action" aria-label="Action for ticked devices" style="width:auto"><option value="">With ticked devices…</option><option value="disable">Disable (stop polling, keep history)</option><option value="enable">Enable</option><option value="delete">Delete with their history</option></select>
+    <select name="action" aria-label="Action for ticked devices" style="width:auto"><option value="">With ticked devices…</option><option value="disable">Disable (stop polling, keep history)</option><option value="enable">Enable</option><option value="add_snmp">Add SNMP (devices from an integration)</option><option value="delete">Delete with their history</option></select>
     <button class="btn" type="submit" onclick="var a=this.form.action.value; return a !== 'delete' || confirm('Delete the ticked devices and all their history?')">Apply</button>
   </div>{% endif %}
   <div class="scroll"><table>

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Add SNMP{% endblock %}
+{% block content %}
+{% set v = form or {} %}
+{% set one = rows|length == 1 %}
+<div class="head"><div><div class="crumb"><a href="/devices">Devices</a>{% if one %} / <a href="/devices/{{ rows[0].d.id }}">{{ rows[0].d.hostname }}</a>{% endif %}</div>
+  <h1>{{ 'Add SNMP to ' ~ rows[0].d.hostname if one else 'Add SNMP to ' ~ rows|length ~ ' devices' }}</h1>
+  <p>{{ 'This device comes' if one else 'These devices come' }} from an integration's API. Polling {{ 'it' if one else 'them' }} over SNMP as well adds interface traffic, sensors, LLDP neighbours and custom OIDs. Everything stays on the same device: the API data keeps updating beside the SNMP data, and nothing is duplicated.</p></div></div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{% if skipped %}<p class="dim">Skipped {{ skipped|length }} device{{ 's' if skipped|length != 1 else '' }} that already {{ 'is' if skipped|length == 1 else 'are' }} polled over SNMP or ping, or didn't come from an integration: {% for d in skipped %}{{ d.hostname }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+{% if not rows %}
+<div class="p"><div class="empty-state"><h2>Nothing to add SNMP to</h2><p>Tick devices whose source is an integration (UniFi, Meraki, pfSense, Proxmox and so on) on the <a href="/devices">Devices</a> page.</p></div></div>
+{% else %}
+<form method="post" action="/devices/add-snmp" class="stack" id="snmp-form" autocomplete="off">
+<input type="hidden" name="ids" value="{{ ids }}">
+<div class="p">
+  <div class="ph"><h2>{{ 'Address' if one else 'Devices' }}</h2><span class="sub">Matched against SNMP devices you already monitor by serial number, IP address, MAC and name</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Device</th><th>From</th><th>SNMP address</th><th>What to do</th></tr></thead>
+    <tbody>{% for r in rows %}{% set d = r.d %}
+    <tr data-row="{{ d.id }}">
+      <td class="nw"><a href="/devices/{{ d.id }}">{{ d.hostname }}</a><div class="dim">{{ d.type }}{% if d.platform %} · {{ d.platform }}{% endif %}</div></td>
+      <td class="nw">{{ d.integration.name if d.integration else d.source }}</td>
+      <td><input type="text" name="ip_{{ d.id }}" id="ip_{{ d.id }}" aria-label="SNMP address for {{ d.hostname }}" value="{{ v.get('ip_' ~ d.id, d.ip or '') }}" placeholder="10.0.0.1" style="width:150px"> <button class="btn sm" type="button" data-test="{{ d.id }}" title="Ask the poller to read sysName and sysDescr with these credentials">Test</button>
+        <div class="dim" data-result="{{ d.id }}" role="status" style="font-size:12px;margin-top:4px;max-width:340px"></div></td>
+      <td>{% set act = v.get('action_' ~ d.id, 'merge' if r.twin else 'attach') %}
+        <select name="action_{{ d.id }}" aria-label="What to do with {{ d.hostname }}" style="width:auto">
+          {% if r.twin %}<option value="merge" {% if act == 'merge' %}selected{% endif %}>Merge into {{ r.twin.hostname }}</option>{% endif %}
+          <option value="attach" {% if act == 'attach' %}selected{% endif %}>Poll it over SNMP</option>
+          {% if not one %}<option value="skip" {% if act == 'skip' %}selected{% endif %}>Skip</option>{% endif %}
+        </select>{% if r.twin %}<div class="dim" style="font-size:12px;margin-top:4px"><a href="/devices/{{ r.twin.id }}">{{ r.twin.hostname }}</a> ({{ r.twin.ip }}) is already polled over {{ 'SNMP' if r.twin.snmp_profile_id else 'ping' }}</div>{% endif %}</td>
+    </tr>{% endfor %}</tbody></table></div>
+  {% if rows|selectattr('twin')|list %}<p class="help" style="margin:10px 0 0">Merging moves this device's graphs, events and alerts onto the SNMP device and removes the API-only copy. The SNMP device keeps its credentials and poller.</p>{% endif %}
+</div>
+<div class="p">
+  <div class="ph"><h2>Poller and credentials</h2><span class="sub">Used for devices set to “Poll it over SNMP”</span></div>
+  <div class="row2">
+    <label class="f">Poller<select name="poller_id" id="poller_id" required>{% if not pollers %}<option value="">Install a poller first</option>{% endif %}{% for p in pollers %}<option value="{{ p.id }}" {% if (v.poller_id|string) == (p.id|string) or (not v.poller_id and p.id == default_poller) %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select><small>It must reach the address{{ '' if one else 'es' }} on UDP 161.</small></label>
+    <label class="f">SNMP credentials<select name="profile" id="profile">{% for p in profiles %}<option value="{{ p.id }}" {% if (v.profile|string) == (p.id|string) %}selected{% endif %}>{{ p.name }} (v{{ p.version }})</option>{% endfor %}<option value="new" {% if v.profile == 'new' or not profiles %}selected{% endif %}>New credentials…</option></select><small><a href="/settings#snmp">Manage SNMP credentials</a></small></label>
+  </div>
+  <div id="new-creds" class="stack" style="margin-top:12px">
+    <div class="row2"><label class="f">Name for these credentials<input type="text" name="name" id="snmp_name" value="{{ v.name or '' }}" placeholder="{{ rows[0].d.hostname ~ ' SNMP' if one else 'API devices SNMP' }}"><small>Saved as a credential set you can reuse on other devices.</small></label>
+      <label class="f">Version<select name="version" id="snmp_version"><option value="3" {% if v.version != '2c' %}selected{% endif %}>SNMPv3 (recommended)</option><option value="2c" {% if v.version == '2c' %}selected{% endif %}>SNMPv2c</option></select></label></div>
+    <fieldset data-ver="2c" style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv2c</legend>
+      <label class="f">Community<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="community" id="snmp_community"></label></fieldset>
+    <fieldset data-ver="3" style="border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px"><legend class="help">SNMPv3</legend>
+      <div class="row2"><label class="f">Username<input type="text" name="username" id="snmp_user" value="{{ v.username or '' }}"></label>
+        <label class="f">Security level<select name="level" id="snmp_level">{% for l in ['authPriv', 'authNoPriv', 'noAuthNoPriv'] %}<option {% if v.level == l %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label></div>
+      <div class="row2"><label class="f">Auth protocol<select name="auth_protocol" id="snmp_auth">{% for a in auth_protocols %}<option {% if v.auth_protocol == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+        <label class="f">Auth passphrase<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="auth_key" id="snmp_authkey"></label></div>
+      <div class="row2"><label class="f">Privacy protocol<select name="priv_protocol" id="snmp_priv">{% for a in priv_protocols %}<option {% if v.priv_protocol == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+        <label class="f">Privacy passphrase<input type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore name="priv_key" id="snmp_privkey"></label></div></fieldset>
+    <label class="f">UDP port <span class="help">(optional, default 161)</span><input type="number" name="port" id="snmp_port" min="1" max="65535" value="{{ v.port or '' }}"></label>
+  </div>
+  <label class="chk" style="margin-top:12px"><input type="checkbox" name="ping" id="ping" {% if not form or v.ping %}checked{% endif %}> Ping {{ 'it' if one else 'them' }} every cycle too</label>
+  <div class="actions" style="margin-top:12px"><button class="btn pri" type="submit">{{ 'Add SNMP' if one else 'Add SNMP to these devices' }}</button><a class="btn" href="{{ '/devices/' ~ rows[0].d.id if one else '/devices' }}">Cancel</a></div>
+</div>
+</form>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const prof = $("profile"), ver = $("snmp_version");
+  const sync = () => {
+    $("new-creds").hidden = prof.value !== "new";
+    document.querySelectorAll("#new-creds fieldset[data-ver]").forEach((f) => { f.hidden = f.dataset.ver !== ver.value; });
+  };
+  prof.addEventListener("change", sync); ver.addEventListener("change", sync); sync();
+  const fields = ["version", "community", "username", "level", "auth_protocol", "auth_key", "priv_protocol", "priv_key", "port"];
+  document.querySelectorAll("[data-test]").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.test, out = document.querySelector(`[data-result="${id}"]`);
+    const body = { poller_id: $("poller_id").value, ip: $("ip_" + id).value, profile: prof.value };
+    if (prof.value === "new") fields.forEach((f) => { body[f] = document.querySelector(`#new-creds [name="${f}"]`).value; });
+    out.className = "dim"; out.textContent = "Asking the poller…"; btn.disabled = true;
+    try {
+      const r = await fetch("/ui/devices/snmp-test", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const res = await r.json();
+      if (res.error || res.detail) { out.className = "bad"; out.textContent = res.error || res.detail; return; }
+      out.className = "okc"; out.textContent = `Answered: ${res.sys_name || "(no sysName)"}${res.sys_descr ? " · " + res.sys_descr : ""}`;
+      out.title = res.sys_object_id ? "sysObjectID " + res.sys_object_id : "";
+    } catch (e) { out.className = "bad"; out.textContent = "The test failed: " + e; }
+    finally { btn.disabled = false; }
+  }));
+})();
+</script>
+{% endif %}
+{% endblock %}
