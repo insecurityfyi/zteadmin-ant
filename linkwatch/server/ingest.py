@@ -334,6 +334,8 @@ def integration_series(data: dict[str, Any]) -> list[Point]:
     """Time-series points from an integration's extra payload (see IntegrationMetric for what a/b/c mean).
     Items that get their own graph are tagged with a "series" key so pages can link to it."""
     kind = data.get("type")
+    if data.get("sse"):
+        return _sse_series(data)
     if kind in SERIES:
         return SERIES[kind](data)
     return _unifi_series(data)
@@ -372,6 +374,31 @@ def _zscaler_series(d: dict[str, Any]) -> list[Point]:
         apps, summ = ai.get("apps") or [], ai.get("summary") or {}
         out.append(("ai:usage", summ.get("bytes") or sum(a.get("bytes") or 0 for a in apps),
                     summ.get("users") or max((a.get("users") or 0 for a in apps), default=0), len(apps)))
+    return out
+
+
+def _sse_series(d: dict[str, Any]) -> list[Point]:
+    """Netskope, Cato, Prisma Access and Cloudflare share one payload shape (see integrations/sse.py)."""
+    out: list[Point] = []
+    for key in ("sites", "private"):
+        items = (d.get(key) or {}).get("items")
+        if items is not None:
+            out.append((f"{key}:status", sum(1 for x in items if x.get("status") == "up"), len(items),
+                        sum(1 for x in items if x.get("status") in ("down", "warn"))))
+    for x in (d.get("sites") or {}).get("items") or []:
+        if x.get("rtt_ms") is not None or x.get("loss_pct") is not None:
+            x["series"] = f"site:{x.get('id') or x.get('name')}"
+            out.append((x["series"], _num(x.get("rtt_ms")), _num(x.get("loss_pct")), _num(x.get("jitter_ms"))))
+    u = d.get("users") or {}
+    if u.get("total") is not None:
+        out.append(("users:devices", _num(u.get("total")), _num(u.get("connected")), None))
+    apps = d.get("apps") or {}
+    if apps.get("items") is not None:
+        ai = [a for a in apps["items"] if a.get("ai")]
+        out.append(("apps:ai", sum(a.get("bytes") or 0 for a in ai), max((a.get("users") or 0 for a in ai), default=0), len(ai)))
+    dlp = d.get("dlp") or {}
+    if dlp.get("total") is not None:
+        out.append(("dlp:incidents", _num(dlp.get("total")), _num(dlp.get("ai_incidents")), None))
     return out
 
 

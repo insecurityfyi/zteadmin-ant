@@ -1,0 +1,178 @@
+{# Shared page for SSE / SASE platforms (Netskope, Cato, Prisma Access, Cloudflare). Payload shape: integrations/sse.py #}
+{% from "_iv.html" import chart, legend, meter, yesno, dot, filter_box %}
+{% set vendor = data.vendor or (cls.label if cls else integ.kind) %}
+{% set products = data.products or {} %}
+{% set labels = data.labels or {} %}
+{% set sites, priv, users, policy, apps, dlp = data.sites or {}, data.private or {}, data.users or {}, data.policy or {}, data.apps or {}, data.dlp or {} %}
+{% set site_items, priv_items, app_items = sites['items'] or [], priv['items'] or [], apps['items'] or [] %}
+{% set ai_apps = app_items|selectattr('ai')|list %}
+{% set gaps = data.gaps or {} %}
+{% set acts = {'allow': 'okc', 'block': 'bad', 'deny': 'bad', 'drop': 'bad', 'reject': 'bad', 'caution': 'wa', 'warn': 'wa', 'isolate': 'wa', 'partly blocked': 'wa', 'monitor': 'dim'} %}
+{% macro st(s) %}<span class="{{ {'up': 'okc', 'down': 'bad', 'warn': 'wa', 'off': 'dim'}.get(s, 'dim') }}">{{ {'up': 'up', 'down': 'down', 'warn': 'degraded', 'off': 'disabled'}.get(s, s or 'unknown') }}</span>{% endmacro %}
+{% macro sdot(s) %}<span class="dot d-{{ s if s in ['up','down','warn','off'] else 'unknown' }}" title="{{ s }}"></span>{% endmacro %}
+{% macro gap_panel(keys) %}{% set rows = [] %}{% for k in keys %}{% for g in gaps.get(k) or [] %}{% set _ = rows.append((labels.get(k) or k, g)) %}{% endfor %}{% endfor %}
+{% if rows %}<div class="p"><div class="ph"><h2>Not available through {{ vendor }}'s API</h2></div>
+  <table><tbody>{% for area, g in rows %}<tr><td class="nw"><b>{{ g[0] }}</b>{% if keys|length > 1 %}<div class="dim" style="font-size:12px">{{ area }}</div>{% endif %}</td><td class="dim" style="font-size:13px">{{ g[1] }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}{% endmacro %}
+{% macro bars(pairs, total, color='var(--s1)', good=none) %}<div class="bars">{% for k, n in pairs %}<div class="bar"><span>{{ k }}</span><span class="v">{{ n|num }}</span><div class="tr"><b style="width:{{ (100 * n / (total or 1))|round(1) }}%;background:{{ 'var(--up)' if good and k|lower in good else color }}"></b></div></div>{% else %}<p class="dim" style="margin:0">Nothing reported.</p>{% endfor %}</div>{% endmacro %}
+{% macro act(a) %}{% if a %}<span class="{{ acts.get(a|lower, '') }}">{{ a }}</span>{% else %}<span class="dim">–</span>{% endif %}{% endmacro %}
+
+{% if tab == 'overview' %}
+<div class="kpis">
+  {% if 'sites' in products %}{% set up = site_items|selectattr('status', 'equalto', 'up')|list|length %}
+  <div class="kpi"><span>{{ labels.sites or 'Sites & tunnels' }} up</span><b class="{{ 'bad' if site_items and up < site_items|length else '' }}">{{ up }} / {{ site_items|length }}</b><em>{{ site_items|selectattr('status', 'equalto', 'down')|list|length }} down</em></div>{% endif %}
+  {% if 'private' in products %}{% set up = priv_items|selectattr('status', 'equalto', 'up')|list|length %}
+  <div class="kpi"><span>{{ labels.private or 'Private access' }} healthy</span><b class="{{ 'bad' if priv_items and up < priv_items|length else '' }}">{{ up }} / {{ priv_items|length }}</b><em>{% if priv.get('apps') is not none %}{{ priv.apps }} {{ priv.apps_label or 'private apps' }}{% else %}&nbsp;{% endif %}</em></div>{% endif %}
+  {% if 'users' in products %}<div class="kpi"><span>{{ labels.users or 'Devices' }}</span><b>{{ users.total|num if users.get('total') is not none else '–' }}</b><em>{% if users.get('connected') is not none %}{{ users.connected|num }} connected{% else %}&nbsp;{% endif %}</em></div>{% endif %}
+  {% if 'apps' in products %}<div class="kpi"><span>AI apps in use</span><b>{{ ai_apps|length if apps.get('items') is not none else '–' }}</b><em>{{ app_items|length }} apps seen{% if apps.window %} in {{ apps.window.days }} days{% endif %}</em></div>{% endif %}
+  {% if 'dlp' in products %}<div class="kpi"><span>DLP {{ 'incidents' if dlp.get('total') is not none else 'profiles' }}</span><b>{{ dlp.total|num if dlp.get('total') is not none else (dlp.profiles or [])|length }}</b><em>{% if dlp.get('ai_incidents') is not none %}{{ dlp.ai_incidents }} on AI apps{% else %}&nbsp;{% endif %}</em></div>{% endif %}
+</div>
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Areas</h2></div>
+    <table><tbody>{% for k, label in tabs if k != 'overview' %}{% set p = products.get(k) %}
+      <tr><td>{{ dot(p.ok if p else none) }}</td><td><a class="row" href="?tab={{ k }}">{{ label }}</a></td>
+        <td class="{{ 'bad' if p and not p.ok else 'dim' }}" style="font-size:12.5px">{{ (p.objects ~ ' objects') if p and p.ok else (p.error[:140] if p else 'not enabled') }}</td></tr>{% endfor %}</tbody></table></div>
+  {% if site_items %}<div class="p c4"><div class="ph"><h2>{{ labels.sites or 'Sites' }}</h2><span class="sub">up of total</span></div>
+    {{ legend([('Up', 'var(--up)'), ('Total', 'var(--off)'), ('Problems', 'var(--down)')]) }}
+    {{ chart(integ.id, 'sites:status', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--down)","area":false}], 'num', 160, 'Sites') }}</div>{% endif %}
+  {% if priv_items %}<div class="p c4"><div class="ph"><h2>{{ labels.private or 'Private access' }}</h2><span class="sub">healthy of total</span></div>
+    {{ legend([('Healthy', 'var(--up)'), ('Total', 'var(--off)')]) }}
+    {{ chart(integ.id, 'private:status', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false}], 'num', 160, 'Connectors') }}</div>{% endif %}
+  {% if users.get('total') is not none %}<div class="p c4"><div class="ph"><h2>{{ labels.users or 'Devices' }}</h2></div>
+    {{ legend([('Devices', 'var(--s1)'), ('Connected', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'users:devices', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--s2)","area":false}], 'num', 160, 'Devices') }}</div>{% endif %}
+</div>
+{{ gap_panel(tabs|map('first')|reject('equalto', 'overview')|list) }}
+
+{% elif tab == 'sites' %}
+{% set up = site_items|selectattr('status', 'equalto', 'up')|list|length %}
+{% set tunnels = site_items|map(attribute='tunnels')|select|sum(start=[]) %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Up</span><b class="{{ 'bad' if up < site_items|length else 'okc' }}">{{ up }} / {{ site_items|length }}</b><em>{{ site_items|selectattr('status', 'equalto', 'warn')|list|length }} degraded</em></div>
+  <div class="kpi"><span>Down</span><b class="{{ 'bad' if site_items|selectattr('status', 'equalto', 'down')|list else '' }}">{{ site_items|selectattr('status', 'equalto', 'down')|list|length }}</b><em>{{ site_items|selectattr('status', 'equalto', 'off')|list|length }} disabled</em></div>
+  <div class="kpi"><span>Tunnels up</span><b>{{ tunnels|selectattr('status', 'equalto', 'up')|list|length }} / {{ tunnels|length }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>PoPs in use</span><b>{{ site_items|map(attribute='pop')|reject('callable')|select|unique|list|length }}</b><em>&nbsp;</em></div>
+</div>
+<div class="grid"><div class="p {{ 'c6' if site_items|selectattr('series')|list else '' }}"><div class="ph"><h2>Up over time</h2></div>
+  {{ legend([('Up', 'var(--up)'), ('Total', 'var(--off)'), ('Problems', 'var(--down)')]) }}
+  {{ chart(integ.id, 'sites:status', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--down)","area":false}], 'num', 170, 'Sites') }}</div>
+  {% for x in site_items if x.series %}{% if loop.index <= 5 %}<div class="p c6"><div class="ph"><h3>{{ x.name }}</h3><span class="sub">latency and loss to the PoP</span></div>
+    {{ legend([('Latency ms', 'var(--s1)'), ('Loss %', 'var(--down)')]) }}
+    {{ chart(integ.id, x.series, [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)","area":false}], 'num', 130, x.name) }}</div>{% endif %}{% endfor %}</div>
+<div class="p"><div class="ph"><h2>{{ labels.sites or 'Sites & tunnels' }}</h2>{{ filter_box('sse-sites', 'Site, PoP, IP') }}</div>
+  <div class="scroll"><table id="sse-sites"><thead><tr><th></th><th>Site</th><th>Status</th><th>PoP</th><th>Tunnels</th><th class="n">Latency</th><th class="n">Loss</th><th class="n">Traffic (down / up)</th><th>Details</th></tr></thead><tbody>
+  {% for x in site_items|sort(attribute='status') %}<tr data-q="{{ [x.name, x.type, x.get('pop'), x.ip, x.location]|select|join(' ')|lower }}"><td>{{ sdot(x.status) }}</td>
+    <td><b>{{ x.name }}</b><div class="dim" style="font-size:12px">{{ [x.type, x.location]|select|join(' · ') }}</div></td><td>{{ st(x.status) }}</td><td>{{ x.get('pop') or '–' }}</td>
+    <td style="font-size:12.5px">{% for t in x.tunnels or [] %}<div>{{ sdot(t.status) }} {{ t.name }}{% if t.peer %} <span class="mono dim">{{ t.peer }}</span>{% endif %}{% if t.detail %} <span class="dim">{{ t.detail }}</span>{% endif %}</div>{% else %}<span class="dim">–</span>{% endfor %}</td>
+    <td class="n">{{ (x.rtt_ms|round(1) ~ ' ms') if x.get('rtt_ms') is not none else '–' }}</td><td class="n {{ 'bad' if (x.loss_pct or 0) >= 1 }}">{{ (x.loss_pct|round(2) ~ '%') if x.get('loss_pct') is not none else '–' }}</td>
+    <td class="n">{% if x.get('down_bps') is not none or x.get('up_bps') is not none %}{{ x.down_bps|bps }} / {{ x.up_bps|bps }}{% else %}<span class="dim">–</span>{% endif %}</td>
+    <td class="dim" style="font-size:12.5px">{{ x.detail or '' }}{% if x.last_change %}<div>since {{ x.last_change|replace('T', ' ')|replace('Z', ' UTC') }}</div>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="9" class="dim">No sites or tunnels.</td></tr>{% endfor %}</tbody></table></div></div>
+{{ gap_panel(['sites']) }}
+
+{% elif tab == 'private' %}
+{% set up = priv_items|selectattr('status', 'equalto', 'up')|list|length %}
+<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+  <div class="kpi"><span>Healthy</span><b class="{{ 'bad' if up < priv_items|length else 'okc' }}">{{ up }} / {{ priv_items|length }}</b><em>{{ priv_items|selectattr('status', 'equalto', 'off')|list|length }} disabled</em></div>
+  <div class="kpi"><span>{{ (priv.apps_label or 'private apps')|capitalize }}</span><b>{{ priv.apps if priv.get('apps') is not none else '–' }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>Versions</span><b>{{ priv_items|map(attribute='version')|select|unique|list|length }}</b><em>{% set old = priv_items|selectattr('expected')|list %}{% if old %}{{ old|length }} need an upgrade{% else %}&nbsp;{% endif %}</em></div>
+</div>
+<div class="p"><div class="ph"><h2>Healthy over time</h2></div>
+  {{ legend([('Healthy', 'var(--up)'), ('Total', 'var(--off)'), ('Problems', 'var(--down)')]) }}
+  {{ chart(integ.id, 'private:status', [{"key":"a","color":"var(--up)"},{"key":"b","color":"var(--off)","area":false},{"key":"c","color":"var(--down)","area":false}], 'num', 160, 'Connectors') }}</div>
+<div class="p"><div class="ph"><h2>{{ priv.label or labels.private or 'Connectors' }}</h2>{{ filter_box('sse-priv') }}</div>
+  <div class="scroll"><table id="sse-priv"><thead><tr><th></th><th>Name</th><th>Group</th><th>Status</th><th>Version</th><th>IP</th><th>Public IP</th><th>Location</th><th>Last seen</th><th>Details</th></tr></thead><tbody>
+  {% for c in priv_items|sort(attribute='status') %}<tr data-q="{{ [c.name, c.group, c.ip, c.public_ip, c.location]|select|join(' ')|lower }}"><td>{{ sdot(c.status) }}</td><td><b>{{ c.name }}</b></td><td>{{ c.group or '' }}</td>
+    <td>{{ st(c.status) }}{% if c.state and c.state|lower not in ['up', 'down', c.status] %} <span class="dim" style="font-size:12px">{{ c.state }}</span>{% endif %}</td>
+    <td class="nw mono">{{ c.version or '?' }}{% if c.expected and c.expected != c.version %} <span class="wa">→ {{ c.expected }}</span>{% endif %}</td>
+    <td class="mono">{{ c.ip or '' }}</td><td class="mono">{{ c.public_ip or '' }}</td><td>{{ c.location or '' }}</td><td class="dim nw">{{ (c.last_seen or '')|replace('T', ' ')|replace('Z', ' UTC') }}</td><td class="dim" style="font-size:12.5px">{{ c.detail or '' }}</td></tr>
+  {% else %}<tr><td colspan="10" class="dim">None reported.</td></tr>{% endfor %}</tbody></table></div></div>
+{{ gap_panel(['private']) }}
+
+{% elif tab == 'users' %}
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>State</h2><span class="sub">{{ users.total|num }} devices</span></div>{{ bars(users.states or [], users.total, 'var(--off)', ['connected', 'registered', 'active', 'enabled', 'online']) }}</div>
+  <div class="p c4"><div class="ph"><h2>Agent versions</h2></div>{{ bars(users.versions or [], users.total) }}</div>
+  <div class="p c4"><div class="ph"><h2>Operating systems</h2></div>{{ bars(users.os or [], users.total, 'var(--s2)') }}</div>
+  <div class="p"><div class="ph"><h2>Devices and connected over time</h2></div>
+    {{ legend([('Devices', 'var(--s1)'), ('Connected', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'users:devices', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--s2)","area":false}], 'num', 170, 'Devices') }}</div>
+  <div class="p"><div class="ph"><h2>Devices</h2>{% if (users.devices or [])|length < (users.total or 0) %}<span class="sub">first {{ (users.devices or [])|length|num }} of {{ users.total|num }}</span>{% endif %}{{ filter_box('sse-dev', 'Host, user, OS, version') }}</div>
+    <div class="scroll" style="max-height:560px;overflow:auto"><table id="sse-dev"><thead><tr><th>Device</th><th>User</th><th>OS</th><th>Agent</th><th>State</th><th>Last seen</th></tr></thead><tbody>
+    {% for d in users.devices or [] %}<tr data-q="{{ [d.hostname, d.user, d.os, d.version, d.state]|select|join(' ')|lower }}"><td><b>{{ d.hostname or '–' }}</b>{% if d.detail %}<div class="dim" style="font-size:12px">{{ d.detail }}</div>{% endif %}</td><td>{{ d.user or '' }}</td><td>{{ d.os or '' }}</td><td class="mono">{{ d.version or '' }}</td>
+      <td>{{ d.state or '' }}</td><td class="dim nw">{{ (d.last_seen or '')|replace('T', ' ')|replace('Z', ' UTC') }}</td></tr>
+    {% else %}<tr><td colspan="6" class="dim">No devices.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{{ gap_panel(['users']) }}
+
+{% elif tab == 'policy' %}
+{% for rb in policy.rulebases or [] %}
+<div class="p"><div class="ph"><h2>{{ rb.name }}</h2><span class="sub">{{ (rb.rules or [])|selectattr('enabled')|list|length }} enabled of {{ (rb.rules or [])|length }}, in rule order</span>{{ filter_box('rb-' ~ loop.index, 'Rule, action, match') }}</div>
+  <div class="scroll" style="max-height:600px;overflow:auto"><table id="rb-{{ loop.index }}"><thead><tr><th class="n">#</th><th>Rule</th><th>Action</th><th>Matches</th><th>Applies to</th></tr></thead><tbody>
+  {% for r in rb.rules or [] %}<tr class="{{ '' if r.enabled else 'dim' }}" data-q="{{ [r.name, r.action, r.match, r.scope]|select|join(' ')|lower }}"><td class="n">{{ r.order|int if r.order is number else r.order }}</td>
+    <td><b>{{ r.name }}</b>{% if not r.enabled %} <span class="tag">disabled</span>{% endif %}{% if r.description %}<div class="dim" style="font-size:12px">{{ r.description[:140] }}</div>{% endif %}</td>
+    <td class="nw">{{ act(r.action) }}</td><td style="font-size:13px">{{ r.match or '' }}</td><td class="dim" style="font-size:12.5px">{{ r.scope or 'everyone' }}</td></tr>
+  {% else %}<tr><td colspan="5" class="dim">No rules.</td></tr>{% endfor %}</tbody></table></div></div>
+{% else %}<div class="p empty-state"><p>No rule bases were returned.</p></div>{% endfor %}
+{{ gap_panel(['policy']) }}
+
+{% elif tab == 'apps' %}
+{% set ai_bytes = ai_apps|sum(attribute='bytes') %}
+{% set all_bytes = app_items|sum(attribute='bytes') %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>AI apps in use</span><b>{{ ai_apps|length }}</b><em>{% set uns = ai_apps|selectattr('sanctioned', 'equalto', 'unsanctioned')|list|length %}{% if uns %}<span class="wa">{{ uns }} unsanctioned</span>{% else %}of {{ app_items|length }} apps seen{% endif %}</em></div>
+  <div class="kpi"><span>Users of AI apps</span><b>{{ (ai_apps|map(attribute='users')|select|max)|num if ai_apps|map(attribute='users')|select|list else '–' }}</b><em>most on one app</em></div>
+  <div class="kpi"><span>AI data</span><b>{{ ai_bytes|bytes if ai_bytes else '–' }}</b><em>{% if all_bytes %}{{ (100 * ai_bytes / all_bytes)|round(1) }}% of app traffic{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>AI apps blocked</span><b>{{ ai_apps|selectattr('action')|selectattr('action', 'in', ['block', 'deny', 'partly blocked'])|list|length }}</b><em>by policy, where the API says</em></div>
+</div>
+<p class="dim" style="margin:-4px 0 14px;font-size:13px">{% if apps.note %}{{ apps.note }} {% endif %}{% if apps.window %}Usage covers the {{ apps.window.days }} days to {{ apps.window.end }}. {% endif %}{% if apps.refreshed %}Refreshed {{ apps.refreshed|replace('T', ' ')|replace('Z', ' UTC') }}, hourly.{% endif %}</p>
+<div class="grid">
+  <div class="p c8"><div class="ph"><h2>Generative AI apps</h2><span class="sub">by data</span>{{ filter_box('sse-ai', 'App, category, action') }}</div>
+    <div class="scroll" style="max-height:520px;overflow:auto"><table id="sse-ai"><thead><tr><th>App</th><th>Sanctioned</th><th class="n">Risk</th><th class="n">Users</th><th class="n">Events</th><th class="n">Uploaded</th><th class="n">Downloaded</th><th>Policy</th></tr></thead><tbody>
+    {% for a in ai_apps %}<tr data-q="{{ [a.name, a.category, a.sanctioned, a.action, a.rule]|select|join(' ')|lower }}"><td><b>{{ a.name }}</b><div class="dim" style="font-size:12px">{{ a.category or '' }}</div></td>
+      <td class="{{ 'wa' if a.sanctioned == 'unsanctioned' else ('okc' if a.sanctioned == 'sanctioned' else 'dim') }}">{{ a.sanctioned or '–' }}</td><td class="n">{{ a.risk if a.get('risk') is not none else '–' }}</td>
+      <td class="n">{{ a.users|num if a.get('users') is not none else '–' }}</td><td class="n">{{ a.events|num if a.get('events') is not none else '–' }}</td>
+      <td class="n">{{ a.up|bytes if a.get('up') is not none else '–' }}</td><td class="n">{{ a.down|bytes if a.get('down') is not none else '–' }}</td>
+      <td class="nw">{{ act(a.action) }}{% if a.rule %}<div class="dim" style="font-size:12px">{{ a.rule }}</div>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="8" class="dim">No AI apps were seen in this window.{% if apps.categories_seen %} Categories seen: {{ apps.categories_seen[:12]|map('first')|join(', ') }}. Set the AI category in the integration settings if {{ vendor }} names it differently.{% endif %}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c4"><div class="ph"><h2>AI data and users</h2><span class="sub">as polled</span></div>
+    {{ legend([('Data', 'var(--s1)')]) }}
+    {{ chart(integ.id, 'apps:ai', [{"key":"a","color":"var(--s1)"}], 'bytes', 140, 'AI data') }}
+    {{ legend([('Users', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'apps:ai', [{"key":"b","color":"var(--s2)","area":false}], 'num', 120, 'AI users') }}
+    {% if ai_apps %}<h3 style="margin:14px 0 6px">Top AI apps by data</h3>{% set top = (ai_apps|map(attribute='bytes')|max) or 1 %}<div class="bars">{% for a in ai_apps[:6] %}<div class="bar"><span>{{ a.name }}</span><span class="v">{{ a.bytes|bytes }}</span><div class="tr"><b style="width:{{ (100 * (a.bytes or 0) / top)|round(1) }}%;background:var(--s1)"></b></div></div>{% endfor %}</div>{% endif %}</div>
+</div>
+<div class="p"><div class="ph"><h2>All apps</h2><span class="sub">top {{ [app_items|length, 200]|min }} by data</span>{{ filter_box('sse-apps', 'App or category') }}</div>
+  <div class="scroll" style="max-height:520px;overflow:auto"><table id="sse-apps"><thead><tr><th>App</th><th>Category</th><th class="n">Users</th><th class="n">Events</th><th class="n">Data</th><th>Policy</th></tr></thead><tbody>
+  {% for a in app_items[:200] %}<tr data-q="{{ [a.name, a.category]|select|join(' ')|lower }}"><td><b>{{ a.name }}</b>{% if a.ai %} <span class="tag">AI</span>{% endif %}</td><td>{{ a.category or '' }}</td>
+    <td class="n">{{ a.users|num if a.get('users') is not none else '–' }}</td><td class="n">{{ a.events|num if a.get('events') is not none else '–' }}</td><td class="n">{{ a.bytes|bytes if a.get('bytes') is not none else '–' }}</td><td>{{ act(a.action) }}</td></tr>
+  {% else %}<tr><td colspan="6" class="dim">No app usage in this window.</td></tr>{% endfor %}</tbody></table></div></div>
+{{ gap_panel(['apps']) }}
+
+{% elif tab == 'dlp' %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>DLP incidents</span><b>{{ dlp.total|num if dlp.get('total') is not none else '–' }}</b><em>{% if dlp.window %}{{ dlp.window.days }} days{% else %}not exposed by the API{% endif %}</em></div>
+  <div class="kpi"><span>On AI apps</span><b>{{ dlp.ai_incidents if dlp.get('ai_incidents') is not none else '–' }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>Profiles</span><b>{{ (dlp.profiles or [])|length }}</b><em>{{ (dlp.profiles or [])|selectattr('enabled')|list|length }} enabled</em></div>
+  <div class="kpi"><span>Rules using DLP</span><b>{{ (dlp.rules or [])|length if dlp.get('rules') is not none else '–' }}</b><em>&nbsp;</em></div>
+</div>
+<div class="grid">
+  {% if dlp.get('total') is not none %}<div class="p c4"><div class="ph"><h2>By severity</h2></div>{{ bars(dlp.by_severity or [], dlp.total, 'var(--warn)') }}</div>
+  <div class="p c8"><div class="ph"><h2>Incidents over time</h2><span class="sub">rolling total, as polled</span></div>
+    {{ legend([('Incidents', 'var(--warn)'), ('On AI apps', 'var(--s1)')]) }}
+    {{ chart(integ.id, 'dlp:incidents', [{"key":"a","color":"var(--warn)"},{"key":"b","color":"var(--s1)","area":false}], 'num', 160, 'DLP incidents') }}</div>{% endif %}
+  <div class="p c6"><div class="ph"><h2>Profiles</h2></div>
+    <table><thead><tr><th>Profile</th><th>Type</th><th>Details</th></tr></thead><tbody>
+    {% for p in dlp.profiles or [] %}<tr class="{{ '' if p.enabled != false else 'dim' }}"><td><b>{{ p.name }}</b>{% if p.enabled == false %} <span class="tag">disabled</span>{% endif %}</td><td class="dim">{{ p.type or '' }}</td><td class="dim" style="font-size:12.5px">{{ p.detail or '' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="dim">None returned.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Rules that apply DLP</h2></div>
+    <table><thead><tr><th>Rule</th><th>Action</th><th>Covers</th></tr></thead><tbody>
+    {% for r in dlp.rules or [] %}<tr class="{{ '' if r.enabled != false else 'dim' }}"><td><b>{{ r.name }}</b>{% if r.enabled == false %} <span class="tag">disabled</span>{% endif %}</td><td>{{ act(r.action) }}</td><td style="font-size:13px">{{ r.covers or '' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="dim">{{ 'None found.' if dlp.get('rules') is not none else 'Not exposed by the API.' }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% if dlp.get('incidents') is not none %}<div class="p"><div class="ph"><h2>Recent incidents</h2><span class="sub">newest first</span>{{ filter_box('sse-dlp', 'User, app, profile') }}</div>
+  <div class="scroll" style="max-height:520px;overflow:auto"><table id="sse-dlp"><thead><tr><th>Time</th><th>User</th><th>App</th><th>Profile / rule</th><th>Severity</th><th>Action</th></tr></thead><tbody>
+  {% for i in dlp.incidents %}<tr data-q="{{ [i.user, i.app, i.profile, i.rule, i.policy]|select|join(' ')|lower }}"><td class="dim nw">{{ (i.time or '')|replace('T', ' ')|replace('Z', ' UTC') }}</td><td>{{ i.user or '' }}</td><td>{{ i.app or '' }}</td>
+    <td style="font-size:13px">{{ i.profile or '' }}{% if i.rule %}<div class="dim">{{ i.rule }}</div>{% endif %}</td><td class="{{ 'bad' if (i.severity or '')|lower in ['critical', 'high'] }}">{{ i.severity or '' }}</td><td>{{ act(i.action) }}</td></tr>
+  {% else %}<tr><td colspan="6" class="dim">No DLP incidents in this window.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{{ gap_panel(['dlp']) }}
+{% endif %}
