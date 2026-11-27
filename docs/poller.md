@@ -90,6 +90,16 @@ existed, or started by hand, need the install script run on them once; pressing
 Update on such a poller explains this and shows the command. `--no-helper`
 skips it, and `--uninstall` removes it.
 
+If Update fails with *Permission denied* on `control/.update.request.tmp`, the
+`control` folder in the volume has the wrong owner or SELinux label (installs
+from before this was fixed gave it the label `container_var_lib_t`, which the
+container can't write). Run the install script again, or fix it by hand:
+
+```sh
+d=$(podman volume inspect -f '{{.Mountpoint}}' linkwatch-poller)/control
+sudo chown 10001:10001 "$d" && sudo chcon -R --reference="$(dirname "$d")" "$d"
+```
+
 ## Poller names
 
 *Settings > Poller names* sets a base name, such as `poller-hq`. Every poller

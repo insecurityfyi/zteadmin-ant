@@ -220,7 +220,7 @@ class Poller:
         if tunnel.allows(3389):
             feats.append("rdp")
         feats += ["rpc", "snmp_probe", "commands", "factory_reset"]
-        if self.helper_info():
+        if self.helper_info() and self.control_writable():
             feats.append("self_update")
         return feats
 
@@ -233,6 +233,18 @@ class Poller:
             return None
         return info if isinstance(info, dict) else None
 
+    def control_writable(self) -> bool:
+        """Try it rather than os.access(), which doesn't see SELinux denials."""
+        probe = self.control / ".write-test"
+        try:
+            probe.write_text("")
+            probe.unlink()
+            return True
+        except OSError as exc:
+            log.warning("Can't write to %s (%s): updates from the Pollers page won't work until the host fixes the "
+                        "folder. Run install-poller.sh again on the host.", self.control, exc.strerror or exc)
+            return False
+
     def status(self) -> dict:
         return {"version": __version__, "build": BUILD, "devices": len(self.devices), "integrations": len(self.integrations),
                 "probes": len(self.probes), "configured": self.configured.is_set(), "interval": self.interval,
@@ -244,8 +256,13 @@ class Poller:
         if not self.helper_info():
             raise IntegrationError("This host has no update helper. Run install-poller.sh once on the host to add it.")
         tmp = self.control / ".update.request.tmp"
-        tmp.write_text(req + "\n")
-        os.replace(tmp, self.control / "update.request")      # the host's path unit fires on this file
+        try:
+            tmp.write_text(req + "\n")
+            os.replace(tmp, self.control / "update.request")      # the host's path unit fires on this file
+        except OSError as exc:
+            raise IntegrationError(
+                f"The poller can't write to its control folder ({exc.strerror or exc}). The folder on the host has the "
+                "wrong owner or SELinux label. Run install-poller.sh again on the host to fix it.") from None
         log.info("Asked the host to update this poller (request %s)", req)
         return {"accepted": True, **self.status()}
 
