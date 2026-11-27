@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import secrets
 import shlex
 from datetime import timedelta
 from typing import Any
@@ -43,12 +44,22 @@ class EnrollError(Exception):
     pass
 
 
+class TunnelError(Exception):
+    pass
+
+
+MAX_TUNNELS_PER_POLLER = 8
+
+
 class Hub:
     def __init__(self, db, vault, notifier, default_interval: int):
         self.db, self.vault, self.notifier = db, vault, notifier
         self.default_interval = default_interval
         self.conns: dict[int, WebSocket] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
+        # reverse tunnels: the server asks a poller to open one, the poller dials back in on its own WebSocket
+        self.pending_tunnels: dict[str, tuple[int, asyncio.Future]] = {}
+        self.open_tunnels: dict[int, int] = {}
 
     def interval(self, s) -> int:
         try:
@@ -121,6 +132,61 @@ class Hub:
             return False
         asyncio.run_coroutine_threadsafe(ws.send_text(json.dumps(message)), self.loop)
         return True
+
+    # reverse tunnels --------------------------------------------------------
+    async def open_tunnel(self, poller_id: int, host: str, port: int, timeout: float = 20.0) -> tuple[WebSocket, asyncio.Event]:
+        """Ask a connected poller for a TCP connection to host:port on its network.
+
+        The poller connects to host:port itself and then opens a second outbound WebSocket to
+        /api/poller/ws/tunnel/<sid> that carries the raw bytes, so nothing ever connects in to the poller's
+        network. Returns that WebSocket (after the poller confirmed the TCP connection) and an Event to set when
+        the caller is done with it."""
+        ws = self.conns.get(poller_id)
+        if ws is None:
+            raise TunnelError("The poller is not connected.")
+        if self.open_tunnels.get(poller_id, 0) >= MAX_TUNNELS_PER_POLLER:
+            raise TunnelError(f"This poller already has {MAX_TUNNELS_PER_POLLER} sessions open. Close one first.")
+        sid = secrets.token_urlsafe(24)
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        self.pending_tunnels[sid] = (poller_id, fut)
+        try:
+            await ws.send_text(json.dumps({"type": "tunnel_open", "sid": sid, "host": host, "port": port}))
+            tws, done = await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError:
+            raise TunnelError(f"The poller did not open the tunnel within {timeout:.0f} s.") from None
+        finally:
+            self.pending_tunnels.pop(sid, None)
+        try:
+            first = await asyncio.wait_for(tws.receive_text(), timeout)
+            reply = json.loads(first)
+        except (asyncio.TimeoutError, ValueError, KeyError, RuntimeError, WebSocketDisconnect):
+            done.set()
+            raise TunnelError("The poller closed the tunnel before it was ready.") from None
+        if not reply.get("ok"):
+            done.set()
+            raise TunnelError(str(reply.get("error") or "The poller could not open the connection.")[:300])
+        self.open_tunnels[poller_id] = self.open_tunnels.get(poller_id, 0) + 1
+
+        async def release() -> None:
+            await done.wait()
+            self.open_tunnels[poller_id] = max(0, self.open_tunnels.get(poller_id, 1) - 1)
+        asyncio.get_running_loop().create_task(release())
+        return tws, done
+
+    async def serve_tunnel(self, ws: WebSocket, poller: Poller, sid: str) -> None:
+        """The poller's side of a tunnel: hand the socket to whoever asked for it and hold it until they finish."""
+        entry = self.pending_tunnels.get(sid)
+        if entry is None or entry[0] != poller.id or entry[1].done():
+            await ws.close(code=1008)
+            return
+        await ws.accept()
+        done = asyncio.Event()
+        entry[1].set_result((ws, done))
+        await done.wait()
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
     # websocket --------------------------------------------------------------
     def _event(self, message: str, severity: str) -> None:

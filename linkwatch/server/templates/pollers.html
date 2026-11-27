@@ -36,6 +36,16 @@
       <div class="kpi"><span>Last cycle</span><b>{{ ((p.last_cycle_ms or 0) / 1000)|round|int }} s</b><em class="{{ 'bad' if (p.last_cycle_ms or 0) > interval * 1000 else '' }}">of {{ interval }} s</em></div>
     </div>
     <dl class="kv"><dt>Host</dt><dd>{{ p.hostname or '–' }}</dd><dt>Connects from</dt><dd class="mono">{{ p.last_ip or '–' }}</dd><dt>Last heard</dt><dd>{{ p.last_seen|ago }}</dd><dt>Enrolled</dt><dd>{{ p.created_at.strftime('%d %b %Y') }}</dd></dl>
+    {% if not p.revoked and me and me.role == 'admin' %}
+    <form class="sshto" method="get" action="/ssh" target="ssh-poller-{{ p.id }}" onsubmit="window.open('', this.target, 'popup,width=980,height=640')" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <input type="hidden" name="poller" value="{{ p.id }}">
+      <span class="sub" style="white-space:nowrap">SSH through this poller to</span>
+      <input type="text" name="host" value="127.0.0.1" aria-label="Host" style="width:auto;flex:1;min-width:120px;font-size:13px;padding:4px 8px">
+      <input type="number" name="port" value="22" min="1" max="65535" aria-label="Port" style="width:76px;font-size:13px;padding:4px 8px">
+      <button class="btn sm" type="submit" {% if not live %}disabled title="Poller not connected"{% elif 'ssh' not in (p.features or []) %}disabled title="Update this poller to use SSH: {{ update_command(p.name) }}"{% endif %}>Open</button>
+    </form>
+    <p class="help" style="margin:4px 0 0">127.0.0.1 is the poller host itself when the poller runs with host networking. Devices also have an SSH button on their page.</p>
+    {% endif %}
     <div class="actions" style="margin-top:12px">
       {% if not p.revoked %}<form class="inline" method="post" action="/pollers/{{ p.id }}/revoke" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn sm danger" type="submit">Revoke</button></form>
       {% else %}<form class="inline" method="post" action="/pollers/{{ p.id }}/delete"><button class="btn sm danger" type="submit">Delete</button></form>{% endif %}

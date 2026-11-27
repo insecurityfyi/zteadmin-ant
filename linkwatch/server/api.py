@@ -63,6 +63,18 @@ async def poller_ws(ws: WebSocket):
     await state.hub.serve(ws, poller, ws.headers.get("x-real-ip") or (ws.client.host if ws.client else None))
 
 
+@router.websocket("/api/poller/ws/tunnel/{sid}")
+async def poller_tunnel_ws(ws: WebSocket, sid: str):
+    """A poller dialling back in to carry one reverse tunnel (see Hub.open_tunnel). Under /api/poller/ws so the
+    existing nginx WebSocket location already covers it."""
+    state = ws.app.state.lw
+    poller = await asyncio.to_thread(state.hub.authenticate, ws.headers.get("authorization"))
+    if poller is None:
+        await ws.close(code=1008)
+        return
+    await state.hub.serve_tunnel(ws, poller, sid)
+
+
 # ------------------------------------------------------------------ auth for /api/v1
 def api_key(request: Request, authorization: str | None = Header(None)) -> ApiKey:
     if not authorization or not authorization.startswith("Bearer "):

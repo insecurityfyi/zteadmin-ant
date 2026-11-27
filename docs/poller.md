@@ -109,3 +109,5 @@ Without it, ping still works if the host allows ICMP datagram sockets
 | `LW_DATA_DIR` | `/var/lib/linkwatch` | Identity and spool |
 | `LW_CONCURRENCY` | `32` | Devices polled at the same time |
 | `LW_LOG_LEVEL` | `INFO` | `DEBUG` for troubleshooting |
+| `LW_TUNNEL` | `on` | `off` refuses SSH console tunnels through this poller (see [ssh.md](ssh.md)) |
+| `LW_TUNNEL_PORTS` | `22` | TCP ports a tunnel may reach, comma separated, or `any` |
