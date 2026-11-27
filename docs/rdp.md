@@ -82,3 +82,19 @@ on that poller and enter the port on the Pollers page or as `&port=` on the `/rd
 | Poller ... doesn't support remote desktop | Update the poller, or add 3389 to its `LW_TUNNEL_PORTS`. |
 | Could not connect to ... port 3389 | The poller can't reach the host: firewall, wrong IP or RDP off. |
 | Disconnected right after connecting | Usually the security mode or a refused login; try Negotiate, or NLA with a domain. |
+
+## Which button a device offers
+
+Device pages show SSH and Remote desktop according to the operating system the device reports (SNMP
+sysDescr and sysObjectID, the platform an integration gives, and the device type):
+
+| Detected | SSH | Remote desktop |
+| --- | --- | --- |
+| Windows | greyed out | yes |
+| Linux, Unix, network equipment | yes | greyed out |
+| Not recognised | yes | yes |
+
+Hover a greyed-out button to see why. To change it for one device (a Windows server with OpenSSH, a Linux
+box with xrdp), pick **Edit > Remote access**: Automatic, SSH only, Remote desktop only, both, or neither.
+The SSH and remote desktop windows follow the same setting for that device. The Pollers page form still
+reaches any host.

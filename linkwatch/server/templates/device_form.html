@@ -25,6 +25,8 @@
   {% else %}
   <label class="f">Site<input type="text" name="site" id="site" list="sites" value="{{ device.site.name if device.site else '' }}"></label>
   {% endif %}
+  <label class="f">Remote access<select name="access" id="access">{% for k, label in access_modes.items() %}<option value="{{ k }}" {% if k == (v.access or (device.access if device and device.access else 'auto')) %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <small>Which of SSH and Remote desktop the device page offers. Automatic follows the operating system: Windows gets remote desktop, Linux, Unix and network equipment get SSH, and anything unrecognised gets both.{% if access %} Detected: <b>{{ {'windows': 'Windows', 'unix': 'Linux / Unix', 'network': 'network equipment'}.get(access.family, 'not recognised') }}</b>.{% endif %}</small></label>
   {% if device %}<label class="chk"><input type="checkbox" name="disabled" id="disabled" {% if device.disabled %}checked{% endif %}> Pause monitoring and alerts for this device</label>{% endif %}
   <datalist id="sites">{% for s in site_names %}<option value="{{ s }}">{% endfor %}</datalist>
   <div class="actions"><button class="btn pri" type="submit">{{ 'Save' if device else 'Add device' }}</button><a class="btn" href="{{ '/devices/' ~ device.id if device else '/devices' }}">Cancel</a></div>

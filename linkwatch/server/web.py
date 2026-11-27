@@ -37,6 +37,7 @@ from .models import (
 from .ingest import site_by_name
 from .notify import KINDS as TRANSPORT_KINDS
 from .notify import send_one
+from .access import MODES as ACCESS_MODES, access_for
 from .alerts import AlertEvent
 from . import events
 from .security import mask, new_secret, sha256
@@ -158,7 +159,14 @@ def _device_form_ctx(s, device: Device | None = None) -> dict[str, Any]:
     from .models import Site
     return {"device": device, "pollers": s.scalars(select(Poller).where(Poller.revoked.is_(False)).order_by(Poller.name)).all(),
             "profiles": s.scalars(select(SnmpProfile).order_by(SnmpProfile.name)).all(),
-            "site_names": sorted(s.scalars(select(Site.name))), "types": DEVICE_TYPES}
+            "site_names": sorted(s.scalars(select(Site.name))), "types": DEVICE_TYPES, "access_modes": ACCESS_MODES,
+            "access": access_for(device) if device else None}
+
+
+def _apply_access(d: Device, form) -> None:
+    mode = form.get("access")
+    if mode in ACCESS_MODES:
+        d.access = None if mode == "auto" else mode
 
 
 @router.get("/devices/new", response_class=HTMLResponse)
@@ -194,6 +202,7 @@ async def device_create(request: Request):
     form = await request.form()
     with st(request).db.session() as s:
         d = Device(source="snmp", extra={})
+        _apply_access(d, form)
         err = _apply_device_form(s, d, form)
         if err:
             ctx = _device_form_ctx(s)
@@ -454,7 +463,7 @@ def device_detail(request: Request, device_id: int, tab: str = "overview", view:
                                 .order_by(Alert.opened_at.desc())).all()
         ctx: dict[str, Any] = {"d": d, "ports": ports, "port_counts": port_counts, "dev_alerts": dev_alerts, "tab": tab,
                                "tabs": DEVICE_TABS, "view": view, "kind": kind,
-                               "connected": d.poller_id in st(request).hub.conns}
+                               "connected": d.poller_id in st(request).hub.conns, "access": access_for(d)}
         sensors = sorted(s.scalars(select(Sensor).where(Sensor.device_id == d.id)),
                          key=lambda x: (SENSOR_ORDER.index(x.kind) if x.kind in SENSOR_ORDER else 99, x.name))
         ctx["sensors"] = sensors
@@ -494,6 +503,7 @@ async def device_update(request: Request, device_id: int):
         if d is None:
             raise HTTPException(404)
         old_poller = d.poller_id
+        _apply_access(d, form)
         if d.source not in ("snmp", "ping"):
             d.disabled = form.get("disabled") == "on"
             site = site_by_name(s, form.get("site"))

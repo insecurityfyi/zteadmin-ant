@@ -5,7 +5,8 @@ any inbound port at the remote site.
 
 ## Using it
 
-* **From a device:** press **SSH** at the top of the device page. A window opens; sign in with a user name and
+* **From a device:** press **SSH** at the top of the device page (offered for Linux, Unix and network
+  equipment, and for devices whose OS isn't recognised; see [rdp.md](rdp.md#which-button-a-device-offers)). A window opens; sign in with a user name and
   a password or a pasted private key. Use the port field in the URL (`&port=2222`) for a non-standard port.
 * **From the Pollers page:** each connected poller has *SSH through this poller to* with a host and port.
   `127.0.0.1` is the poller host itself when the poller container runs with host networking.

@@ -58,7 +58,8 @@ class Target:
         self.label = (device.hostname if device else host) + (f":{port}" if port not in (22, 3389) else "")
 
 
-def resolve_target(s, device: Any = None, poller: Any = None, host: Any = None, port: Any = None) -> Target:
+def resolve_target(s, device: Any = None, poller: Any = None, host: Any = None, port: Any = None,
+                   kind: str | None = None) -> Target:
     try:
         port_n = int(port or 22)
     except (TypeError, ValueError):
@@ -73,6 +74,11 @@ def resolve_target(s, device: Any = None, poller: Any = None, host: Any = None, 
             raise ValueError("This device isn't collected by a poller, so there is no tunnel to reach it through.")
         if not d.ip:
             raise ValueError("This device has no IP address.")
+        if kind:
+            from .access import access_for
+            acc = access_for(d)
+            if not getattr(acc, kind):
+                raise ValueError(acc.why or "This kind of remote access is turned off for this device.")
         return Target(d.poller, d.ip, port_n, d)
     p = s.get(Poller, int(poller or 0))
     if p is None:
@@ -104,7 +110,7 @@ def ssh_page(request: Request, device: int | None = None, poller: int | None = N
     with state.db.session() as s:
         error, saved, t = None, None, None
         try:
-            t = resolve_target(s, device, poller, host, port or 22)
+            t = resolve_target(s, device, poller, host, port or 22, kind="ssh")
             row = find_saved(s, t)
             if row is not None:
                 saved = {"id": row.id, "username": row.username, "has_creds": bool(row.cred_enc),
@@ -213,7 +219,7 @@ class Console:
         """Resolve the target and the login to use: typed in, or the saved one."""
         h = self.hello
         with self.state.db.session() as s:
-            t = resolve_target(s, h.get("device"), h.get("poller"), h.get("host"), h.get("port"))
+            t = resolve_target(s, h.get("device"), h.get("poller"), h.get("host"), h.get("port"), kind="ssh")
             row = find_saved(s, t)
             stored_key = row.host_key if row else None
             stored_fp = row.fingerprint if row else None

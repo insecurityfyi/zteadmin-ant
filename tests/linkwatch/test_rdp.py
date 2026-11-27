@@ -34,7 +34,7 @@ def test_guac_parser_handles_split_and_unicode():
 
 # ------------------------------------------------------------------ pages and access
 def test_rdp_page_and_access(logged_in, app):
-    pid, did = _add_device(app, poller_features=("ssh", "rdp"))
+    pid, did = _add_device(app, poller_features=("ssh", "rdp"), dtype="Server")
     page = logged_in.get(f"/devices/{did}").text
     assert f'href="/rdp?device={did}"' in page
     r = logged_in.get(f"/rdp?device={did}")
@@ -65,7 +65,7 @@ def test_rdp_ws_needs_a_token(logged_in):
 
 
 def test_outdated_poller_is_explained(logged_in, app):
-    pid, did = _add_device(app, poller_features=("ssh",))
+    pid, did = _add_device(app, poller_features=("ssh",), dtype="Server")
     app.state.lw.hub.conns[pid] = object()       # pretend it's connected
     try:
         r = logged_in.post("/rdp/session", json={"device": did, "username": "a", "password": "b"},
