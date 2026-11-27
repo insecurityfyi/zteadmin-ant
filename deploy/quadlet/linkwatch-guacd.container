@@ -1,0 +1,16 @@
+# Apache Guacamole proxy daemon: draws remote desktop (RDP) sessions for the browser. Only reachable on the
+# linkwatch network (no published port). It never connects to remote sites itself: the web app gives it a
+# one-off address on linkwatch-web that relays through the poller's tunnel. See docs/rdp.md.
+[Unit]
+Description=Linkwatch remote desktop proxy (guacd)
+
+[Container]
+ContainerName=linkwatch-guacd
+Image=docker.io/guacamole/guacd:1.6.0
+Network=linkwatch.network
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

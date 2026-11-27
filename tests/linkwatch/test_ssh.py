@@ -6,7 +6,6 @@ import asyncio
 import json
 import re
 import socket
-import threading
 import time
 
 import asyncssh
@@ -25,7 +24,8 @@ def test_tunnel_refusal(monkeypatch):
     monkeypatch.delenv("LW_TUNNEL", raising=False)
     monkeypatch.delenv("LW_TUNNEL_PORTS", raising=False)
     assert tunnel.refusal("10.0.0.1", 22) is None
-    assert "only allows tunnels to port 22" in tunnel.refusal("10.0.0.1", 443)
+    assert "only allows tunnels to ports 22, 3389" in tunnel.refusal("10.0.0.1", 443)
+    assert tunnel.refusal("10.0.0.1", 3389) is None
     assert tunnel.refusal("bad host", 22) == "Invalid host name."
     monkeypatch.setenv("LW_TUNNEL_PORTS", "22, 2222")
     assert tunnel.refusal("10.0.0.1", 2222) is None
@@ -136,22 +136,6 @@ async def _shell(process):
     except asyncssh.BreakReceived:
         pass
     process.exit(0)
-
-
-@pytest.fixture
-def live_server(app):
-    import uvicorn
-    port = _free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    th = threading.Thread(target=server.run, daemon=True)
-    th.start()
-    for _ in range(100):
-        if server.started:
-            break
-        time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    th.join(5)
 
 
 def test_ssh_console_end_to_end(app, live_server, tmp_path, monkeypatch):
