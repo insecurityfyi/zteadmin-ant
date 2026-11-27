@@ -15,7 +15,8 @@ from ..common.discovery import TargetError, expand_targets, guess_type
 from .discovery import AUTO_ADD, DEVICE_TYPES, PING_ONLY, ping_only_mode, SCHEDULES, add_from_job, in_order, move_profile, ordered_profiles, run_rule, start_job
 from ..integrations import REGISTRY, IntegrationError, build
 from .app import flash
-from .db import set_setting
+from .db import get_setting, set_setting
+from . import poller_cmds
 from .models import (
     Alert,
     AlertRule,
@@ -624,15 +625,124 @@ async def rule_update(request: Request, rule_id: int):
 @router.get("/pollers", response_class=HTMLResponse)
 def pollers(request: Request):
     with st(request).db.session() as s:
+        poller_cmds.expire_stale(s)
         rows = s.scalars(select(Poller).order_by(Poller.name)).all()
         counts = dict(s.execute(select(Device.poller_id, func.count(Device.id)).group_by(Device.poller_id)).all())
         integ_counts = dict(s.execute(select(Integration.poller_id, func.count(Integration.id)).group_by(Integration.poller_id)).all())
         interval = st(request).hub.interval(s)
+        commands = poller_cmds.latest(s)
+        base = (get_setting(s, "poller_base_name", "") or "").strip()
+        next_name = poller_cmds.next_poller_name(s, base) if base else None
     new_token = request.session.pop("new_token", None)
     return render(request, "pollers.html", {"pollers": rows, "counts": counts, "integ_counts": integ_counts,
                                             "connected": set(st(request).hub.conns), "interval": interval,
-                                            "new_token": new_token,
+                                            "new_token": new_token, "commands": commands, "cmd_kinds": poller_cmds.KINDS,
+                                            "base_name": base, "next_name": next_name,
                                             "poller_kinds": sorted(k for k, c in REGISTRY.items() if c.runs_on == "poller")})
+
+
+@router.get("/ui/pollers/status")
+def pollers_status(request: Request):
+    """Connection state and the latest command of every poller, for the Pollers page to follow commands live."""
+    conns = set(st(request).hub.conns)
+    with st(request).db.session() as s:
+        poller_cmds.expire_stale(s)
+        cmds = poller_cmds.latest(s)
+        return {str(p.id): {"name": p.name, "connected": p.id in conns, "version": poller_cmds.describe(p),
+                            "command": poller_cmds.command_json(cmds.get(p.id))}
+                for p in s.scalars(select(Poller).where(Poller.revoked.is_(False)))}
+
+
+@router.post("/pollers/commands")
+async def pollers_command(request: Request):
+    form = await request.form()
+    kind = str(form.get("kind") or "")
+    if kind not in poller_cmds.KINDS:
+        raise HTTPException(400, "Unknown command")
+    ids = sorted({int(v) for v in form.getlist("poller_ids") if str(v).isdigit()})
+    if not ids:
+        flash(request, "Tick at least one poller first.", "warn")
+        return back("/pollers")
+    names = poller_cmds.start(st(request), ids, kind, _who(request))
+    label = poller_cmds.KINDS[kind]
+    if not names:
+        flash(request, "None of those pollers can take commands (revoked or deleted).", "warn")
+    else:
+        what = names[0] if len(names) == 1 else f"{len(names)} pollers"
+        flash(request, f"{label} sent to {what}. The result shows on each poller below"
+                       + (" once the poller host has pulled the image and the poller reconnects (usually under 2 minutes)."
+                          if kind == "update" else "."))
+    return back("/pollers")
+
+
+@router.post("/pollers/{poller_id}/rename")
+def poller_rename(request: Request, poller_id: int, name: str = Form(...)):
+    name = name.strip()[:120]
+    with st(request).db.session() as s:
+        p = s.get(Poller, poller_id)
+        if p is None:
+            raise HTTPException(404)
+        if not name:
+            flash(request, "Give the poller a name.", "warn")
+            return back("/pollers")
+        if name != p.name and s.scalar(select(Poller.id).where(Poller.name == name)):
+            flash(request, f"Another poller is already called {name}.", "warn")
+            return back("/pollers")
+        old, p.name = p.name, name
+        if old != name:
+            events.log(s, "poller", f"Poller {old} renamed to {name}", username=_who(request))
+    flash(request, f"Renamed {old} to {name}." if old != name else "Name unchanged.")
+    return back("/pollers")
+
+
+@router.post("/pollers/{poller_id}/factory-reset")
+async def poller_factory_reset(request: Request, poller_id: int):
+    from .api import client_ip
+    from .users import audit
+    form = await request.form()
+    me = getattr(request.state, "user", None)
+    if me is None or me.role != "admin":
+        raise HTTPException(403)
+    with st(request).db.session() as s:
+        p = s.get(Poller, poller_id)
+        if p is None:
+            raise HTTPException(404)
+        name = p.name
+    if str(form.get("confirm_name") or "").strip() != name:
+        flash(request, f"Type the poller's name ({name}) exactly to confirm the factory reset.", "warn")
+        return back("/pollers")
+    force = form.get("force") == "on"
+    err = await poller_cmds.factory_reset(st(request), poller_id)
+    if err and not force:
+        with st(request).db.session() as s:
+            audit(s, me.username, client_ip(request), "factory reset failed", f"{name}: {err}"[:500])
+        flash(request, f"Factory reset of {name} failed: {err} Nothing was changed. If the poller is gone for good, tick "
+                       "'Remove it from the server even if the poller doesn't answer' and try again.", "bad")
+        return back("/pollers")
+    with st(request).db.session() as s:
+        p = s.get(Poller, poller_id)
+        if p is not None:
+            p.revoked = True
+            s.flush()
+            s.delete(p)
+        how = "the poller wiped its key and config" if not err else f"the poller didn't answer ({err}); removed anyway"
+        audit(s, me.username, client_ip(request), "factory reset poller", f"{name}: {how}"[:500])
+        events.log(s, "poller", f"Poller {name} factory reset: {how}", "warn", username=me.username)
+    ws = st(request).hub.conns.get(poller_id)
+    if ws is not None:
+        try:
+            await ws.close(code=4003)
+        except Exception:  # noqa: BLE001
+            pass
+    if not err:
+        flash(request, f"{name} was factory reset: it deleted its key and config and is waiting to be enrolled again, "
+                       "and it was removed from this server. Its devices and integrations are unassigned. To use the "
+                       "machine again, press Add poller and run the install command with the new token on it.")
+    else:
+        flash(request, f"{name} was removed from this server, but it didn't confirm the reset ({err}). Its key no "
+                       "longer works. On the host, run install-poller.sh --uninstall and remove the linkwatch-poller "
+                       "volume, or reinstall it with a new token.", "warn")
+    return back("/pollers")
 
 
 @router.post("/pollers/token")
@@ -860,8 +970,11 @@ def settings(request: Request):
         transports = s.scalars(select(Transport).order_by(Transport.name)).all()
         keys = s.scalars(select(ApiKey).order_by(ApiKey.created_at.desc())).all()
         interval = st(request).hub.interval(s)
+        base_name = (get_setting(s, "poller_base_name", "") or "").strip()
+        next_name = poller_cmds.next_poller_name(s, base_name) if base_name else None
     return render(request, "settings.html", {
         "profiles": profiles, "usage": usage, "transports": transports, "keys": keys, "interval": interval,
+        "base_name": base_name, "next_name": next_name,
         "transport_kinds": TRANSPORT_KINDS, "auth_protocols": SNMP_AUTH, "priv_protocols": SNMP_PRIV,
         "new_key": request.session.pop("new_key", None)})
 
@@ -876,6 +989,21 @@ def settings_interval(request: Request, interval: int = Form(...)):
         push_poller(request, pid)
     flash(request, f"Polling every {interval} seconds.")
     return back("/settings")
+
+
+@router.post("/settings/pollers")
+def settings_pollers(request: Request, base_name: str = Form("")):
+    base = base_name.strip()
+    problem = poller_cmds.base_name_problem(base)
+    if problem:
+        flash(request, problem, "warn")
+        return back("/settings#pollers")
+    with st(request).db.session() as s:
+        set_setting(s, "poller_base_name", base)
+        nxt = poller_cmds.next_poller_name(s, base) if base else None
+    flash(request, f"New pollers will be named {base}.1, {base}.2, and so on (the next one: {nxt}). Existing pollers "
+                   "keep their names." if base else "New pollers will use the name given when they are installed.")
+    return back("/settings#pollers")
 
 
 @router.post("/settings/snmp")

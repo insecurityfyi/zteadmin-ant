@@ -31,6 +31,12 @@
       <p class="help" style="margin:0">To poll extra SNMP values, see <a href="/oids">Custom OIDs and MIBs</a>.</p>
       <div><button class="btn" type="submit">Save</button></div></form></div>
 
+  <div class="p c5" id="pollers"><div class="ph"><h2>Poller names</h2></div>
+    <form method="post" action="/settings/pollers" class="stack">
+      <label class="f">Base name<input type="text" name="base_name" id="base_name" value="{{ base_name }}" maxlength="60" placeholder="poller-hq" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,59}"><small>Each newly enrolled poller is named <code>{{ base_name or 'base' }}.1</code>, <code>{{ base_name or 'base' }}.2</code>, <code>{{ base_name or 'base' }}.3</code>… using the lowest number not taken, whatever name the install command passed. Existing pollers keep their names (rename them on the Pollers page). Leave empty to use the name given at install.</small></label>
+      {% if next_name %}<p class="help" style="margin:0">The next poller will be <b class="mono">{{ next_name }}</b>.</p>{% endif %}
+      <div><button class="btn" type="submit">Save</button></div></form></div>
+
   <div class="p c7" id="transports"><div class="ph"><h2>Where alerts are sent</h2></div>
     {% if transports %}<div class="scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Minimum severity</th><th>Last result</th><th></th></tr></thead><tbody>
     {% for t in transports %}<tr><td><b>{{ t.name }}</b></td><td>{{ transport_kinds[t.kind][0] }}</td><td>{{ {'crit':'Critical','warn':'Warning','info':'Info'}[t.min_severity] }}</td><td class="dim">{{ t.last_result or '–' }}</td>

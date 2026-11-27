@@ -11,6 +11,7 @@
 #   install-poller.sh --uninstall                                remove the container (keeps the key volume)
 #   install-poller.sh --network bridge                           use the container runtime's own network instead of
 #                                                                the host's (remembered for later updates)
+#   install-poller.sh --no-helper                                don't install the update helper (step 5)
 #
 # What it does:
 #   1. installs Podman, curl and the SNMP command-line tools (apt, dnf/yum or zypper),
@@ -20,13 +21,18 @@
 #      SNMP and path probes go out from the machine's own address, not the 10.88.0.1 Podman
 #      bridge), with NET_RAW so ping and mtr work, a volume for its key, and restart-on-boot
 #   4. waits for "Connected" in the logs
+#   5. before starting it, installs a small systemd helper (linkwatch-poller-helper.path/.service) that runs this
+#      script again when the poller asks, so Pollers > Update in Linkwatch can update it and report the result
 #
 # The enrollment token is shown once by the server (Pollers > Add poller), works
 # once and expires after 24 hours. After the first start the poller keeps its own
 # key in the volume, so updates don't need a token. The poller only connects out.
 set -euo pipefail
 
-IMAGE="${LW_POLLER_IMAGE:-ghcr.io/insecurityfyi/linkwatch-poller:latest}"
+DEFAULT_IMAGE="ghcr.io/insecurityfyi/linkwatch-poller:latest"
+IMAGE="${LW_POLLER_IMAGE:-}"
+INSTALLER_URL="${LW_INSTALLER_URL:-https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh}"
+HELPER=1
 NAME_CT="linkwatch-poller"
 VOLUME="linkwatch-poller"
 CONF="/etc/linkwatch-poller.env"
@@ -36,7 +42,7 @@ PNAME="${LW_POLLER_NAME:-}"
 NETWORK="${LW_POLLER_NETWORK:-}"
 UNINSTALL=0
 
-usage() { sed -n '2,26p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; }
+usage() { sed -n '2,30p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true; }
 die() { echo "!! $*" >&2; exit 1; }
 say() { echo "==> $*"; }
 
@@ -48,6 +54,7 @@ while [ $# -gt 0 ]; do
     --image) IMAGE="${2:-}"; shift 2 ;;
     --network) NETWORK="${2:-}"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --no-helper) HELPER=0; shift ;;
     -h|--help) usage; exit 0 ;;
     enr_*) TOKEN="$1"; shift ;;          # a bare token is accepted too
     *) die "Unknown option: $1 (see --help)" ;;
@@ -61,8 +68,9 @@ if [ -f "$CONF" ]; then
   # shellcheck disable=SC1090
   . "$CONF"
   SERVER="${SERVER:-${LW_SERVER:-}}"; PNAME="${PNAME:-${LW_POLLER_NAME:-}}"
-  NETWORK="${NETWORK:-${LW_POLLER_NETWORK:-}}"
+  NETWORK="${NETWORK:-${LW_POLLER_NETWORK:-}}"; IMAGE="${IMAGE:-${LW_POLLER_IMAGE:-}}"
 fi
+IMAGE="${IMAGE:-$DEFAULT_IMAGE}"
 # Host networking by default: the poller then uses the machine's real address and interfaces,
 # so devices, ACLs and path probes see it as itself rather than as the runtime's NAT bridge.
 NETWORK="${NETWORK:-host}"
@@ -121,6 +129,12 @@ PNAME="${PNAME:-$(hostname -s 2>/dev/null || echo poller)}"
 SERVER="${SERVER%/}"
 
 if [ "$UNINSTALL" -eq 1 ]; then
+  if command -v systemctl >/dev/null; then
+    systemctl disable -q --now linkwatch-poller-helper.path 2>/dev/null || true
+    rm -f /etc/systemd/system/linkwatch-poller-helper.path /etc/systemd/system/linkwatch-poller-helper.service
+    systemctl daemon-reload 2>/dev/null || true
+  fi
+  rm -f /usr/local/sbin/linkwatch-poller-helper
   $RT rm -f "$NAME_CT" >/dev/null 2>&1 || true
   say "Removed the $NAME_CT container. Its key is still in the '$VOLUME' volume; '$RT volume rm $VOLUME' deletes it."
   exit 0
@@ -149,7 +163,103 @@ fi
 
 # ------------------------------------------------------------------ run
 umask 077
-printf 'LW_SERVER=%s\nLW_POLLER_NAME=%s\nLW_POLLER_NETWORK=%s\n' "$SERVER" "$PNAME" "$NETWORK" > "$CONF"
+printf 'LW_SERVER=%q\nLW_POLLER_NAME=%q\nLW_POLLER_NETWORK=%q\nLW_POLLER_IMAGE=%q\n' "$SERVER" "$PNAME" "$NETWORK" "$IMAGE" > "$CONF"
+
+# ------------------------------------------------------------------ update helper
+# The poller can't replace its own container, so Pollers > Update asks the host: the poller writes
+# control/update.request in its volume, a systemd path unit runs linkwatch-poller-helper, which runs this script
+# again and writes control/update.result for the poller to report back. The request file carries only an id;
+# the helper never runs anything from the volume.
+install_helper() {
+  command -v systemctl >/dev/null && [ -d /run/systemd/system ] || { say "No systemd here: skipping the update helper (update by running this script)"; return 0; }
+  local mp ctl lib=/usr/local/lib/linkwatch-poller tmp
+  if [ -d "$VOLUME" ]; then mp="$VOLUME"; else
+    $RT volume inspect "$VOLUME" >/dev/null 2>&1 || $RT volume create "$VOLUME" >/dev/null 2>&1 || true
+    mp="$($RT volume inspect -f '{{.Mountpoint}}' "$VOLUME" 2>/dev/null || true)"
+  fi
+  [ -n "$mp" ] && [ -d "$mp" ] || { say "Couldn't find the poller volume on disk: skipping the update helper"; return 0; }
+  ctl="$mp/control"
+  # Podman and Docker copy the image's folder (owned by the poller's user, uid 10001) into an empty volume only;
+  # the helper's files make it non-empty, so give a new volume that owner ourselves.
+  [ "$(stat -c %u "$mp")" = 10001 ] || [ -s "$mp/identity.json" ] || chown 10001:10001 "$mp" 2>/dev/null || true
+  install -d -m 0755 "$lib"
+  install -d -m 0755 -o 10001 -g 10001 "$ctl" 2>/dev/null || install -d -m 0755 "$ctl"
+  # a copy of this script for the helper to fall back on when GitHub can't be reached (replaced atomically:
+  # the helper may be running the old copy right now)
+  tmp="$(mktemp "$lib/.install.XXXXXX")"
+  if curl -fsSL --max-time 60 "$INSTALLER_URL" -o "$tmp" && head -1 "$tmp" | grep -q bash; then
+    chmod 0755 "$tmp"; mv -f "$tmp" "$lib/install-poller.sh"
+  else
+    rm -f "$tmp"
+  fi
+  tmp="$(mktemp /usr/local/sbin/.lwhelper.XXXXXX)"
+  {
+    echo '#!/usr/bin/env bash'
+    echo '# Installed by install-poller.sh. systemd runs this when the Linkwatch poller asks to be updated'
+    echo '# (Pollers > Update): it runs the install script again and leaves the result for the poller to report.'
+    echo 'set -uo pipefail'
+    printf 'CTL=%q\nRT=%q\nURL=%q\nCACHE=%q\nCT=%q\n' "$ctl" "$RT" "$INSTALLER_URL" "$lib/install-poller.sh" "$NAME_CT"
+    cat <<'HELPER'
+REQ="$CTL/update.request"
+[ -f "$REQ" ] || exit 0
+id="$(head -c 64 "$REQ" | tr -cd 'A-Za-z0-9_-')"
+rm -f "$REQ"
+[ -n "$id" ] || exit 0
+echo "Update requested by the poller (request $id)"
+before="$($RT container inspect -f '{{.Image}}' "$CT" 2>/dev/null || true)"
+tmp="$(mktemp "$(dirname "$CACHE")/.install.XXXXXX")"
+if curl -fsSL --max-time 60 "$URL" -o "$tmp" && head -1 "$tmp" | grep -q bash; then
+  chmod 0755 "$tmp"; mv -f "$tmp" "$CACHE"
+else
+  rm -f "$tmp"; echo "Couldn't download $URL; using the saved copy"
+fi
+if [ -f "$CACHE" ]; then out="$(bash "$CACHE" 2>&1)"; rc=$?; else out="No install script: couldn't download $URL"; rc=1; fi
+printf '%s\n' "$out"
+after="$($RT container inspect -f '{{.Image}}' "$CT" 2>/dev/null || true)"
+ok=false; [ "$rc" -eq 0 ] && ok=true
+changed=false; [ -n "$after" ] && [ "$after" != "$before" ] && changed=true
+err=""
+if [ "$rc" -ne 0 ]; then
+  err="$(printf '%s\n' "$out" | grep -v '^==>' | tail -4 | tr '\n\t' '  ' | tr -cd '[:print:]' | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-600)"
+  [ -n "$err" ] || err="install-poller.sh exited with code $rc"
+fi
+img="${after#sha256:}"
+printf '{"id":"%s","ok":%s,"changed":%s,"image":"%s","error":"%s","at":%s}\n' "$id" "$ok" "$changed" "${img:0:19}" "$err" "$(date +%s)" > "$CTL/.update.result.tmp"
+chmod 0644 "$CTL/.update.result.tmp"
+mv -f "$CTL/.update.result.tmp" "$CTL/update.result"
+echo "Update $id finished: ok=$ok"
+HELPER
+  } > "$tmp"
+  chmod 0755 "$tmp"; mv -f "$tmp" /usr/local/sbin/linkwatch-poller-helper
+  cat > /etc/systemd/system/linkwatch-poller-helper.service <<UNIT
+[Unit]
+Description=Update the Linkwatch poller when it asks (Pollers > Update)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/linkwatch-poller-helper
+TimeoutStartSec=20min
+UNIT
+  cat > /etc/systemd/system/linkwatch-poller-helper.path <<UNIT
+[Unit]
+Description=Watch for update requests from the Linkwatch poller
+
+[Path]
+PathExists=$ctl/update.request
+Unit=linkwatch-poller-helper.service
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable -q linkwatch-poller-helper.path 2>/dev/null || true
+  systemctl restart linkwatch-poller-helper.path 2>/dev/null || systemctl start linkwatch-poller-helper.path || true
+  printf '{"version":1,"runtime":"%s","installed":%s}\n' "$RT" "$(date +%s)" > "$ctl/helper.json"
+  chmod 0644 "$ctl/helper.json"
+  say "Installed the update helper (Pollers > Update in Linkwatch now works for this poller)"
+}
+
+if [ "$HELPER" -eq 1 ]; then install_helper || say "Couldn't install the update helper; update by running this script"; fi
 
 say "Starting $NAME_CT (name: $PNAME, network: $NETWORK)"
 $RT rm -f "$NAME_CT" >/dev/null 2>&1 || true

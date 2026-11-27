@@ -19,15 +19,22 @@ Environment:
     LW_CONCURRENCY   simultaneous device polls (default 32)
     LW_TUNNEL        on (default) / off: allow SSH consoles through this poller (see tunnel.py)
     LW_TUNNEL_PORTS  ports a tunnel may reach (default 22,3389; "any" for all)
+    LW_BUILD         image build id, set when the image is built (reported to the server)
+
+Commands from the Pollers page (rpc ``status``, ``update``, ``factory_reset``): see linkwatch/server/poller_cmds.py.
+Updates go through a helper on the host that watches ``{LW_DATA_DIR}/control`` (installed by install-poller.sh).
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import json
 import logging
 import os
 import random
+import re
+import shutil
 import socket
 import time
 import uuid
@@ -52,6 +59,7 @@ SYSTEM_OIDS = {"1.3.6.1.2.1.1.5.0": "sysName", "1.3.6.1.2.1.1.1.0": "sysDescr", 
                "1.3.6.1.2.1.1.3.0": "sysUpTime"}
 
 log = logging.getLogger("linkwatch.poller")
+BUILD = os.environ.get("LW_BUILD") or "dev"
 
 
 _seq = itertools.count()
@@ -90,6 +98,15 @@ class Poller:
         self.probing: set[int] = set()
         self.key: str | None = None
         self.tunnels: set[asyncio.Task] = set()
+        self.control = self.data_dir / "control"      # shared with the update helper on the host
+        try:
+            self.control.mkdir(exist_ok=True)
+        except OSError:
+            pass
+        self.background: list[asyncio.Task] = []
+        self.reset_done = asyncio.Event()
+        self._result_sent: str | None = None
+        self.result_poll = 3.0                     # seconds between looks at control/update.result
 
     # identity -------------------------------------------------------------
     @property
@@ -101,6 +118,25 @@ class Poller:
             return json.loads(self.identity_file.read_text())
         except (OSError, ValueError):
             return None
+
+    @property
+    def reset_file(self) -> Path:
+        return self.data_dir / "factory-reset.json"
+
+    def token_is_stale(self) -> bool:
+        """After a factory reset the container may still carry the token it was first enrolled with (used, so it
+        would only fail). Wait for a new one instead of retrying it."""
+        try:
+            marker = json.loads(self.reset_file.read_text())
+        except (OSError, ValueError):
+            return False
+        return not self.enroll_token or marker.get("token_sha") == _sha(self.enroll_token)
+
+    async def wait_for_enrollment(self) -> None:
+        log.warning("This poller has been factory reset and is not enrolled. To enroll it again, create a token on the "
+                    "Pollers page and run install-poller.sh --server URL --token enr_... on this host.")
+        while True:
+            await asyncio.sleep(3600)
 
     async def enroll(self) -> dict:
         if not self.enroll_token:
@@ -115,6 +151,7 @@ class Poller:
         tmp.write_text(json.dumps(ident))
         tmp.chmod(0o600)
         os.replace(tmp, self.identity_file)
+        self.reset_file.unlink(missing_ok=True)
         log.info("Enrolled as poller %s (%s)", ident["poller_id"], ident.get("name"))
         return ident
 
@@ -128,12 +165,15 @@ class Poller:
 
     # main loop ------------------------------------------------------------
     async def run(self) -> None:
-        ident = self.load_identity() or await self.enroll()
+        ident = self.load_identity()
+        if ident is None and self.token_is_stale():
+            await self.wait_for_enrollment()
+        ident = ident or await self.enroll()
         self.key = ident["key"]
-        asyncio.create_task(self.schedule_loop())
-        asyncio.create_task(self.probe_loop())
+        self.background = [asyncio.create_task(self.schedule_loop()), asyncio.create_task(self.probe_loop()),
+                           asyncio.create_task(self.watch_update_result())]
         backoff = 2.0
-        while True:
+        while not self.reset_done.is_set():
             try:
                 async with connect(self.ws_url, additional_headers={"Authorization": f"Bearer {ident['key']}"},
                                    ping_interval=30, ping_timeout=30, max_size=32 * 2**20, open_timeout=20) as ws:
@@ -141,9 +181,11 @@ class Poller:
                     backoff = 2.0
                     log.info("Connected to %s", self.ws_url)
                     from ..integrations import REGISTRY
-                    await ws.send(json.dumps({"type": "hello", "version": __version__, "hostname": socket.gethostname(),
+                    await ws.send(json.dumps({"type": "hello", "version": __version__, "build": BUILD,
+                                              "hostname": socket.gethostname(),
                                               "spooled": len(self.spool), "integrations": sorted(REGISTRY),
                                               "features": self.features()}))
+                    self._result_sent = None        # (re)send the last update result on this connection
                     for batch in self.spool.pending():
                         await ws.send(json.dumps(batch))
                     while self.outbox:
@@ -163,8 +205,11 @@ class Poller:
                 log.warning("Connection lost: %s", exc.__class__.__name__)
             finally:
                 self.ws = None
+            if self.reset_done.is_set():
+                break
             await asyncio.sleep(backoff + random.uniform(0, backoff / 2))
             backoff = min(backoff * 2, 120.0)
+        await self.wait_for_enrollment()
 
     def features(self) -> list[str]:
         feats = ["custom_oids"]
@@ -174,8 +219,79 @@ class Poller:
             feats += ["ssh", "pveterm"]
         if tunnel.allows(3389):
             feats.append("rdp")
-        feats += ["rpc", "snmp_probe"]
+        feats += ["rpc", "snmp_probe", "commands", "factory_reset"]
+        if self.helper_info():
+            feats.append("self_update")
         return feats
+
+    # commands from the Pollers page ------------------------------------------
+    def helper_info(self) -> dict | None:
+        """What install-poller.sh wrote about the update helper on the host, if it installed one."""
+        try:
+            info = json.loads((self.control / "helper.json").read_text())
+        except (OSError, ValueError):
+            return None
+        return info if isinstance(info, dict) else None
+
+    def status(self) -> dict:
+        return {"version": __version__, "build": BUILD, "devices": len(self.devices), "integrations": len(self.integrations),
+                "probes": len(self.probes), "configured": self.configured.is_set(), "interval": self.interval,
+                "spooled": len(self.spool)}
+
+    def request_update(self, req: str) -> dict:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", req):
+            raise IntegrationError("Invalid update request id.")
+        if not self.helper_info():
+            raise IntegrationError("This host has no update helper. Run install-poller.sh once on the host to add it.")
+        tmp = self.control / ".update.request.tmp"
+        tmp.write_text(req + "\n")
+        os.replace(tmp, self.control / "update.request")      # the host's path unit fires on this file
+        log.info("Asked the host to update this poller (request %s)", req)
+        return {"accepted": True, **self.status()}
+
+    def read_update_result(self) -> dict | None:
+        try:
+            res = json.loads((self.control / "update.result").read_text())
+        except (OSError, ValueError):
+            return None
+        return res if isinstance(res, dict) and res.get("id") else None
+
+    async def watch_update_result(self) -> None:
+        """Send the host helper's result once per connection (the new container starts before the helper writes it)."""
+        while True:
+            res = self.read_update_result()
+            if res and res["id"] != self._result_sent and self.ws:
+                try:
+                    await self.ws.send(json.dumps({**res, "type": "update_result"}))
+                    self._result_sent = res["id"]
+                except ConnectionClosed:
+                    pass
+            await asyncio.sleep(self.result_poll)
+
+    def wipe(self) -> None:
+        """Back to the state before enrollment: no key, no buffered results, no update state, no config in memory."""
+        for name in ("identity.json", "identity.tmp"):
+            (self.data_dir / name).unlink(missing_ok=True)
+        shutil.rmtree(self.spool.dir, ignore_errors=True)
+        for name in ("update.request", "update.result", ".update.request.tmp"):
+            (self.control / name).unlink(missing_ok=True)
+        marker = {"at": time.time(), "token_sha": _sha(self.enroll_token) if self.enroll_token else None}
+        self.reset_file.write_text(json.dumps(marker))
+        self.devices, self.integrations, self.key = [], [], None
+        self.set_probes([])
+        log.warning("Factory reset: deleted this poller's key, spool and update state")
+
+    async def after_reset(self) -> None:
+        self.reset_done.set()
+        me = asyncio.current_task()
+        for t in self.background + list(self.tunnels):
+            if t is not me:
+                t.cancel()
+        if self.ws:
+            try:
+                await self.ws.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     async def handle(self, msg: dict) -> None:
         t = msg.get("type")
@@ -273,8 +389,23 @@ class Poller:
         rid = msg.get("id")
         reply: dict[str, Any] = {"type": "rpc_result", "id": rid, "ok": False}
         try:
-            if msg.get("op") != "integration_action":
-                raise IntegrationError(f"This poller doesn't know the request {msg.get('op')!r}. Update it.")
+            op = msg.get("op")
+            if op == "status":
+                reply["result"], reply["ok"] = self.status(), True
+                await self.send_or_queue(reply, queue=False)
+                return
+            if op == "update":
+                reply["result"], reply["ok"] = self.request_update(str(msg.get("request") or "")), True
+                await self.send_or_queue(reply, queue=False)
+                return
+            if op == "factory_reset":
+                self.wipe()
+                reply["result"], reply["ok"] = {"reset": True}, True
+                await self.send_or_queue(reply, queue=False)
+                await self.after_reset()
+                return
+            if op != "integration_action":
+                raise IntegrationError(f"This poller doesn't know the request {op!r}. Update it.")
             integ = next((i for i in self.integrations if i.get("id") == msg.get("integration_id")), None)
             if integ is None:
                 raise IntegrationError("This poller doesn't run that integration. Press Sync now and try again.")
@@ -468,6 +599,10 @@ class Poller:
         except Exception as exc:
             item["error"] = f"{exc.__class__.__name__}: {exc}"
         return item
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def main() -> None:

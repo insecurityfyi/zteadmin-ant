@@ -27,13 +27,24 @@ Server -> poller
                    "action": "shutdown", "params": {"node": "pve-01", "type": "qemu", "vmid": 101}, "refresh": true}
                   Runs Integration.action(action, params) for an integration assigned to this poller. With
                   "refresh" the poller collects that integration again a few seconds later.
+    rpc op status {"type": "rpc", "id": "...", "op": "status"}
+                  Answered with {"version", "build", "devices", "integrations", "probes", "configured", ...}; sent after
+                  a config to confirm it was applied (Pollers > Reload config). Poller feature "commands".
+    rpc op update {"type": "rpc", "id": "...", "op": "update", "request": "u12-ab34cd"}
+                  The poller writes the id to control/update.request for the host's update helper (feature
+                  "self_update", only when control/helper.json exists). See linkwatch/server/poller_cmds.py.
+    rpc op factory_reset {"type": "rpc", "id": "...", "op": "factory_reset"}
+                  The poller deletes its key, spool and update state, answers ok, closes the connection and waits to
+                  be enrolled again.
 
 Poller -> server
-    hello         {"type": "hello", "version": "0.1.0", "hostname": "...", "features": ["mtr", "ssh", "pveterm", "rpc"]}
+    hello         {"type": "hello", "version": "0.1.0", "build": "sha-0123abcd4567", "hostname": "...", "features": ["mtr", "ssh", "pveterm", "rpc"]}
     results       {"type": "results", "batch_id": "...", "items": [DeviceResult | IntegrationResult]}
     pong          {"type": "pong"}
     snmp_test_result {"type": "snmp_test_result", "req": "...", "rows": [{"index": "", "value": 42, "label": null}], "error": null}
     rpc_result    {"type": "rpc_result", "id": "...", "ok": true, "result": {...}} or {"ok": false, "error": "..."}
+    update_result {"type": "update_result", "id": "u12-ab34cd", "ok": true, "changed": true, "image": "...", "error": ""}
+                  What the host's update helper wrote to control/update.result, sent once per connection.
 
 A ``DeviceResult`` (kind "device") carries one SNMP/ICMP poll of one device:
 
