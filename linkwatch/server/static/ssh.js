@@ -1,4 +1,4 @@
-/* SSH console pop-out: xterm.js in the browser, SSH on the Linkwatch server, bytes through the poller's tunnel. */
+/* SSH console pop-out: xterm.js in the browser, SSH on the VisCon1 server, bytes through the poller's tunnel. */
 (function () {
   "use strict";
   const target = JSON.parse(document.getElementById("target").textContent);

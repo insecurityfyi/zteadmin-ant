@@ -1,9 +1,11 @@
 <!doctype html>
+{% from "_brand.html" import logo, head_icons with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}" data-layout="{{ layout|default('top') }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Linkwatch{% endblock %} · Linkwatch</title>
+<title>{% block title %}{{ app_name }}{% endblock %} · {{ app_name }}</title>
+{{ head_icons(theme|default('auto')) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@500;600;700{% if theme == 'navy' %}&family=Inter:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v={{ version }}">
@@ -29,7 +31,7 @@
   'settings': '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 }[name]|safe }}</svg>{% endmacro %}
 <header class="topbar">
-  <a class="brand" href="/"><svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="var(--accent)"/><path d="M5 15h4l2-6 4 10 2-4h4" fill="none" stroke="var(--onAccent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Linkwatch</span></a>
+  <a class="brand" href="/" title="{{ app_name }} · {{ app_full_name }}">{{ logo(theme|default('auto'), 26) }}<span>{{ app_name }}</span></a>
   <nav class="menus" aria-label="Sections">
     <details class="menu {{ 'cur' if sec == 'overview' }}"{% if side and sec == 'overview' %} open{% endif %}><summary>{{ ic('overview') }}<span class="lb">Overview</span></summary><div class="dd">
       <a href="/" {% if nav == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>

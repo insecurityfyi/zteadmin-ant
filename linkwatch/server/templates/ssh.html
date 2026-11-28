@@ -1,9 +1,11 @@
 <!doctype html>
+{% from "_brand.html" import logo, head_icons with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SSH {{ t.label if t else '' }} · Linkwatch</title>
+<title>SSH {{ t.label if t else '' }} · {{ app_name }}</title>
+{{ head_icons(theme|default('auto')) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v={{ version }}">
@@ -49,7 +51,7 @@
   <p class="bad msg">{{ error }}</p>
 {% else %}
   <h2>Sign in to {{ t.label }}</h2>
-  <p class="help" style="margin:0">SSH runs from the Linkwatch server to the device through the poller's outbound tunnel. The poller only relays encrypted traffic; your login is not sent to it.</p>
+  <p class="help" style="margin:0">SSH runs from the VisCon1 server to the device through the poller's outbound tunnel. The poller only relays encrypted traffic; your login is not sent to it.</p>
   {% if not connected %}<p class="wa msg">Poller {{ t.poller_name }} is not connected right now.</p>
   {% elif not supported %}<p class="wa msg">Poller {{ t.poller_name }} is running an older image without SSH support. On the poller host run <code>{{ update_command(t.poller_name) }}</code>, then reload this window.</p>{% endif %}
 

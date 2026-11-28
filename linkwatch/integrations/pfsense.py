@@ -1,7 +1,7 @@
 """pfSense CE and Plus through the pfSense REST API package (pfrest, v2), called by a poller.
 
 pfSense has no built-in REST API of its own, so this uses the community package from pfrest.org, installed on the
-firewall with pkg-static (see docs/pfsense.md). Linkwatch signs in with an API key in the ``X-API-Key`` header. The key
+firewall with pkg-static (see docs/pfsense.md). VisCon1 signs in with an API key in the ``X-API-Key`` header. The key
 carries the privileges of the user that created it, so give that user GET access to the endpoints below and nothing
 else.
 

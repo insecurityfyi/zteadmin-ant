@@ -399,6 +399,9 @@ def _sse_series(d: dict[str, Any]) -> list[Point]:
     dlp = d.get("dlp") or {}
     if dlp.get("total") is not None:
         out.append(("dlp:incidents", _num(dlp.get("total")), _num(dlp.get("ai_incidents")), None))
+    for m in d.get("metrics") or []:          # platform-specific graphs: [key, a, b, c]
+        if isinstance(m, (list, tuple)) and len(m) == 4 and m[0]:
+            out.append((str(m[0]), _num(m[1]), _num(m[2]), _num(m[3])))
     return out
 
 

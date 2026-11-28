@@ -15,7 +15,7 @@ Paths used:
     /api/sonicos/reporting/vpn/ipsec/tunnels
 
 SonicOS's REST API has little live telemetry, so CPU, memory, connection counts and interface traffic come from SNMP:
-add the firewall as an SNMP device too and Linkwatch shows both on one device (matched on serial or IP).
+add the firewall as an SNMP device too and VisCon1 shows both on one device (matched on serial or IP).
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ class SonicWall(Integration):
     description = "SonicOS API: system, interfaces, SSL VPN users, licences and security services. Pair with SNMP for CPU, memory and traffic."
     fields = [
         Field("host", "Firewall address", help="Management IP or hostname, with :port if the HTTPS management port isn't 443."),
-        Field("username", "Admin username", help="A dedicated admin for Linkwatch (see the setup steps). Don't reuse your own: "
+        Field("username", "Admin username", help="A dedicated admin for VisCon1 (see the setup steps). Don't reuse your own: "
                                                  "an API sign-in can end a web session for the same account."),
         Field("password", "Password", "password"),
         verify_field(),

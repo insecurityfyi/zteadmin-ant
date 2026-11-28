@@ -11,7 +11,7 @@ The Overview page is a grid of widgets. Each person arranges their own, and read
 5. **Settings** picks what a widget shows, for example the port for a traffic graph, the device for a device graph, or the metric for "Top devices". **✕** removes the widget.
 6. Every change saves as you make it. Click **Done** when you're finished.
 
-**Reset** goes back to the default layout. Admins also get **Make default for everyone**: everyone who hasn't customised their own dashboard then sees that layout. Without one, Linkwatch uses its built-in layout. The Navy console theme has a built-in layout of its own, described below.
+**Reset** goes back to the default layout. Admins also get **Make default for everyone**: everyone who hasn't customised their own dashboard then sees that layout. Without one, VisCon1 uses its built-in layout. The Navy console theme has a built-in layout of its own, described below.
 
 The **Last 24 hours** menu next to Customise changes the time range of every graph on the page.
 

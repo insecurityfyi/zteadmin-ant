@@ -2,23 +2,25 @@
 
 Two things live in this repository:
 
-* **Linkwatch** (`linkwatch/`): self-hosted network monitoring with
+* **VisCon1** (`linkwatch/`): self-hosted network monitoring with
   outbound-only remote pollers. Runs on the CentOS Stream 10 VPS (9 also works) at
   `utilz.perrego.net` and updates from GitHub with `deploy/update.sh` on the VPS.
 * **Zscaler Toolbox, ZIA module** (`app/`): the earlier ZIA console. Its
-  OneAPI work now also powers Linkwatch's Zscaler integration.
+  OneAPI work now also powers VisCon1's Zscaler integration.
 
-## Linkwatch
+## VisCon1
+
+**VisCon1** is short for **Visibility and Control One**. It was called Linkwatch until November 2026.
 
 | Area | What it does |
 | --- | --- |
-| Layout | A top menu in the style of classic NMS consoles, or a left sidebar with icons: Overview (dashboard, event log, network map), Devices (by type, discovery), Ports, Health, Alerts, Map and Integrations. Six colour themes (Linkwatch auto light/dark, Midnight NOC, Classic Light, Zscaler Blue, Graphite + Orange, Navy console). The theme and the menu style each have a site default under Administration and a personal choice under Your account. Navy console uses the sidebar and has its own starting dashboard; see [docs/dashboard-and-alert-rules.md](docs/dashboard-and-alert-rules.md). |
+| Layout | A top menu in the style of classic NMS consoles, or a left sidebar with icons: Overview (dashboard, event log, network map), Devices (by type, discovery), Ports, Health, Alerts, Map and Integrations. Seven colour themes (VisCon1 auto light/dark, Midnight NOC, Classic Light, Zscaler Blue, Graphite + Orange, Navy console, AS/400 phosphor green), each with its own VisCon1 logo. The theme and the menu style each have a site default under Administration and a personal choice under Your account. Navy console uses the sidebar and has its own starting dashboard; see [docs/dashboard-and-alert-rules.md](docs/dashboard-and-alert-rules.md). |
 | Dashboard | A grid of widgets each user arranges for themselves: summary, traffic graph for any port, open alerts, devices by site, busiest ports, top devices by CPU, memory, latency or loss, a graph for any device, devices with problems, the event log, integrations, health sensors, the network map and free-text notes. Drag to move, pick a width, configure each widget; admins can make their layout the default for everyone. See [docs/dashboard-and-alert-rules.md](docs/dashboard-and-alert-rules.md). |
 | Devices | SNMP v2c/v3 and ping: system info, CPU, memory, every interface with traffic, errors and utilization, graphs for 6 h to 1 year. Each device has Overview, Graphs, Ports, Health, Inventory, Neighbours, Events and Alerts tabs. CSV import, and bulk disable, enable or delete (for example all ping-only devices). |
 | Ports and health | Every interface across all devices with filters for down, shut down and errors; a page per port with traffic, utilisation and error graphs. Health pages rank devices by CPU, memory, latency and packet loss. |
 | Sensors and inventory | Temperatures, fans, power supplies, voltages and state sensors over SNMP (ENTITY-SENSOR-MIB, Cisco environment MIB, LM-SENSORS), disk and flash usage, and the hardware inventory (chassis, modules, serials) from ENTITY-MIB. Each sensor has a graph; Health pages list them network-wide. Alerts for hot or failed sensors and full storage. |
 | System counters and custom OIDs | Every SNMP device also reports load average, processes, swap, TCP connections, retransmits and resets, IP and UDP errors and discards, interface discards and per-disk read/write rates. Any other OID can be added in the UI without code changes or redeploying pollers: type it or pick it from a searchable MIB (upload vendor MIBs; the standard ones are built in), scope it by device type, vendor (sysObjectID) or name, test it against a device, then graph it and alert on it. See [docs/custom-oids.md](docs/custom-oids.md). |
-| Neighbours and map | LLDP and CDP neighbours per port, matched to devices Linkwatch already knows, plus UniFi and Meraki uplinks. Wireless access points are always drawn, on the switch port they plug into, with an AP icon, their status and client count; wireless mesh uplinks are dashed. The network map draws them with link colour by utilisation; drag nodes to arrange, and positions are remembered. |
+| Neighbours and map | LLDP and CDP neighbours per port, matched to devices VisCon1 already knows, plus UniFi and Meraki uplinks. Wireless access points are always drawn, on the switch port they plug into, with an AP icon, their status and client count; wireless mesh uplinks are dashed. The network map draws them with link colour by utilisation; drag nodes to arrange, and positions are remembered. |
 | Path probes | Pollers run MTR-style traces (ICMP, UDP or TCP to a chosen port) to any target on a schedule. Each probe shows a hop-by-hop diagram grouped by network, with loss, latency and jitter at every hop and each hop's AS number and provider, plus latency and loss graphs, a history of route and provider changes, and alerts for loss, latency and network changes. See [docs/path-probes.md](docs/path-probes.md). |
 | Event log | Device and port up/down, alerts opening and clearing, poller connections, integration failures and configuration changes, per device and network-wide; kept 180 days. |
 | Discovery | Ping sweep plus SNMP probe with your saved credentials, scheduled scans with auto-add, and an option to skip hosts that answer ping but not SNMP. |
@@ -29,6 +31,7 @@ Two things live in this repository:
 | Hypervisors | Every Proxmox VM and container with live state, filters and per-node views. Admins can start, shut down, reboot, stop, pause, hibernate and resume guests; migrate (live), clone, snapshot and roll back, back up and restore, change CPU and memory, grow disks, convert to templates and delete; and start all, stop all, migrate all, reboot or shut down a node. Text consoles for containers, VMs with a serial port and node shells. Control is off until it's allowed on the integration; disruptive actions are confirmed (the worst need the VMID or node name typed), and everything is in the audit log. Proxmox tasks show their live log. See [docs/proxmox.md](docs/proxmox.md). |
 | NAS | Synology storage, apps and backups on one page with tabs. Admins can reboot or shut down the NAS (name typed to confirm), start and stop packages, containers and VMs, run and cancel Hyper Backup tasks and data scrubbing, take and delete snapshots and run Security Advisor. Off until allowed on the integration, confirmed and audited like the Hypervisors actions. See [docs/synology.md](docs/synology.md). |
 | Integration pages | Each integration has its own page under the Integrations menu: sync state and errors, the objects it reports, and the vendor's telemetry with graphs. Zscaler has ZIA, ZPA, ZDX, Client Connector, Zero Trust Branch and AI tabs; Netskope, Cato, Prisma Access and Cloudflare share Sites & tunnels, Private access, Users & devices, Policies, Apps & AI and DLP tabs, each listing what its API can't show; Meraki shows networks, uplinks with loss and latency, clients and licensing; PAN-OS and FortiGate show sessions, throughput, tunnels, VPN users, interfaces and licences; Proxmox shows nodes, guests and storage. |
+| Integration pages | Each integration has its own page under the Integrations menu: sync state and errors, the objects it reports, and the vendor's telemetry with graphs. Zscaler has ZIA, ZPA, ZDX, Client Connector, Zero Trust Branch and AI tabs; Netskope, Cato, Prisma Access and Cloudflare share Sites & tunnels, Private access, Users & devices, Policies, Apps & AI and DLP tabs, each listing what its API can't show; Cloudflare also has Gateway (DNS, HTTP and network traffic, top blocked domains), Access (apps, logins, service token expiry), DEX & posture, Zones (SSL, traffic, WAF events) and Audit log tabs; Meraki shows networks, uplinks with loss and latency, clients and licensing; PAN-OS and FortiGate show sessions, throughput, tunnels, VPN users, interfaces and licences; Proxmox shows nodes, guests and storage. |
 | REST API | `/api/v1` with read-only or read-write keys; reference at `/api/docs` |
 | Users and sign-in | Local accounts with admin or read-only roles and an audit log; **Microsoft Entra ID single sign-on** over SAML with roles from Entra app roles or groups (see [docs/entra-sso.md](docs/entra-sso.md)). |
 
@@ -39,6 +42,23 @@ linkwatch/integrations  one module per platform, shared by server and poller
 deploy/                 Quadlet units, nginx site, update.sh (+ auto-update timer), reset-password.sh, deploy.sh, bootstrap-centos9.sh
 docs/                   install-centos9.md (VPS walkthrough, firewalld), poller.md
 ```
+
+### Why the code still says `linkwatch`
+
+Only the name people see changed. Everything a running server or poller depends on keeps the old name, so the
+usual update (`deploy/update.sh`, the auto-update timer, Pollers > Update, or the `install-poller.sh` one-liner)
+carries on with nothing to migrate:
+
+* the Python package `linkwatch/` and `Dockerfile.linkwatch`
+* container, volume, network and unit names: `linkwatch-poller`, `linkwatch-web`, `linkwatch-db`, `linkwatch-update.timer`, `linkwatch-poller-helper`
+* the images on GHCR, the `LW_*` environment variables, `/var/lib/linkwatch`, the database name and the `lw_session` cookie
+* the `install-poller.sh` script name and URL
+
+**Logos:** each theme shows its own VisCon1 logo: the white one for Classic Light (and auto on a light device), the
+blue one for the dark themes and Navy console, and the green one for AS/400 phosphor green. They are animated SVGs
+that hold still when the device asks for reduced motion, with static SVG and PNG fallbacks for favicons and home-screen
+icons. The originals are in `docs/brand/`; `python docs/brand/build.py && node docs/brand/render-png.js` rebuilds
+`linkwatch/server/static/brand/`.
 
 **Install on the VPS:** follow [docs/install-centos9.md](docs/install-centos9.md).
 **Install a poller:** [docs/poller.md](docs/poller.md).

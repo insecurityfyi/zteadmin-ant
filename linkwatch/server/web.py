@@ -856,7 +856,7 @@ def _validate_integration(cls, cfg: dict, form, admin_password: str | None = Non
         typed = (form.get(f.name) or "").strip()
         if f.kind == "password" and typed and not typed.startswith("••") and (
                 typed == admin_password or (user is not None and verify_password(typed, user.password_hash))):
-            return (f"{f.label} is your Linkwatch sign-in password, most likely filled in by the browser. "
+            return (f"{f.label} is your VisCon1 sign-in password, most likely filled in by the browser. "
                     "Clear the field (blank keeps the saved value) or paste the real one.")
     missing = [f.label for f in cls.fields if f.required and f.kind != "bool" and not str(cfg.get(f.name, "")).strip()]
     if missing:
@@ -1081,7 +1081,7 @@ def transport_test(request: Request, tid: int):
             raise HTTPException(404)
         try:
             send_one(t.kind, st(request).vault.open(t.config_enc),
-                     AlertEvent("opened", 0, "info", "Linkwatch test notification", "If you can read this, alerts will reach you here.", None),
+                     AlertEvent("opened", 0, "info", "VisCon1 test notification", "If you can read this, alerts will reach you here.", None),
                      st(request).config.public_url)
             t.last_result = "Test sent"
             flash(request, f"Test sent to {t.name}.")

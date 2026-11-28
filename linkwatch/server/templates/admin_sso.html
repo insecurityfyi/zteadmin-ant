@@ -31,9 +31,9 @@
       <small>From the app's SAML Certificates section. This server downloads it now and once a day, so certificate renewals are picked up.</small></label>
     <details><summary class="sub" style="cursor:pointer">Or paste the Federation Metadata XML</summary>
       <label class="f" style="margin-top:8px">Federation Metadata XML<textarea name="metadata_xml" id="metadata_xml" rows="5" placeholder="&lt;EntityDescriptor ...&gt;" style="font:12px var(--mono)"></textarea><small>Use this if the server can't reach login.microsoftonline.com. Pasting replaces what is loaded.</small></label></details>
-    <label class="f">Who gets admin<textarea name="admin_values" id="admin_values" rows="2" placeholder="Linkwatch.Admin, 3f2a...-group-object-id">{{ cfg.admin_values|join(', ') }}</textarea>
+    <label class="f">Who gets admin<textarea name="admin_values" id="admin_values" rows="2" placeholder="VisCon1.Admin, 3f2a...-group-object-id">{{ cfg.admin_values|join(', ') }}</textarea>
       <small>App role values or group object IDs, separated by commas.</small></label>
-    <label class="f">Who gets read-only<textarea name="viewer_values" id="viewer_values" rows="2" placeholder="Linkwatch.ReadOnly">{{ cfg.viewer_values|join(', ') }}</textarea></label>
+    <label class="f">Who gets read-only<textarea name="viewer_values" id="viewer_values" rows="2" placeholder="VisCon1.ReadOnly">{{ cfg.viewer_values|join(', ') }}</textarea></label>
     <label class="f">Anyone else assigned to the app<select name="default_role" id="default_role">
       <option value="none" {% if cfg.default_role != 'viewer' %}selected{% endif %}>Can't sign in</option>
       <option value="viewer" {% if cfg.default_role == 'viewer' %}selected{% endif %}>Gets read-only</option></select></label>

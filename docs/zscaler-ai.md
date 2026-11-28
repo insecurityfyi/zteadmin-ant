@@ -63,4 +63,4 @@ In ZIdentity, the API client needs:
 These came from Zscaler's SDKs and haven't been tried against a live tenant:
 
 - the exact Shadow IT category name for AI apps (the category override setting covers this);
-- whether the `appClass=AI_ML` filter applies to the cloud application list. If the filter is ignored, the full list comes back; Linkwatch then skips the catalogue and notes this on the page.
+- whether the `appClass=AI_ML` filter applies to the cloud application list. If the filter is ignored, the full list comes back; VisCon1 then skips the catalogue and notes this on the page.

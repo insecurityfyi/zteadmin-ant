@@ -1,4 +1,4 @@
-# Build the Linkwatch images on every push to main (the poller on your LAN pulls
+# Build the VisCon1 images on every push to main (the poller on your LAN pulls
 # ghcr.io/insecurityfyi/linkwatch-poller). The VPS normally updates itself by
 # running deploy/update.sh by hand. The SSH deploy job below only runs when you
 # start this workflow yourself (Actions > deploy > Run workflow), and needs:

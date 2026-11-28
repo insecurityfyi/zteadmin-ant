@@ -1,0 +1,22 @@
+{# Cloudflare: Zones tab #}
+{% set zs = data.zones or {} %}
+{% set items = zs['items'] or [] %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Zones</span><b>{{ items|length }}</b><em>{{ items|selectattr('status', 'equalto', 'active')|list|length }} active, {{ items|selectattr('paused')|list|length }} paused</em></div>
+  <div class="kpi"><span>Requests yesterday</span><b>{{ (items|map(attribute='requests')|select|sum)|num }}</b><em>{% set req = items|map(attribute='requests')|select|sum %}{% if req %}{{ (100 * (items|map(attribute='cached')|select|sum) / req)|round(1) }}% from cache{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>Threats yesterday</span><b>{{ (items|map(attribute='threats')|select|sum)|num }}</b><em>&nbsp;</em></div>
+  <div class="kpi"><span>SSL not strict</span><b class="{{ 'wa' if items|selectattr('ssl')|rejectattr('ssl', 'in', ['strict', 'origin_pull'])|list else '' }}">{{ items|selectattr('ssl')|rejectattr('ssl', 'in', ['strict', 'origin_pull'])|list|length }}</b><em>flexible, full or off</em></div>
+</div>
+<div class="p"><div class="ph"><h2>Requests and threats</h2><span class="sub">all zones, yesterday</span></div>
+  {{ legend([('Requests', 'var(--s1)'), ('Cached', 'var(--s2)'), ('Threats', 'var(--down)')]) }}
+  {{ chart(integ.id, 'zones:traffic', [{"key":"a","color":"var(--s1)","area":false},{"key":"c","color":"var(--s2)","area":false},{"key":"b","color":"var(--down)","area":false}], 'num', 160, 'Zone traffic') }}</div>
+<div class="p"><div class="ph"><h2>Zones</h2>{% if zs.capped %}<span class="sub">details for the first 50</span>{% endif %}{{ filter_box('cf-zones', 'Zone, plan, SSL') }}</div>
+  <div class="scroll"><table id="cf-zones"><thead><tr><th></th><th>Zone</th><th>Plan</th><th>SSL</th><th>Min TLS</th><th>Always HTTPS</th><th>Security level</th><th class="n">DNS records</th><th class="n">Requests</th><th class="n">Threats</th><th>Security events (24 h)</th></tr></thead><tbody>
+  {% for z in items %}<tr data-q="{{ [z.name, z.plan, z.ssl, z.status]|select|join(' ')|lower }}"><td>{{ sdot('off' if z.paused else ('up' if z.status == 'active' else 'warn')) }}</td>
+    <td><b>{{ z.name }}</b>{% if z.status != 'active' or z.paused %} <span class="tag">{{ 'paused' if z.paused else z.status }}</span>{% endif %}</td><td class="dim">{{ z.plan or '' }}</td>
+    <td class="{{ 'wa' if z.ssl and z.ssl not in ['strict', 'origin_pull'] else '' }}">{{ z.ssl or '–' }}</td><td>{{ z.min_tls or '–' }}</td><td>{{ z.https or '–' }}</td><td class="dim">{{ (z.security or '–')|replace('_', ' ') }}</td>
+    <td class="n">{{ z.records if z.get('records') is not none else '–' }}</td><td class="n">{{ z.requests|num if z.get('requests') is not none else '–' }}</td>
+    <td class="n {{ 'bad' if z.threats else '' }}">{{ z.threats|num if z.get('threats') is not none else '–' }}</td>
+    <td class="dim" style="font-size:12.5px">{% for k, n in (z.events or [])[:4] %}{{ k }} {{ n|num }}{{ ' · ' if not loop.last }}{% endfor %}</td></tr>
+  {% else %}<tr><td colspan="11" class="dim">No zones in this account.</td></tr>{% endfor %}</tbody></table></div></div>
+{{ gap_panel(['zones']) }}

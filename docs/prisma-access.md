@@ -1,6 +1,6 @@
 # Palo Alto Networks Prisma Access
 
-Linkwatch reads Prisma Access (Prisma SASE) over the **SASE APIs** with a read-only
+VisCon1 reads Prisma Access (Prisma SASE) over the **SASE APIs** with a read-only
 service account. It shows remote network tunnels, ZTNA connectors and service
 connections, connected mobile users, security rules, app and generative AI usage, and
 DLP profiles. See [sse.md](sse.md) for the page layout shared by all SSE platforms.
@@ -30,7 +30,7 @@ DLP profiles. See [sse.md](sse.md) for the page layout shared by all SSE platfor
 | Areas | untick any you don't use |
 
 Tokens come from `https://auth.apps.paloaltonetworks.com/oauth2/access_token`
-(client credentials, `scope=tsg_id:<tsg>`) and last 15 minutes; Linkwatch renews them.
+(client credentials, `scope=tsg_id:<tsg>`) and last 15 minutes; VisCon1 renews them.
 API calls go to `https://api.sase.paloaltonetworks.com`.
 
 ## What each tab uses
@@ -58,7 +58,7 @@ Insights calls are sent with `X-PANW-Region` and `Prisma-Tenant`. Each is tried 
 
 ## Least certain
 
-- The Insights 3.0 resource paths for the tunnel list and connected users, and their field names. pan.dev documents the 1.0/2.0 tunnel list fields, which are what Linkwatch reads.
-- pan.dev disagrees on whether Insights needs `X-PANW-Region`; Linkwatch sends it.
+- The Insights 3.0 resource paths for the tunnel list and connected users, and their field names. pan.dev documents the 1.0/2.0 tunnel list fields, which are what VisCon1 reads.
+- pan.dev disagrees on whether Insights needs `X-PANW-Region`; VisCon1 sends it.
 - The ZTNA Connector list path and its fields.
 - Newer tenants may serve configuration under `/config/security/v1/` instead of `/sse/config/v1/`; the DLP profiles call tries both.

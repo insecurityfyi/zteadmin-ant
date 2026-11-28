@@ -1,15 +1,17 @@
 <!doctype html>
+{% from "_brand.html" import logo, head_icons with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · Linkwatch</title>
+<title>Sign in · {{ app_name }}</title>
+{{ head_icons(theme|default('auto')) }}
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v={{ version }}">
 </head>
 <body>
 <main class="login">
   <div class="p" style="display:flex;flex-direction:column;gap:14px">
-    <div style="display:flex;align-items:center;gap:10px"><svg width="28" height="28" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="var(--accent)"/><path d="M5 15h4l2-6 4 10 2-4h4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><h1 style="font-size:22px">Linkwatch</h1></div>
+    <div class="login-brand">{{ logo(theme|default('auto'), 56) }}<div><h1 style="font-size:22px">{{ app_name }}</h1><div class="dim">{{ app_full_name }}</div></div></div>
     {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
     {% if sso %}
     <a class="btn pri" href="/saml/login?next={{ next|urlencode }}" style="justify-content:center;gap:10px;padding:9px 12px">

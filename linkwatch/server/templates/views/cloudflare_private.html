@@ -1,0 +1,10 @@
+{# Cloudflare: tunnel routes and virtual networks appended to the shared Private tab #}
+{% if priv.get('routes') is not none or priv.get('vnets') is not none or priv.get('hostnames') is not none %}<div class="grid">
+  <div class="p c8"><div class="ph"><h2>Private network routes</h2>{{ filter_box('cf-routes', 'Network, tunnel') }}</div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table id="cf-routes"><thead><tr><th>Network</th><th>Tunnel</th><th>Virtual network</th><th>Comment</th></tr></thead><tbody>
+    {% for r in priv.routes or [] %}<tr data-q="{{ [r.network, r.tunnel, r.vnet, r.comment]|select|join(' ')|lower }}"><td class="mono">{{ r.network }}</td><td>{{ r.tunnel or '' }}</td><td class="dim">{{ r.vnet or '' }}</td><td class="dim">{{ r.comment or '' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">No routes.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c4"><div class="ph"><h2>Virtual networks</h2></div>
+    <table><tbody>{% for v in priv.vnets or [] %}<tr><td><b>{{ v.name }}</b>{% if v.default %} <span class="tag">default</span>{% endif %}</td><td class="dim">{{ v.comment or '' }}</td></tr>{% else %}<tr><td class="dim">None.</td></tr>{% endfor %}</tbody></table>
+    {% if priv.hostnames %}<h3 style="margin:14px 0 6px">Hostname routes</h3><table><tbody>{% for h in priv.hostnames %}<tr><td class="mono" style="font-size:12.5px">{{ h.hostname }}</td><td class="dim">{{ h.tunnel or '' }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>
+</div>{% endif %}

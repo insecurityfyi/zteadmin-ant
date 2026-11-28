@@ -176,3 +176,5 @@
   {% else %}<tr><td colspan="6" class="dim">No DLP incidents in this window.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
 {{ gap_panel(['dlp']) }}
 {% endif %}
+{# platform-specific tabs, and extra panels for the shared ones #}
+{% include "views/" ~ integ.kind ~ "_" ~ tab ~ ".html" ignore missing %}

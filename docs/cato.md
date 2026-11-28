@@ -1,6 +1,6 @@
 # Cato Networks
 
-Linkwatch reads the Cato SASE Cloud over the **GraphQL API** with a view-only API key.
+VisCon1 reads the Cato SASE Cloud over the **GraphQL API** with a view-only API key.
 It shows site and socket connectivity with latency, loss and traffic, SDP users,
 internet and WAN firewall rules, app and generative AI usage, and DLP / CASB events.
 See [sse.md](sse.md) for the page layout shared by all SSE platforms.
@@ -13,7 +13,7 @@ See [sse.md](sse.md) for the page layout shared by all SSE platforms.
 1. In the Cato Management Application go to **Resources > API Keys** (Account > API
    Keys on older accounts).
 2. **New**, name it `linkwatch`, permission **View**.
-3. Optionally restrict it to the Linkwatch server's public IP.
+3. Optionally restrict it to the VisCon1 server's public IP.
 4. Copy the key. Note the **account ID**: the number in the management application's
    URL.
 
