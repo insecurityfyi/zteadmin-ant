@@ -4,7 +4,49 @@
   const el = (t, a, parent) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (parent) parent.append(e); return e; };
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const STATUS = { up: "--up", warn: "--warn", down: "--down", external: "--off", unknown: "--off", off: "--off" };
-  const ICON = { Switch: "S", Router: "R", Firewall: "F", Wireless: "W", Server: "Sv", Hypervisor: "H", Storage: "St", NAS: "N", Power: "P", Printer: "Pr", Camera: "C" };
+  // Network-diagram style symbols, drawn here (no stencil artwork): line art in a 24 px box centred on 0,0.
+  // Each is a list of [tag, attrs]; "fill" marks solid parts, everything else is stroked in the status colour.
+  const P = d => ["path", { d }];
+  const arrow = (x1, y1, x2, y2) => { const a = Math.atan2(y2 - y1, x2 - x1), h = 3.2;
+    return P(`M${x1},${y1}L${x2},${y2}M${x2 - h * Math.cos(a - 0.6)},${y2 - h * Math.sin(a - 0.6)}L${x2},${y2}L${x2 - h * Math.cos(a + 0.6)},${y2 - h * Math.sin(a + 0.6)}`); };
+  const GLYPH = {
+    // router: a disc with arrows in and out on both axes
+    Router: [["ellipse", { cx: 0, cy: 0, rx: 11, ry: 11 }], arrow(-8.5, -2.5, -2, -2.5), arrow(8.5, 2.5, 2, 2.5), arrow(2.5, -8.5, 2.5, -2), arrow(-2.5, 8.5, -2.5, 2)],
+    // switch: a box with arrows running both ways
+    Switch: [["rect", { x: -11, y: -8, width: 22, height: 16, rx: 2 }], arrow(-7, -3, 7, -3), arrow(7, 3, -7, 3)],
+    // firewall: a brick wall
+    Firewall: [["rect", { x: -11, y: -9, width: 22, height: 18, rx: 1.5 }], P("M-11,-3H11M-11,3H11M-4,-9V-3M5,-9V-3M0,-3V3M-7,3V9M7,3V9M-8,-3V3M8,-3V3")],
+    // wireless access point: a puck sending waves
+    Wireless: [P("M-8,-1.5a11.3,11.3 0 0 1 16,0"), P("M-4.6,2a6.5,6.5 0 0 1 9.2,0"), ["circle", { cx: 0, cy: 6, r: 1.8, fill: 1 }], P("M-12.5,-5a17,17 0 0 1 25,0")],
+    // server: a tower with drive bays
+    Server: [["rect", { x: -6.5, y: -11, width: 13, height: 22, rx: 1.5 }], P("M-3.5,-6.5H3.5M-3.5,-3H3.5M-3.5,0.5H3.5"), ["circle", { cx: 0, cy: 6.5, r: 1.3, fill: 1 }]],
+    // hypervisor: a host carrying guest boxes
+    Hypervisor: [["rect", { x: -11, y: 5, width: 22, height: 5, rx: 1 }], ["rect", { x: -10, y: -9, width: 5.5, height: 11, rx: 1 }],
+                 ["rect", { x: -2.75, y: -9, width: 5.5, height: 11, rx: 1 }], ["rect", { x: 4.5, y: -9, width: 5.5, height: 11, rx: 1 }]],
+    // storage / NAS: a disk stack
+    Storage: [P("M-9,-7v14a9,3.2 0 0 0 18,0v-14"), ["ellipse", { cx: 0, cy: -7, rx: 9, ry: 3.2 }], P("M-9,0a9,3.2 0 0 0 18,0")],
+    Printer: [P("M-6,-4V-10H6V-4"), ["rect", { x: -10, y: -4, width: 20, height: 9, rx: 1.5 }], P("M-6,2V9H6V2")],
+    Camera: [["rect", { x: -10, y: -6, width: 15, height: 11, rx: 2 }], P("M5,-2L10,-5V4L5,1"), ["circle", { cx: -2.5, cy: -0.5, r: 2.6 }]],
+    Power: [P("M2,-11L-7,1H0L-2,11L7,-1H0Z")],
+    // anything else: a generic box with ports
+    Network: [["rect", { x: -11, y: -6, width: 22, height: 12, rx: 2 }], P("M-7,1v2M-3,1v2M1,1v2M5,1v2"), ["circle", { cx: 7.5, cy: -2, r: 1, fill: 1 }]],
+  };
+  GLYPH.NAS = GLYPH.Storage;
+  // ISP circles: a glyph for how the line arrives
+  const ISP_GLYPH = {
+    satellite: [["rect", { x: -3.5, y: -3.5, width: 7, height: 7, rx: 1, transform: "rotate(-45)" }],
+                ["rect", { x: -13, y: -2.5, width: 7, height: 5, transform: "rotate(-45)" }], ["rect", { x: 6, y: -2.5, width: 7, height: 5, transform: "rotate(-45)" }],
+                P("M3.5,6a5,5 0 0 0 4,-4M3,10.5a9,9 0 0 0 8,-8")],
+    fiber: [P("M-11,4C-5,4 -5,-4 0,-4S5,4 11,4"), P("M-11,-1C-5,-1 -4,-8 1,-8S6,-1 11,-1"), ["circle", { cx: 11, cy: 4, r: 1.6, fill: 1 }], ["circle", { cx: 11, cy: -1, r: 1.6, fill: 1 }]],
+    cable: [["circle", { cx: 0, cy: 0, r: 8 }], ["circle", { cx: 0, cy: 0, r: 4 }], ["circle", { cx: 0, cy: 0, r: 1.2, fill: 1 }]],
+    cellular: [P("M0,-2V10M-4,10H4"), ["circle", { cx: 0, cy: -4, r: 1.8, fill: 1 }], P("M-5,-9a7,7 0 0 0 0,10M5,-9a7,7 0 0 1 0,10M-8.5,-12a12,12 0 0 0 0,16M8.5,-12a12,12 0 0 1 0,16")],
+    globe: [["circle", { cx: 0, cy: 0, r: 10 }], ["ellipse", { cx: 0, cy: 0, rx: 4.5, ry: 10 }], P("M-10,0H10M-8.5,-5H8.5M-8.5,5H8.5")],
+  };
+  function glyph(parent, parts, col, scale) {
+    const gg = el("g", { fill: "none", stroke: col, "stroke-width": 1.7 / (scale || 1), "stroke-linecap": "round", "stroke-linejoin": "round",
+      transform: scale ? `scale(${scale})` : "" }, parent);
+    parts.forEach(([tag, a]) => { const x = Object.assign({}, a); if (x.fill) { x.fill = col; x.stroke = "none"; } el(tag, x, gg); });
+  }
   const fmtBps = v => { const u = ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]; let i = 0; while (v >= 1000 && i < 4) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + " " + u[i]; };
   const KEY = "lw-map-pos";
 
@@ -15,7 +57,7 @@
     nodes.forEach((n, i) => {
       const s = keep && saved[n.id];
       if (s) { n.x = s[0]; n.y = s[1]; n.fixed = true; }
-      else if (n.internet) { n.x = W / 2; n.y = 50; }
+      else if (n.isp) { n.x = W / 2 + (i % 5 - 2) * 140; n.y = 50; }
       else { const a = 2 * Math.PI * i / Math.max(1, nodes.length); n.x = W / 2 + Math.cos(a) * W / 3 + Math.random() * 20; n.y = H / 2 + Math.sin(a) * H / 3 + Math.random() * 20; }
       n.vx = 0; n.vy = 0;
     });
@@ -99,7 +141,7 @@
         const via = { lldp: "LLDP", cdp: "CDP", manual: "drawn by hand", "unifi-port": "seen on a UniFi switch port", wan: "WAN uplink" };
         const how = (l.sources || [l.protocol]).map(p => via[p] || (p || "").toUpperCase()).join(", ");
         t.textContent = wan
-          ? `${a.name} ${l.wan || ""} → Internet${l.isp ? " (" + l.isp + ")" : ""}\n${down ? "DOWN · " : ""}${speed}${l.wan_ip ? " · " + l.wan_ip : ""}` +
+          ? `${a.name} ${l.wan || ""} → ${b.name}\n${down ? "DOWN · " : ""}${speed}${l.wan_ip ? " · " + l.wan_ip : ""}` +
             `${l.down_bps != null ? "\n↓ " + fmtBps(l.down_bps) + "  ↑ " + fmtBps(l.up_bps || 0) : ""}${u != null ? " (" + Math.round(u) + "% used)" : ""}` +
             `${l.latency_ms != null ? "\nlatency " + l.latency_ms + " ms" : ""}${l.loss_pct != null ? ", loss " + l.loss_pct + "%" : ""}`
           : `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${l.mesh ? "Wireless mesh uplink" : how}, ${speed}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps != null ? " (" + fmtBps(l.bps) + ")" : ""}`;
@@ -108,31 +150,32 @@
       const nodes = data.nodes.map(n => {
         const g = el("g", { style: "cursor:pointer" }, gn);
         const ext = n.status === "external";
-        const r = el("rect", { x: -15, y: -15, width: 30, height: 30, rx: ext ? 15 : 8, fill: css("--panel"), stroke: css(STATUS[n.status] || "--off"),
-          "stroke-width": 2.5, "stroke-dasharray": ext ? "4 3" : "" }, g);
         const col = css(STATUS[n.status] || "--off");
-        if (n.internet) {
-          r.setAttribute("opacity", 0);
-          el("path", { d: "M-16,9h31a8,8 0 0 0 0-16a11,11 0 0 0-21-3a8,8 0 0 0-10,6a7,7 0 0 0 0,13z", fill: css("--panel"), stroke: css("--accent") || col, "stroke-width": 2.2 }, g);
-        } else if (n.ap) {
-          // an access point: round, with wifi arcs
-          r.setAttribute("rx", 15);
-          const ap = el("g", { fill: "none", stroke: col, "stroke-width": 1.8, "stroke-linecap": "round" }, g);
-          el("path", { d: "M-8,-2.5a11.3,11.3 0 0 1 16,0" }, ap);
-          el("path", { d: "M-4.6,1a6.5,6.5 0 0 1 9.2,0" }, ap);
-          el("circle", { cx: 0, cy: 5, r: 1.8, fill: col, stroke: "none" }, g);
+        let r, labelY = 33;
+        if (n.isp) {
+          // an ISP: a circle with how the line arrives (fibre, cable, satellite...) and its name under it
+          r = el("circle", { r: 24, fill: css("--panel"), stroke: n.status === "down" ? css("--down") : css("--accent"), "stroke-width": 2.5,
+            "stroke-dasharray": n.named ? "" : "4 3" }, g);
+          glyph(g, ISP_GLYPH[n.kind] || ISP_GLYPH.globe, css("--accent"), 1.15);
+          labelY = 39;
         } else {
-          const ic = el("text", { "text-anchor": "middle", y: 4.5, "font-size": 11, "font-weight": 600, fill: col, "font-family": css("--mono") }, g);
-          ic.textContent = ext ? "?" : (ICON[n.type] || "•");
+          r = el("rect", { x: -18, y: -18, width: 36, height: 36, rx: ext || n.ap ? 18 : 8, fill: css("--panel"), stroke: col,
+            "stroke-width": 2.5, "stroke-dasharray": ext ? "4 3" : "" }, g);
+          if (ext) {
+            const q = el("text", { "text-anchor": "middle", y: 5, "font-size": 14, "font-weight": 600, fill: col, "font-family": css("--mono") }, g);
+            q.textContent = "?";
+          } else {
+            glyph(g, GLYPH[n.ap ? "Wireless" : n.type] || GLYPH.Network, col, 1.05);
+          }
         }
-        const lbl = el("text", { "text-anchor": "middle", y: 30, "font-size": 11.5, fill: css("--ink"), "font-family": css("--body") }, g);
-        lbl.setAttribute("y", n.internet ? 26 : 30);
-        lbl.textContent = n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name;
+        const lbl = el("text", { "text-anchor": "middle", y: labelY, "font-size": 11.5, fill: css("--ink"), "font-family": css("--body"),
+          "font-weight": n.isp ? 600 : 400 }, g);
+        lbl.textContent = n.name.length > 24 ? n.name.slice(0, 23) + "…" : n.name;
         if (n.ap && n.clients != null) {
-          const c = el("text", { "text-anchor": "middle", y: 43, "font-size": 10.5, fill: css("--mute"), "font-family": css("--body") }, g);
+          const c = el("text", { "text-anchor": "middle", y: labelY + 13, "font-size": 10.5, fill: css("--mute"), "font-family": css("--body") }, g);
           c.textContent = n.clients + (n.clients === 1 ? " client" : " clients");
         }
-        const t = el("title", {}, g); t.textContent = n.internet ? "Internet" : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
+        const t = el("title", {}, g); t.textContent = n.isp ? `${n.name}\nInternet provider${n.named ? "" : " (name it under the map)"}` : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
           (n.merged && n.merged.length ? "\nSeen as: " + n.merged.map(m => m.name + " (" + m.source + ")").join(", ") : "");
         if (String(n.id) === svg.dataset.focus) r.setAttribute("stroke-width", 5);
         return { n, g };

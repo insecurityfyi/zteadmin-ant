@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from . import events
 from .app import flash
 from .models import Device, Event, Neighbor, Port, Sensor
-from .topology import build_map, norm_port, set_wan_port, wan_port_ids
+from .topology import build_map, norm_port, set_isp_names, set_wan_port, wan_port_ids
 from .web import _who, render, st
 
 router = APIRouter(include_in_schema=False)
@@ -140,8 +140,9 @@ def network_map(request: Request, site: str = "", focus: str = "", external: str
                            .where(Neighbor.protocol == "manual").order_by(Neighbor.id)).all()
         devices = s.execute(select(Device.id, Device.hostname).where(Device.disabled.is_(False))
                             .where(Device.type.not_in(("VM", "Container"))).order_by(func.lower(Device.hostname))).all()
+        wans = sorted((l for l in build_map(s)["links"] if l["protocol"] == "wan"), key=lambda l: (l["gateway"].lower(), l["wan"] or ""))
     return render(request, "map.html", {"sites": sites, "site": site, "focus": focus, "external": external, "link_count": links,
-                                        "manual": manual, "devices": devices})
+                                        "manual": manual, "devices": devices, "wans": wans})
 
 
 @router.get("/ui/map", include_in_schema=False)
@@ -177,6 +178,18 @@ async def map_link_add(request: Request):
         events.log(s, "config", f"Map link to {db_.hostname} added by {_who(request)}", "info", da, username=_who(request))
     flash(request, f"Linked {da.hostname} to {db_.hostname}.", "ok")
     return RedirectResponse("/map#manual-links", status_code=303)
+
+
+@router.post("/map/isps")
+async def map_isps(request: Request):
+    """Name the ISP behind each WAN uplink; WANs with the same ISP share one circle on the map. Empty = what the API says."""
+    form = await request.form()
+    keys, names = form.getlist("key"), form.getlist("isp")
+    with st(request).db.session() as s:
+        set_isp_names(s, {str(k): str(n) for k, n in zip(keys, names)})
+        events.log(s, "config", f"Map ISP names updated by {_who(request)}", "info", username=_who(request))
+    flash(request, "ISP names saved.", "ok")
+    return RedirectResponse("/map#wan-isps", status_code=303)
 
 
 @router.post("/map/links/{link_id}/delete")

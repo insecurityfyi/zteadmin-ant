@@ -17,7 +17,7 @@
   </div>
   <div class="actions">
     <form class="inline" method="post" action="/ports/{{ p.id }}/alert?next=/ports/{{ p.id }}"><button class="btn" type="submit" aria-pressed="{{ 'true' if p.alert_on_down else 'false' }}">Alert if down: {{ 'On' if p.alert_on_down else 'Off' }}</button></form>
-    <form class="inline" method="post" action="/ports/{{ p.id }}/wan?next=/ports/{{ p.id }}"><button class="btn" type="submit" aria-pressed="{{ 'true' if is_wan else 'false' }}" title="Draw this port to the Internet cloud on the network map, with its speed and traffic">Internet uplink: {{ 'On' if is_wan else 'Off' }}</button></form>
+    <form class="inline" method="post" action="/ports/{{ p.id }}/wan?next=/ports/{{ p.id }}"><button class="btn" type="submit" aria-pressed="{{ 'true' if is_wan else 'false' }}" title="Draw this port to its ISP on the network map, with its speed and traffic">Internet uplink: {{ 'On' if is_wan else 'Off' }}</button></form>
     <select aria-label="Other ports on this device" onchange="if (this.value) location.href='/ports/' + this.value" style="width:auto"><option value="">Other ports…</option>{% for o in siblings if o.id != p.id %}<option value="{{ o.id }}">{{ o.name }}{{ ' · ' ~ o.alias if o.alias else '' }}</option>{% endfor %}</select>
   </div>
 </div>
