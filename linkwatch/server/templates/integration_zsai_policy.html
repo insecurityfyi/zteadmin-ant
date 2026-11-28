@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_zai.html" as zai with context %}
+{% block title %}{{ 'New policy' if creating else (policy.name or 'Policy ' ~ pid) }}{% endblock %}
+{% block content %}
+{% set E = 'zsai' %}
+{% set ctl = is_admin and control %}
+{% set name = policy.name or pid %}
+{% set home = '/integrations/' ~ integ.id ~ '/overview?tab=policy' %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="{{ home }}">{{ integ.name }}</a> · Policies</div>
+  <h1>{{ 'New policy' if creating else name }}{% if policy and not policy.enabled %} <span class="tag">disabled</span>{% endif %}</h1>
+  <p>Endpoint AI Security policy{% if not creating %} · ID {{ pid }}{% if policy.version %} · version {{ policy.version }}{% endif %}{% endif %}. Devices pick changes up on their next configuration check.</p></div>
+  {% if ctl and not creating and policy %}<div class="hv-bar">
+    {{ zai.act(integ.id, actions, 'policy_disable' if policy.enabled else 'policy_enable', {'policy_id': pid, 'etag': etag}, 'policy ' ~ name, cls='btn', ep=E) }}
+    {{ zai.act(integ.id, actions, 'policy_delete', {'policy_id': pid, 'etag': etag}, name, expect=name, label='Delete', cls='btn danger', ep=E) }}
+  </div>{% endif %}</div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{% if check %}<div class="flash{{ '' if check.ok else ' bad' }}" role="status">{{ check.message }}{% if check.errors|length > 5 %}<ul style="margin:6px 0 0">{% for e in check.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+{% if is_admin and not control %}<div class="flash warn" role="status">Control actions are off for this integration, so this page is read-only. Tick <i>Allow control actions</i> in <a href="/integrations/{{ integ.id }}">the integration's settings</a> to edit policies.</div>{% endif %}
+{% if ctl %}{{ zai.dialog() }}{% endif %}
+
+{% if ctl and (creating or policy) %}
+<div class="p"><div class="ph"><h2>{{ 'Create' if creating else 'Edit' }} as JSON</h2><span class="sub">the fields the API lets you change</span></div>
+  {% if creating %}{{ zai.form_open(integ.id, actions, 'policy_create', 'new policy', ep=E) }}{% else %}{{ zai.form_open(integ.id, actions, 'policy_update', 'policy ' ~ name, title='Save policy ' ~ name, ep=E) }}<input type="hidden" name="policy_id" value="{{ pid }}">{% endif %}
+  <input type="hidden" name="etag" value="{{ etag }}">
+  <label class="sr" for="pol-json">Policy JSON</label>
+  <textarea id="pol-json" name="json" rows="24" spellcheck="false" class="mono" style="font-size:12.5px;line-height:1.45">{{ json_text }}</textarea>
+  <p class="help">Only <span class="mono">name</span>, <span class="mono">enabled</span>, <span class="mono">priority</span>, <span class="mono">os_platforms</span>, <span class="mono">rules</span> and <span class="mono">change_note</span> are sent{% if creating %}, plus <span class="mono">assignments</span> when creating{% endif %}. Rules use the same schema as the console's policy editor. <b>Validate</b> asks Endpoint AI Security to check the rules without saving anything.{% if not creating %} If someone changed the policy since this page loaded, saving is refused, so reload and edit again.{% endif %}</p>
+  <div class="actions" style="margin-top:10px"><button class="btn pri" type="submit">{{ 'Create' if creating else 'Save' }}</button><button class="btn" type="submit" formaction="/integrations/{{ integ.id }}/zsai/validate">Validate</button><a class="btn" href="{{ home }}">Cancel</a></div>
+  </form></div>
+{% if not creating and policy %}
+<div class="p"><div class="ph"><h2>Who it applies to</h2><span class="sub">replaces the policy's targeting, exclusions included</span></div>
+  {{ zai.form_open(integ.id, actions, 'policy_assign', 'policy ' ~ name, ep=E) }}<input type="hidden" name="policy_id" value="{{ pid }}"><input type="hidden" name="etag" value="{{ etag }}">
+  <label class="sr" for="assign-json">Targeting JSON</label>
+  <textarea id="assign-json" name="json" rows="12" spellcheck="false" class="mono" style="font-size:12.5px;line-height:1.45">{{ assign_text }}</textarea>
+  <p class="help">Set <span class="mono">tenant_wide</span> to true for everyone, or list user emails, group and device group IDs. <span class="mono">exclusions</span> take the same lists.</p>
+  <div class="actions" style="margin-top:10px"><button class="btn pri" type="submit">Save targeting</button></div>
+  </form></div>
+{% endif %}
+{% endif %}
+{% if policy %}
+<div class="p"><div class="ph"><h2>Policy</h2><span class="sub">as the API returns it</span></div>
+  <pre class="mono" style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:560px;overflow:auto">{{ full_json }}</pre></div>
+{% endif %}
+{% endblock %}

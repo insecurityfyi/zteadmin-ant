@@ -282,6 +282,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .rules_views import router as rules_router
     from .hypervisor_views import router as hypervisor_router
     from .zscaler_ai_views import router as zscaler_ai_router
+    from .zsai_views import router as zsai_router
     from .integration_views import router as integration_views_router
     from .nas_views import router as nas_router
     from .nms_views import router as nms_router
@@ -309,5 +310,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(hypervisor_router)
     app.include_router(nas_router)
     app.include_router(zscaler_ai_router)
+    app.include_router(zsai_router)
     app.include_router(admin_router)
     return app
