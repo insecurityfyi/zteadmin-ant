@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_logs.html" import ulink, uname, act with context %}
+{% block title %}Log event · User activity{% endblock %}
+{% block content %}
+<div class="crumb"><a href="/logs">User activity</a> › <a href="/logs/events">Event search</a> › Event</div>
+<div class="head"><div><h1>{{ feeds.get(e.feed, e.feed) }} log event</h1><p>{{ dt(e.ts).strftime('%d %b %Y %H:%M:%S') }} UTC · {{ ulink(e.user, '24h') }}</p></div></div>
+<div class="grid">
+  <div class="p c5"><div class="ph"><h2>Summary</h2></div>
+    <dl class="kv"><dt>User</dt><dd>{{ ulink(e.user, '24h') }}</dd><dt>Department</dt><dd>{{ e.dept or '–' }}</dd><dt>Location</dt><dd>{{ e.loc or '–' }}</dd>
+      <dt>App</dt><dd>{{ e.app or '–' }}</dd><dt>Category</dt><dd>{{ e.cat or '–' }}</dd><dt>Destination</dt><dd class="mono">{{ e.host or '–' }}</dd>
+      <dt>Action</dt><dd>{{ act(e) }}</dd><dt>Threat</dt><dd class="{{ 'bad' if e.threat }}">{{ e.threat or 'none' }}</dd>
+      <dt>Client IP</dt><dd class="mono">{{ e.cip or '–' }}</dd><dt>Server IP</dt><dd class="mono">{{ e.sip or '–' }}</dd><dt>Bytes</dt><dd>{{ e.bytes|bytes if e.bytes else '–' }}</dd></dl></div>
+  <div class="p c7"><div class="ph"><h2>Record as received</h2></div>
+    {% if raw %}<pre class="mono" style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0">{{ raw }}</pre>{% else %}<p class="dim">The original record could not be read.</p>{% endif %}</div>
+</div>
+{% endblock %}

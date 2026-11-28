@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -541,3 +542,16 @@ class MibModule(Base):
     objects: Mapped[list | None] = mapped_column(JSON)              # [{name, oid, node, type, units, access, states, descr}]
     error: Mapped[str | None] = mapped_column(Text)                 # why it could not be compiled (often a missing import)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class NssToken(Base):
+    """A bearer token a Zscaler Cloud NSS feed sends to push logs to /api/nss/ingest. Only the hash is kept."""
+    __tablename__ = "nss_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    prefix: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_used: Mapped[datetime | None] = mapped_column(DateTime)
+    last_ip: Mapped[str | None] = mapped_column(String(64))
+    events: Mapped[int | None] = mapped_column(BigInteger, default=0)  # records accepted with this token

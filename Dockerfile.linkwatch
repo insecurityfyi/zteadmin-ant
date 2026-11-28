@@ -5,7 +5,10 @@ WORKDIR /srv
 COPY linkwatch/requirements-server.txt linkwatch/requirements-poller.txt ./
 RUN pip install --no-cache-dir -r requirements-server.txt -r requirements-poller.txt
 COPY linkwatch ./linkwatch
-RUN useradd --create-home --uid 10001 linkwatch
+RUN useradd --create-home --uid 10001 linkwatch \
+ && mkdir -p /var/lib/linkwatch/nss && chown -R linkwatch /var/lib/linkwatch
+# Zscaler Cloud NSS logs (size-capped; see docs/zscaler-cloud-nss.md). Mount the linkwatch-nss volume here.
+ENV LW_NSS_DIR=/var/lib/linkwatch/nss
 USER linkwatch
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=4).status==200 else 1)"

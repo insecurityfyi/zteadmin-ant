@@ -29,7 +29,7 @@ from .users import audit, sync_admin_from_env
 
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
@@ -285,6 +285,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .zsai_views import router as zsai_router
     from .integration_views import router as integration_views_router
     from .nas_views import router as nas_router
+    from .nss_views import router as nss_router
     from .nms_views import router as nms_router
     from .oid_views import router as oid_router
     from .path_views import router as path_router
@@ -311,5 +312,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(nas_router)
     app.include_router(zscaler_ai_router)
     app.include_router(zsai_router)
+    app.include_router(nss_router)       # Zscaler Cloud NSS ingest and user activity
     app.include_router(admin_router)
     return app
