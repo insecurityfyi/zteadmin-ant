@@ -1,6 +1,7 @@
 """Turn poller and integration results into device state, metrics and alerts."""
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -14,6 +15,8 @@ from .models import (Device, DeviceMetric, Integration, IntegrationMetric, Neigh
                      SensorMetric, Site, utcnow)
 
 COUNTER32 = 2**32
+
+log = logging.getLogger("linkwatch.ingest")
 
 
 def from_epoch(ts: float | None) -> datetime:
@@ -530,15 +533,17 @@ def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any]
     if not isinstance(data, dict):
         return
     wifi = integ.kind == "unifi" and data.get("type") == "unifi"
-    if wifi:
-        from . import wireless
-        wireless.enrich(integ.data, data, ts)      # rates between this poll and the last one
     points = integration_series(data)      # also tags each item with its series key
     if wifi:
-        points += wireless.series(data, MAX_CLIENT_SERIES)
-        if alerter is not None:
-            devs = {str((d.extra or {}).get("mac") or ""): d for d in s.scalars(select(Device).where(Device.integration_id == integ.id))}
-            wireless.evaluate(alerter, integ, data, devs)
+        from . import wireless
+        try:      # Wi-Fi quality is extra: odd data from a controller must not stop the UniFi sync
+            wireless.enrich(integ.data, data, ts)      # rates between this poll and the last one
+            points += wireless.series(data, MAX_CLIENT_SERIES)
+            if alerter is not None:
+                devs = {str((d.extra or {}).get("mac") or ""): d for d in s.scalars(select(Device).where(Device.integration_id == integ.id))}
+                wireless.evaluate(alerter, integ, data, devs)
+        except Exception:
+            log.exception("Wireless figures for %s failed", integ.name)
     integ.data = {**data, "ts": ts.isoformat() + "Z"}
     for key, a, b, c in points:
         s.add(IntegrationMetric(integration_id=integ.id, key=key[:160], ts=ts, a=a, b=b, c=c))

@@ -53,6 +53,9 @@ def unifi_client(request: Request, iid: int, mac: str):
         integ, others = _unifi(s, iid)
         ctx = _ctx(s, integ, others)
     client = next((c for c in ctx["data"].get("clients") or [] if c.get("mac") == mac), None)
+    if client is not None and not client.get("wired"):
+        from .wireless import normalize
+        client = normalize({"clients": [dict(client)]})["clients"][0]     # older snapshots lack the Wi-Fi quality fields
     ctx.update(mac=mac, c=client, series=f"client:{mac}")
     return render(request, "unifi_client.html", ctx)
 
