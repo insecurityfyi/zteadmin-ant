@@ -296,7 +296,11 @@ def _isp_id(name: str) -> str:
     return "isp:" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def build_map(s: Session, site: str = "", external: bool = False, show_all: bool = False, hide_aps: bool = False) -> dict:
+MAX_MAP_CLIENTS = 400
+
+
+def build_map(s: Session, site: str = "", external: bool = False, show_all: bool = False, hide_aps: bool = False,
+              clients: bool = False) -> dict:
     devs = {d.id: d for d in s.scalars(select(Device).options(selectinload(Device.site), selectinload(Device.ports))
                                        .where(Device.disabled.is_(False)))}
     rep = group_duplicates(devs.values())
@@ -423,7 +427,50 @@ def build_map(s: Session, site: str = "", external: bool = False, show_all: bool
                  and (l["target"] in node_ids or l["target"] in ghosts or l["target"] in isps)]
     extra_nodes = [g for k, g in ghosts.items() if any(k in (l["source"], l["target"]) for l in out_links)]
     extra_nodes += list(isps.values())
-    return {"nodes": nodes + extra_nodes, "links": out_links}
+    result = {"nodes": nodes + extra_nodes, "links": out_links}
+    if clients:
+        _add_clients(result, integs, idx, devs, node_ids)
+    return result
+
+
+def _add_clients(result: dict, integs, idx: "_Index", devs: dict[int, Device], node_ids: set) -> None:
+    """UniFi clients as small nodes: Wi-Fi clients on their AP (signal and band on the link), directly attached wired
+    clients on their switch port. Boxes that are monitored devices are already on the map and are skipped."""
+    added = 0
+    capped = 0
+    for integ in integs:
+        if integ.kind != "unifi" or not isinstance(integ.data, dict):
+            continue
+        for c in integ.data.get("clients") or []:
+            mac = norm_mac(c.get("mac"))
+            if not mac or (c.get("wired") and c.get("direct") is False):
+                continue
+            known = idx.find(ip=c.get("ip"), mac=mac)
+            if known is not None and devs[known].type not in GUESTS:
+                continue
+            parent = idx.find(mac=c.get("switch_mac") if c.get("wired") else c.get("ap_mac"))
+            if parent is None or parent not in node_ids:
+                continue
+            if added >= MAX_MAP_CLIENTS:
+                capped += 1
+                continue
+            cid = "c:" + mac
+            result["nodes"].append({"id": cid, "name": c.get("name") or mac, "status": "up", "type": "Client", "client": True,
+                                    "wired": bool(c.get("wired")), "ip": c.get("ip"), "site": c.get("site"), "platform": c.get("vendor"),
+                                    "href": f"/unifi/{integ.id}/clients/{c.get('mac')}"})
+            if c.get("wired"):
+                port = f"Port {c['switch_port']}" if c.get("switch_port") is not None else None
+                result["links"].append({"source": parent, "target": cid, "a_port": port, "b_port": None, "protocol": "client",
+                                        "client": True, "wired": True, "mesh": False, "speed": None, "util": None, "bps": None,
+                                        "speed_label": port or "wired", "ab_bps": c.get("down_bps"), "ba_bps": c.get("up_bps")})
+            else:
+                result["links"].append({"source": parent, "target": cid, "a_port": None, "b_port": None, "protocol": "wifi",
+                                        "client": True, "wired": False, "mesh": False, "speed": None, "util": None, "bps": None,
+                                        "rssi": c.get("signal"), "snr": c.get("snr"), "band": c.get("band"), "channel": c.get("channel"),
+                                        "ssid": c.get("ssid"), "retry_pct": c.get("retry_pct"), "speed_label": None,
+                                        "tx_rate_mbps": c.get("tx_rate_mbps"), "ab_bps": c.get("down_bps"), "ba_bps": c.get("up_bps")})
+            added += 1
+    result["clients_shown"], result["clients_capped"] = added, capped
 
 
 def _visible(end, in_view: set) -> bool:

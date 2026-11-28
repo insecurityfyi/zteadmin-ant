@@ -10,7 +10,7 @@
 <div class="head"><div><div class="crumb"><a href="/integrations/{{ integ.id }}">{{ integ.name }}</a>{% if summary.sites %} · {{ summary.sites|join(', ') }}{% endif %}</div>
   <h1>Wi-Fi &amp; clients</h1>
   <p>{% if data_ts %}From UniFi {{ data_ts|ago }}{% if summary.isp %} · ISP {{ summary.isp }}{% endif %}{% if summary.wan_ip %} · <span class="mono">{{ summary.wan_ip }}</span>{% endif %}{% else %}Waiting for the first sync from the poller.{% endif %}</p></div>
-  <div class="actions">{% if others|length > 1 %}{% for o in others %}<a class="fbtn" href="/unifi?i={{ o.id }}" aria-pressed="{{ 'true' if o.id == integ.id else 'false' }}">{{ o.name }}</a>{% endfor %}{% endif %}{{ ranges() }}</div></div>
+  <div class="actions"><a class="btn sm" href="/wireless?i={{ integ.id }}">Wireless dashboard</a>{% if others|length > 1 %}{% for o in others %}<a class="fbtn" href="/unifi?i={{ o.id }}" aria-pressed="{{ 'true' if o.id == integ.id else 'false' }}">{{ o.name }}</a>{% endfor %}{% endif %}{{ ranges() }}</div></div>
 {% if integ.status == 'error' %}<div class="flash bad" role="alert">Last sync failed: {{ integ.last_error }}{% if data_ts %} The figures below are from the last good sync.{% endif %}</div>{% endif %}
 {% if not data_ts %}
 <div class="p empty-state"><h2>No UniFi data yet</h2><p>The poller reads UniFi once per poll interval. Open the <a href="/integrations/{{ integ.id }}">integration</a> and press Sync now, or check it for an error.</p></div>

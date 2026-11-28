@@ -313,8 +313,10 @@ UNIFI_DEVICES = [
     {"_id": "1", "mac": "aa:aa:aa:00:00:01", "name": "ap-lobby", "type": "uap", "model": "U7PRO", "state": 1, "ip": "192.168.1.20",
      "version": "7.0.66", "uptime": 86400, "num_sta": 2, "satisfaction": 97, "system-stats": {"cpu": "12.5", "mem": "40.1"},
      "radio_table": [{"name": "wifi0", "radio": "ng", "channel": 6}, {"name": "wifi1", "radio": "na", "channel": 36}],
-     "radio_table_stats": [{"name": "wifi0", "channel": 6, "num_sta": 1, "cu_total": 35}, {"name": "wifi1", "channel": 36, "num_sta": 1, "cu_total": 12}],
-     "vap_table": [{"essid": "Office"}, {"essid": "Guest"}],
+     "radio_table_stats": [{"name": "wifi0", "channel": 6, "num_sta": 1, "cu_total": 72, "cu_self_rx": 10, "cu_self_tx": 12, "tx_power": 17,
+                            "tx_packets": 9000, "tx_retries": 1000},
+                           {"name": "wifi1", "channel": 36, "num_sta": 1, "cu_total": 12, "cu_self_rx": 4, "cu_self_tx": 5, "tx_power": 23}],
+     "vap_table": [{"essid": "Office", "radio": "na", "tx_dropped": 3, "rx_dropped": 1}, {"essid": "Guest", "radio": "ng", "tx_dropped": 10, "rx_dropped": 0}],
      "port_table": [{"port_idx": 1, "name": "Port 1", "up": True, "enable": True, "speed": 2500, "rx_bytes": 1000, "tx_bytes": 5000}]},
     {"_id": "2", "mac": "aa:aa:aa:00:00:02", "name": "sw-core", "type": "usw", "model": "USW24P", "state": 0, "num_sta": 1,
      "port_table": [{"port_idx": 1, "up": True, "speed": 1000, "rx_bytes": 10, "tx_bytes": 20, "poe_power": "4.20"},
@@ -326,9 +328,10 @@ UNIFI_DEVICES = [
 UNIFI_CLIENTS = [
     {"mac": "cc:00:00:00:00:01", "hostname": "laptop", "ip": "192.168.1.50", "essid": "Office", "ap_mac": "aa:aa:aa:00:00:01",
      "radio": "na", "channel": 36, "signal": -55, "tx_rate": 866000, "rx_rate": 650000, "tx_bytes-r": 500_000, "rx_bytes-r": 50_000,
-     "tx_bytes": 9_000_000, "rx_bytes": 1_000_000, "uptime": 3600, "satisfaction": 95, "oui": "Apple"},
+     "tx_bytes": 9_000_000, "rx_bytes": 1_000_000, "uptime": 3600, "satisfaction": 95, "oui": "Apple",
+     "noise": -95, "tx_packets": 10000, "tx_retries": 200, "roam_count": 2},
     {"mac": "cc:00:00:00:00:02", "name": "phone", "essid": "Guest", "is_guest": True, "ap_mac": "aa:aa:aa:00:00:01", "radio": "ng",
-     "signal": -78, "tx_bytes-r": 1000, "rx_bytes-r": 2000},
+     "signal": -78, "noise": -90, "tx_bytes-r": 1000, "rx_bytes-r": 2000, "wifi_tx_retries_percentage": 22.5},
     {"mac": "cc:00:00:00:00:03", "hostname": "nas", "is_wired": True, "sw_mac": "aa:aa:aa:00:00:02", "sw_port": 5,
      "wired-tx_bytes-r": 10_000, "wired-rx_bytes-r": 20_000, "tx_bytes-r": 1, "rx_bytes-r": 1},
 ]
@@ -345,6 +348,12 @@ def mock_unifi(base=UNIFI):
     respx.get(f"{base}/s/default/stat/health").mock(return_value=ok([
         {"subsystem": "wan", "status": "ok", "isp_name": "Fiber Co", "wan_ip": "203.0.113.5"},
         {"subsystem": "www", "status": "ok", "latency": 9, "xput_down": 940.2, "xput_up": 880.1}]))
+    respx.get(url__startswith=f"{base}/s/default/stat/event").mock(return_value=ok([
+        {"key": "EVT_WU_Connected", "ssid": "Office", "user": "cc:00:00:00:00:01", "ap": "aa:aa:aa:00:00:01"},
+        {"key": "EVT_WU_Roam", "ssid": "Office", "user": "cc:00:00:00:00:01"},
+        {"key": "EVT_WU_AuthFail", "ssid": "Guest", "msg": "User failed WPA authentication"},
+        {"key": "EVT_WU_Disconnected", "ssid": "Guest", "msg": "DHCP timeout, no IP address"},
+        {"key": "EVT_SW_Lost_Contact", "msg": "switch lost"}]))
 
 
 @respx.mock

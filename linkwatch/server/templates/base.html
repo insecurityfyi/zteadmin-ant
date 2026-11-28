@@ -23,6 +23,7 @@
   'health': '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
   'alerts': '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
   'paths': '<circle cx="5" cy="17" r="2.2"/><circle cx="19" cy="7" r="2.2"/><path d="M7 16.2c3-1 2-6.4 5-7.4s3.5 1.6 5-1"/><path d="M12 8.8v.01M9.6 13v.01"/>',
+  'wireless': '<path d="M2.5 9a14 14 0 0 1 19 0M5.8 12.6a9 9 0 0 1 12.4 0M9.1 16.1a4.2 4.2 0 0 1 5.8 0"/><circle cx="12" cy="19.4" r="1.1"/>',
   'map': '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M8 7.5l3 8M16 7.5l-3 8M8.5 6h7"/>',
   'integrations': '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
   'hypervisors': '<rect x="3" y="3" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 6.5h4M7 17.5h4M16 6.5h1M16 17.5h1"/>',
@@ -77,6 +78,14 @@
       <hr><a href="/settings#transports">Notifications</a>
       <a href="/eventlog?kind=alert">Alert events</a>
     </div></details>
+    {% set wl_list = nav_integrations|selectattr('kind', 'equalto', 'unifi')|list %}
+    {% if wl_list %}<details class="menu {{ 'cur' if sec == 'wireless' }}"{% if side and sec == 'wireless' %} open{% endif %}><summary>{{ ic('wireless') }}<span class="lb">Wireless</span></summary><div class="dd">
+      {% for i in wl_list %}{% if wl_list|length > 1 %}{% if not loop.first %}<hr>{% endif %}<div class="lbl">{{ i.name }}</div>{% endif %}
+      <a href="/wireless?i={{ i.id }}" {% if nav == 'wireless' and integ is defined and integ and integ.id == i.id %}aria-current="page"{% endif %}>Wireless dashboard</a>
+      <a href="/wireless?i={{ i.id }}&amp;problems=1">Problems only</a>
+      <a href="/unifi?i={{ i.id }}">Wi-Fi &amp; clients</a>{% endfor %}
+      <hr><a href="/map?clients=1">Map with clients</a>
+    </div></details>{% endif %}
     <a class="m {{ 'cur' if sec == 'map' }}" href="/map">{{ ic('map') }}<span class="lb">Map</span></a>
     {% set hv_list = nav_integrations|selectattr('kind', 'equalto', 'proxmox')|list %}
     {% if hv_list %}<details class="menu {{ 'cur' if sec == 'hypervisors' }}"{% if side and sec == 'hypervisors' %} open{% endif %}><summary>{{ ic('hypervisors') }}<span class="lb">Hypervisors</span></summary><div class="dd">
