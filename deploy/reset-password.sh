@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set a new admin password for the Linkwatch web UI. Run as the deploy user (aperrego):
+# Set a new admin password for the VisCon1 web UI. Run as the deploy user (aperrego):
 #
 #   ~/zteadmin-ant/deploy/reset-password.sh            # generates a random password and prints it
 #   ~/zteadmin-ant/deploy/reset-password.sh 'MyPass'   # sets the one you give (at least 12 characters)

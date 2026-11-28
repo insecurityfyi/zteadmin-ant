@@ -25,7 +25,7 @@
 {% if probe.id %}<form method="post" action="/probes/{{ probe.id }}/delete" style="margin-top:20px" onsubmit="return this.querySelector('[name=c]').checked"><label class="chk"><input type="checkbox" name="c"> Confirm</label> <button class="btn danger sm" type="submit">Delete this probe and its history</button></form>{% endif %}
 </div>
 <div class="p c5"><div class="ph"><h2>How it works</h2></div>
-  <p style="margin-top:0">Each poller runs <code>mtr</code> on the schedule and sends back every hop's loss, latency (last, average, best, worst) and jitter. Linkwatch looks up the network (AS number) and provider for each public hop and caches it for 30 days.</p>
+  <p style="margin-top:0">Each poller runs <code>mtr</code> on the schedule and sends back every hop's loss, latency (last, average, best, worst) and jitter. VisCon1 looks up the network (AS number) and provider for each public hop and caches it for 30 days.</p>
   <p>The alert thresholds above override the built-in <a href="/alerts#rules">Path loss and Path latency rules</a> for this probe. The rule's poll count still applies. A change in the networks the path crosses raises a Path changed networks alert.</p>
   <p class="help">Loss at a middle hop that doesn't carry on to later hops usually means that router limits its replies, not that traffic is being dropped. The diagram marks those hops as rate-limited.</p></div>
 </div>

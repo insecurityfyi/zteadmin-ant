@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="VC1">
+  <title>VC1 — Visibility and Control 1</title>
+  <desc>Minimal light VC1 mark — a geometric V, segmented C control dial with a teal center, and a numeral 1 ligatured with the right C arc.</desc>
+  <defs>
+    <style type="text/css"><![CDATA[
+
+    .dot-glow {
+      transform-box: fill-box; transform-origin: center;
+      animation: glow 2s ease-in-out infinite;
+    }
+    .dot {
+      transform-box: fill-box; transform-origin: center;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .ring-a { animation: ringA 4s linear infinite; }
+    .ring-b { animation: ringB 4s linear infinite; }
+    .crescent {
+      transform-origin: 0 0;
+      animation: sweep 4s ease-in-out infinite;
+    }
+    .sheen {
+      transform-box: view-box; transform-origin: 0px 0px;
+      animation: sheen 4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.10); }
+    }
+    @keyframes glow {
+      0%, 100% { opacity: 0.30; transform: scale(1); }
+      50%      { opacity: 0.65; transform: scale(1.28); }
+    }
+    @keyframes ringA {
+      0%        { r: 16; opacity: 0.55; stroke-width: 2.0; }
+      45%       { r: 34; opacity: 0;    stroke-width: 0.6; }
+      50%, 100% { r: 16; opacity: 0;    stroke-width: 2.0; }
+    }
+    @keyframes ringB {
+      0%, 50%   { r: 16; opacity: 0;    stroke-width: 2.0; }
+      50.01%    { r: 16; opacity: 0.55; stroke-width: 2.0; }
+      95%       { r: 34; opacity: 0;    stroke-width: 0.6; }
+      100%      { r: 16; opacity: 0;    stroke-width: 2.0; }
+    }
+    @keyframes sweep {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-18deg); }
+    }
+    @keyframes sheen {
+      0%   { transform: translate(-280px, 0); }
+      100% { transform: translate(560px, 0); }
+    }
+
+    ]]></style>
+    <clipPath id="markClip-vc1">
+      <path d="M 90.50,164.00 L 133.00,164.00 L 192.50,268.50 L 228.00,206.00 L 267.50,206.00 L 191.50,342.00 Z"/>
+      <path d="M 355.21,339.93 C 354.80,339.28 357.08,337.03 366.00,329.26 C 369.44,326.27 372.70,323.43 373.25,322.94 C 373.80,322.45 376.89,319.74 380.12,316.91 L 386.00,311.76 L 386.00,266.88 C 386.00,216.04 386.46,220.73 381.75,223.53 C 380.38,224.34 378.24,225.57 377.00,226.26 C 375.76,226.95 374.41,227.73 374.00,227.99 C 370.95,229.94 366.39,232.50 365.94,232.50 C 365.59,232.50 365.50,233.26 365.68,234.62 C 365.84,235.79 366.23,238.78 366.55,241.25 C 367.86,251.31 366.97,265.61 364.51,274.25 C 364.20,275.35 363.75,276.93 363.51,277.75 C 358.58,294.93 347.93,310.59 333.07,322.50 C 331.87,323.46 330.59,324.53 330.23,324.88 C 329.87,325.22 329.48,325.50 329.36,325.50 C 329.24,325.50 327.14,326.66 324.70,328.08 C 320.28,330.65 317.36,332.16 314.00,333.62 C 310.06,335.33 306.82,336.50 306.03,336.50 C 305.57,336.50 304.99,336.71 304.73,336.96 C 304.10,337.56 300.91,337.81 300.12,337.32 C 299.65,337.03 299.50,333.53 299.50,323.01 C 299.50,309.44 299.63,307.50 300.55,307.50 C 301.07,307.50 307.53,304.43 309.80,303.11 C 314.86,300.16 326.50,289.54 326.50,287.87 C 326.50,287.64 326.97,286.96 327.55,286.35 C 328.91,284.92 334.50,273.56 334.50,272.23 C 334.50,271.66 334.69,270.99 334.91,270.73 C 335.39,270.18 336.14,267.57 337.06,263.28 C 337.93,259.25 337.94,244.62 337.08,240.75 C 335.76,234.83 334.31,230.66 331.68,225.15 C 330.21,222.07 329.00,219.45 329.00,219.33 C 329.00,219.12 336.31,214.33 339.87,212.21 C 341.76,211.09 348.80,206.76 351.43,205.10 C 352.43,204.47 353.64,203.83 354.12,203.67 C 354.61,203.51 355.00,203.20 355.00,202.98 C 355.00,202.75 355.46,202.42 356.02,202.24 C 356.59,202.06 358.33,201.06 359.90,200.00 C 362.54,198.23 371.70,192.56 378.41,188.55 C 379.97,187.62 383.16,185.62 385.50,184.10 C 387.84,182.59 390.43,180.96 391.25,180.48 C 396.08,177.67 411.12,168.46 413.10,167.11 C 414.38,166.22 415.65,165.50 415.92,165.50 C 416.19,165.50 416.49,165.27 416.59,164.99 C 416.68,164.70 417.43,164.42 418.25,164.36 L 419.75,164.25 L 419.88,251.97 C 419.98,321.82 419.88,339.77 419.38,340.09 C 418.33,340.75 355.62,340.60 355.21,339.93 Z"/>
+      <path d="M 288.13,225.49 L 294.45,208.10 A 46.50,46.50 0 0 1 290.59,296.72 L 285.80,278.85 A 28.00,28.00 0 0 0 288.13,225.49 Z"/>
+      <path d="M 246.81,201.00 L 231.81,177.00 A 88.20,88.20 0 0 1 345.12,193.94 L 323.76,212.50 A 59.90,59.90 0 0 0 246.81,201.00 Z"/>
+      <path d="M 286.89,311.12 L 290.83,339.14 A 88.20,88.20 0 0 1 214.04,311.95 L 234.74,292.65 A 59.90,59.90 0 0 0 286.89,311.12 Z"/>
+      <circle cx="278.55" cy="251.8" r="14.5"/>
+    </clipPath>
+    <clipPath id="faceClip-vc1">
+      <rect x="43.5" y="43.5" width="425.0" height="425.0" rx="95" ry="95"/>
+    </clipPath>
+    <linearGradient id="vGrad" x1="90" y1="164" x2="268" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B4CFB"/>
+      <stop offset="55%" stop-color="#2B6AF6"/>
+      <stop offset="100%" stop-color="#2A8AF0"/>
+    </linearGradient>
+    <linearGradient id="oneGrad" x1="300" y1="200" x2="420" y2="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1AB4E6"/>
+      <stop offset="55%" stop-color="#1ACEE8"/>
+      <stop offset="100%" stop-color="#14E0D6"/>
+    </linearGradient>
+    <linearGradient id="cGradTop" x1="220" y1="165" x2="345" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2B78F0"/>
+      <stop offset="100%" stop-color="#1AB8E8"/>
+    </linearGradient>
+    <linearGradient id="cGradLeft" x1="220" y1="300" x2="290" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2B6AF0"/>
+      <stop offset="100%" stop-color="#1E90F0"/>
+    </linearGradient>
+    <linearGradient id="sheenGrad-vc1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="42%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="58%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="faceGrad" cx="50%" cy="32%" r="78%">
+      <stop offset="0%" stop-color="#F7F7F8"/>
+      <stop offset="100%" stop-color="#EFEFF1"/>
+    </radialGradient>
+    <filter id="iconShadow" x="-8%" y="-6%" width="116%" height="120%">
+      <feOffset dy="8" result="o"/>
+      <feGaussianBlur in="o" stdDeviation="10" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.16 0" result="s"/>
+      <feMerge>
+        <feMergeNode in="s"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glowBlur-vc1" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.5"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="#FFFFFF"/>
+  <g filter="url(#iconShadow)">
+    <rect x="43.5" y="43.5" width="425.0" height="425.0"
+          rx="95" ry="95" fill="url(#faceGrad)"/>
+  </g>
+
+  <g clip-path="url(#faceClip-vc1)">
+    <!-- C arcs first (sit behind the V) -->
+    <path d="M 246.81,201.00 L 231.81,177.00 A 88.20,88.20 0 0 1 345.12,193.94 L 323.76,212.50 A 59.90,59.90 0 0 0 246.81,201.00 Z" fill="url(#cGradTop)"/>
+    <path d="M 286.89,311.12 L 290.83,339.14 A 88.20,88.20 0 0 1 214.04,311.95 L 234.74,292.65 A 59.90,59.90 0 0 0 286.89,311.12 Z" fill="url(#cGradLeft)"/>
+
+    <!-- V -->
+    <path d="M 90.50,164.00 L 133.00,164.00 L 192.50,268.50 L 228.00,206.00 L 267.50,206.00 L 191.50,342.00 Z" fill="url(#vGrad)"/>
+
+    <!-- inner crescent (subtle counter-sweep around the teal dot) -->
+    <g transform="translate(278.55,251.8)">
+      <g class="crescent">
+        <g transform="translate(-278.55,-251.8)">
+          <path d="M 291.29,216.80 A 37.25,37.25 0 0 1 288.19,287.78" fill="none" stroke="#126BC5" stroke-width="18.5" stroke-linecap="round"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- 1 ligatured with the right C arc -->
+    <path d="M 355.21,339.93 C 354.80,339.28 357.08,337.03 366.00,329.26 C 369.44,326.27 372.70,323.43 373.25,322.94 C 373.80,322.45 376.89,319.74 380.12,316.91 L 386.00,311.76 L 386.00,266.88 C 386.00,216.04 386.46,220.73 381.75,223.53 C 380.38,224.34 378.24,225.57 377.00,226.26 C 375.76,226.95 374.41,227.73 374.00,227.99 C 370.95,229.94 366.39,232.50 365.94,232.50 C 365.59,232.50 365.50,233.26 365.68,234.62 C 365.84,235.79 366.23,238.78 366.55,241.25 C 367.86,251.31 366.97,265.61 364.51,274.25 C 364.20,275.35 363.75,276.93 363.51,277.75 C 358.58,294.93 347.93,310.59 333.07,322.50 C 331.87,323.46 330.59,324.53 330.23,324.88 C 329.87,325.22 329.48,325.50 329.36,325.50 C 329.24,325.50 327.14,326.66 324.70,328.08 C 320.28,330.65 317.36,332.16 314.00,333.62 C 310.06,335.33 306.82,336.50 306.03,336.50 C 305.57,336.50 304.99,336.71 304.73,336.96 C 304.10,337.56 300.91,337.81 300.12,337.32 C 299.65,337.03 299.50,333.53 299.50,323.01 C 299.50,309.44 299.63,307.50 300.55,307.50 C 301.07,307.50 307.53,304.43 309.80,303.11 C 314.86,300.16 326.50,289.54 326.50,287.87 C 326.50,287.64 326.97,286.96 327.55,286.35 C 328.91,284.92 334.50,273.56 334.50,272.23 C 334.50,271.66 334.69,270.99 334.91,270.73 C 335.39,270.18 336.14,267.57 337.06,263.28 C 337.93,259.25 337.94,244.62 337.08,240.75 C 335.76,234.83 334.31,230.66 331.68,225.15 C 330.21,222.07 329.00,219.45 329.00,219.33 C 329.00,219.12 336.31,214.33 339.87,212.21 C 341.76,211.09 348.80,206.76 351.43,205.10 C 352.43,204.47 353.64,203.83 354.12,203.67 C 354.61,203.51 355.00,203.20 355.00,202.98 C 355.00,202.75 355.46,202.42 356.02,202.24 C 356.59,202.06 358.33,201.06 359.90,200.00 C 362.54,198.23 371.70,192.56 378.41,188.55 C 379.97,187.62 383.16,185.62 385.50,184.10 C 387.84,182.59 390.43,180.96 391.25,180.48 C 396.08,177.67 411.12,168.46 413.10,167.11 C 414.38,166.22 415.65,165.50 415.92,165.50 C 416.19,165.50 416.49,165.27 416.59,164.99 C 416.68,164.70 417.43,164.42 418.25,164.36 L 419.75,164.25 L 419.88,251.97 C 419.98,321.82 419.88,339.77 419.38,340.09 C 418.33,340.75 355.62,340.60 355.21,339.93 Z" fill="url(#oneGrad)"/>
+
+    <!-- teal center + telemetry rings -->
+    <circle class="dot-glow" filter="url(#glowBlur-vc1)" cx="278.55" cy="251.8" r="18" fill="#02E3D8"/>
+    <circle class="ring-a" cx="278.55" cy="251.8" r="16" fill="none" stroke="#02E3D8" stroke-linecap="round"/>
+    <circle class="ring-b" cx="278.55" cy="251.8" r="16" fill="none" stroke="#02E3D8" stroke-linecap="round"/>
+    <circle class="dot" cx="278.55" cy="251.8" r="13.5" fill="#02E3D8"/>
+
+    <!-- sheen across the whole mark -->
+    <g clip-path="url(#markClip-vc1)">
+      <g transform="rotate(-20 256 256)">
+        <g class="sheen">
+          <rect x="0" y="-80" width="160" height="700" fill="url(#sheenGrad-vc1)"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

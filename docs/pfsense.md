@@ -1,6 +1,6 @@
 # pfSense (CE and Plus)
 
-pfSense doesn't ship a REST API of its own, so Linkwatch uses the free **pfSense REST API package** (pfrest, API v2, [pfrest.org](https://pfrest.org)). It's a community package, not supported by Netgate. Add SNMP as well, on the same IP address, and the two show as one device.
+pfSense doesn't ship a REST API of its own, so VisCon1 uses the free **pfSense REST API package** (pfrest, API v2, [pfrest.org](https://pfrest.org)). It's a community package, not supported by Netgate. Add SNMP as well, on the same IP address, and the two show as one device.
 
 | Source | What it gives |
 | --- | --- |
@@ -39,7 +39,7 @@ API keys carry the privileges of the user that creates them, so use a dedicated 
 
 ## 4. Add the integration
 
-1. In Linkwatch: **Integrations > Connect an integration > pfSense**.
+1. In VisCon1: **Integrations > Connect an integration > pfSense**.
 2. **Firewall address:** for example `10.0.0.1`, or `fw.example.lan:8443` if the web interface isn't on 443. **REST API key:** the key from step 3. **Poller:** one that can reach the firewall's web interface. Untick **Verify TLS** if the firewall uses its default self-signed certificate.
 3. Click **Test**, then **Save**. The page appears under the **Integrations** menu.
 
@@ -49,7 +49,7 @@ The web interface must be reachable from the poller. Check the anti-lockout rule
 
 1. On the firewall: **Services > SNMP**. Enable it, set a read community, and bind it to the interface the poller reaches. Keep the MibII, PF and Host Resources modules ticked.
 2. Allow UDP 161 from the poller on that interface.
-3. In Linkwatch, add the community under **Settings**, then add the firewall under **Devices > Add device** with the same IP address. You can also let **Discovery** find it.
+3. In VisCon1, add the community under **Settings**, then add the firewall under **Devices > Add device** with the same IP address. You can also let **Discovery** find it.
 
 The integration matches the SNMP device by serial number, any of its interface addresses, or its name. The SNMP device keeps its own port graphs.
 

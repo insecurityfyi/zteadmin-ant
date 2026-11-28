@@ -376,7 +376,7 @@ def validate_response(cfg: SamlSettings, public_url: str, saml_response: str, re
             raise SamlError("This response doesn't belong to the sign-in that was started. Try again.")
         next_url = pending[1]
     elif in_response_to or not cfg.allow_idp_initiated:
-        raise SamlError("This sign-in wasn't started here, or took longer than 10 minutes. Start again from the Linkwatch sign-in page.")
+        raise SamlError("This sign-in wasn't started here, or took longer than 10 minutes. Start again from the VisCon1 sign-in page.")
 
     expires = noa or (now + timedelta(hours=1))
     if not STORE.use_once(a.get("ID") or "", expires.timestamp() + SKEW.total_seconds()):

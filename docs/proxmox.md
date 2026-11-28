@@ -1,8 +1,8 @@
 # Proxmox VE (8.x; 7.x should work)
 
-Linkwatch reads a Proxmox VE cluster (or a single node) over its API with an API token, and, if you allow it, lets admins control virtual machines and containers from the **Hypervisors** menu. The calls run on a poller inside your network; nothing connects in to the cluster from the internet.
+VisCon1 reads a Proxmox VE cluster (or a single node) over its API with an API token, and, if you allow it, lets admins control virtual machines and containers from the **Hypervisors** menu. The calls run on a poller inside your network; nothing connects in to the cluster from the internet.
 
-> **Not yet tested against a real cluster.** The API calls follow the Proxmox VE 8 API reference and are covered by tests against recorded API shapes, but nobody has pressed these buttons on real hardware yet. Try them on a lab VM first. The same is true of the other integrations in Linkwatch. See [What hasn't been tested](#what-hasnt-been-tested).
+> **Not yet tested against a real cluster.** The API calls follow the Proxmox VE 8 API reference and are covered by tests against recorded API shapes, but nobody has pressed these buttons on real hardware yet. Try them on a lab VM first. The same is true of the other integrations in VisCon1. See [What hasn't been tested](#what-hasnt-been-tested).
 
 | Source | What it gives |
 | --- | --- |
@@ -17,7 +17,7 @@ On any node, as root. Pick the variant you want:
 **Monitoring only** (the read-only role that ships with Proxmox):
 
 ```sh
-pveum user add linkwatch@pve --comment "Linkwatch monitoring"
+pveum user add linkwatch@pve --comment "VisCon1 monitoring"
 pveum acl modify / --users linkwatch@pve --roles PVEAuditor
 pveum user token add linkwatch@pve monitor --privsep 0
 ```
@@ -25,18 +25,18 @@ pveum user token add linkwatch@pve monitor --privsep 0
 **Monitoring and control** (a role with exactly what the Hypervisors actions use):
 
 ```sh
-pveum role add LinkwatchOperator --privs "Sys.Audit Sys.Console Sys.PowerMgmt Sys.Modify \
+pveum role add VisCon1Operator --privs "Sys.Audit Sys.Console Sys.PowerMgmt Sys.Modify \
   VM.Audit VM.PowerMgmt VM.Console VM.Migrate VM.Clone VM.Allocate VM.Snapshot VM.Snapshot.Rollback VM.Backup \
   VM.Config.CPU VM.Config.Memory VM.Config.Disk VM.Config.Options VM.Config.HWType VM.Config.Network VM.Config.CDROM VM.Config.Cloudinit \
   Datastore.Audit Datastore.AllocateSpace Pool.Audit SDN.Use"
-pveum user add linkwatch@pve --comment "Linkwatch"
-pveum acl modify / --users linkwatch@pve --roles LinkwatchOperator
+pveum user add linkwatch@pve --comment "VisCon1"
+pveum acl modify / --users linkwatch@pve --roles VisCon1Operator
 pveum user token add linkwatch@pve ops --privsep 0
 ```
 
 The last command prints the token secret once. Copy it.
 
-- `--privsep 0` makes the token carry the user's permissions. If you prefer privilege-separated tokens (`--privsep 1`), grant the role to the token as well: `pveum acl modify / --tokens 'linkwatch@pve!ops' --roles LinkwatchOperator`.
+- `--privsep 0` makes the token carry the user's permissions. If you prefer privilege-separated tokens (`--privsep 1`), grant the role to the token as well: `pveum acl modify / --tokens 'linkwatch@pve!ops' --roles VisCon1Operator`.
 - On Proxmox VE 7, drop `SDN.Use` from the role (it doesn't exist there).
 - You can grant the role on a narrower path, such as a pool (`/pool/lab`), instead of `/`. Guests outside it then don't show up, and node actions need `/nodes/<node>`.
 - To use a GUI instead: **Datacenter > Permissions > Users / API Tokens / Roles / Permissions**.
@@ -60,7 +60,7 @@ What each action needs, if you want to trim the role:
 | Node start all, stop all | `VM.PowerMgmt` |
 | Node migrate all | `Sys.Modify`, `VM.Migrate` |
 
-When the token lacks a privilege, Linkwatch shows Proxmox's own message, for example *Permission check failed (/vms/101, VM.PowerMgmt)*, and writes the failure to the audit log.
+When the token lacks a privilege, VisCon1 shows Proxmox's own message, for example *Permission check failed (/vms/101, VM.PowerMgmt)*, and writes the failure to the audit log.
 
 ## 2. Add the integration
 
@@ -94,7 +94,7 @@ A node's page has its live CPU, memory, disk and load, the guests on it, storage
 The **Console** button opens a text terminal in a pop-out window. The poller asks Proxmox for a console ticket with the API token, opens Proxmox's console WebSocket and relays it to your browser through its outbound tunnel (the same tunnel SSH consoles use). Sessions are audited and close after 30 idle minutes.
 
 - **Containers** work out of the box.
-- **VMs** need a serial port (`qm set <vmid> --serial0 socket`) and a getty on it inside the guest (`systemctl enable --now serial-getty@ttyS0` on most Linux distributions). For anything else, **Console (Proxmox)** opens the graphical noVNC console in the Proxmox web UI; that only works if your browser can reach the cluster (for example on the management VLAN or a VPN), because Linkwatch doesn't relay VNC.
+- **VMs** need a serial port (`qm set <vmid> --serial0 socket`) and a getty on it inside the guest (`systemctl enable --now serial-getty@ttyS0` on most Linux distributions). For anything else, **Console (Proxmox)** opens the graphical noVNC console in the Proxmox web UI; that only works if your browser can reach the cluster (for example on the management VLAN or a VPN), because VisCon1 doesn't relay VNC.
 - **Node shell** asks you to sign in to the node, because the token's user isn't root.
 - Consoles are refused when the poller host sets `LW_TUNNEL=off`. Pollers older than this release need updating; the page says so and gives the command.
 

@@ -195,7 +195,7 @@
     <td class="nw">{% if n.remote_device %}<span class="dot d-{{ n.remote_device.status }}"></span> <a href="/devices/{{ n.remote_device_id }}?tab=neighbours"><b>{{ n.remote_device.hostname }}</b></a>{% else %}{{ n.remote_name or n.remote_chassis or '?' }} <span class="tag">not monitored</span>{% endif %}</td>
     <td class="mono">{{ n.remote_port or '' }}</td><td class="mono">{{ n.remote_ip or n.remote_chassis or '' }}</td><td class="dim" style="font-size:12.5px">{{ (n.remote_platform or '')|truncate(60) }}</td><td><span class="tag">{{ n.protocol|upper }}</span></td></tr>{% endfor %}
   </tbody></table></div>
-  {% else %}<p class="dim" style="margin:0">No neighbours. Turn on LLDP (or CDP) on the device and its neighbours; Linkwatch reads LLDP-MIB and CISCO-CDP-MIB over SNMP on every poll.</p>{% endif %}
+  {% else %}<p class="dim" style="margin:0">No neighbours. Turn on LLDP (or CDP) on the device and its neighbours; VisCon1 reads LLDP-MIB and CISCO-CDP-MIB over SNMP on every poll.</p>{% endif %}
   {% if seen_by %}<h3 style="margin:16px 0 8px">Seen by other devices</h3><table><tbody>{% for n in seen_by %}<tr><td><a href="/devices/{{ n.device_id }}?tab=neighbours">{{ n.device.hostname }}</a></td><td class="mono">{{ n.local_port or '' }}</td><td class="dim">→ {{ n.remote_port or '' }}</td><td><span class="tag">{{ n.protocol|upper }}</span></td></tr>{% endfor %}</tbody></table>{% endif %}
 </div>
 

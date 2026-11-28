@@ -2,7 +2,7 @@
 # linkwatch network (no published port). It never connects to remote sites itself: the web app gives it a
 # one-off address on linkwatch-web that relays through the poller's tunnel. See docs/rdp.md.
 [Unit]
-Description=Linkwatch remote desktop proxy (guacd)
+Description=VisCon1 remote desktop proxy (guacd)
 
 [Container]
 ContainerName=linkwatch-guacd

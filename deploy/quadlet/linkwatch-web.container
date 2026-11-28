@@ -1,6 +1,6 @@
-# Linkwatch web app. Listens on 127.0.0.1:8080 only; nginx on the host terminates TLS.
+# VisCon1 web app. Listens on 127.0.0.1:8080 only; nginx on the host terminates TLS.
 [Unit]
-Description=Linkwatch web app
+Description=VisCon1 web app
 Requires=linkwatch-db.service
 After=linkwatch-db.service
 # remote desktop (RDP) consoles; the app still runs without it

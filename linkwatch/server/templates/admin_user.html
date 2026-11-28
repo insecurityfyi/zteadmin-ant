@@ -14,7 +14,7 @@
       <div><button class="btn pri" type="submit">Save</button></div>
     </form></div>
   <div class="p c6">{% if u.auth_source == 'saml' %}<div class="ph"><h2>Single sign-on user</h2></div>
-    <p class="dim" style="margin-top:0">Created by single sign-on{% if u.external_id %} (Entra object ID <span class="mono">{{ u.external_id }}</span>){% endif %}. They have no Linkwatch password. Disable the account here, or remove them from the app in Entra, to stop them signing in.</p>
+    <p class="dim" style="margin-top:0">Created by single sign-on{% if u.external_id %} (Entra object ID <span class="mono">{{ u.external_id }}</span>){% endif %}. They have no VisCon1 password. Disable the account here, or remove them from the app in Entra, to stop them signing in.</p>
     {% else %}<div class="ph"><h2>Set a new password</h2></div>
     <form method="post" action="/admin/users/{{ u.id }}/password" class="stack" autocomplete="off">
       <label class="f">New password<input type="password" name="password" id="u_password" required minlength="{{ min_password }}" autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore><small>At least {{ min_password }} characters. Signs the user out everywhere.</small></label>

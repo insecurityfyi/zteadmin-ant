@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup of a CentOS Stream 9 or 10 (or RHEL/Rocky/Alma 9-10) VPS for Linkwatch. Run as root (or with sudo):
+# One-time setup of a CentOS Stream 9 or 10 (or RHEL/Rocky/Alma 9-10) VPS for VisCon1. Run as root (or with sudo):
 #
 #   sudo bash bootstrap-centos9.sh aperrego utilz.perrego.net you@example.com
 #

@@ -14,7 +14,7 @@
     <span><i style="background:var(--up)"></i>under 50%</span><span><i style="background:var(--warn)"></i>50–80%</span><span><i style="background:var(--down)"></i>over 80%</span><span><i style="background:var(--off)"></i>no traffic data</span><span><i style="background:repeating-linear-gradient(90deg,var(--mute) 0 4px,transparent 4px 7px)"></i>wireless mesh</span></div>
   <div class="actions" style="position:absolute;right:12px;top:10px;z-index:2"><button class="btn sm" type="button" id="map-fit">Fit</button><button class="btn sm" type="button" id="map-relayout">Re-arrange</button></div>
   <svg id="netmap" data-src="/ui/map?site={{ site|urlencode }}&external={{ external }}&all={{ request.query_params.get('all', '') }}&hide_aps={{ request.query_params.get('hide_aps', '') }}" data-focus="{{ focus }}" style="display:block;width:100%;height:min(74vh,820px);cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
-  <div id="map-empty" class="empty-state" hidden><h2>No links yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. Linkwatch reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
+  <div id="map-empty" class="empty-state" hidden><h2>No links yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. VisCon1 reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
 </div>
 <script src="/static/map.js?v={{ version }}" defer></script>
 {% endblock %}

@@ -1,4 +1,4 @@
-# The Linkwatch poller
+# The VisCon1 poller
 
 The poller runs inside your network and does all of the SNMP, ping and on-prem
 API work. It needs:

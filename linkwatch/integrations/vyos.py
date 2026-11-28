@@ -19,7 +19,7 @@ Operational commands read (text, parsed defensively; any that a version lacks ar
   show dhcp server leases      DHCP leases
   show conntrack statistics    connection-tracking counters (best effort)
 
-Every VyOS API key has full rights (there's no read-only key), but Linkwatch only uses /retrieve and /show.
+Every VyOS API key has full rights (there's no read-only key), but VisCon1 only uses /retrieve and /show.
 """
 from __future__ import annotations
 

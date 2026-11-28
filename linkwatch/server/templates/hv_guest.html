@@ -70,7 +70,7 @@
       <form method="post" action="/hypervisors/{{ c.id }}/action">{{ hv.hidden(c, 'backup', node, vtype, vmid) }}<h3>Back up now</h3>
         <label class="f">Storage<select name="storage" required>{% for st_ in d.storages or [] if 'backup' in st_.content %}<option>{{ st_.name }}</option>{% else %}<option value="">No backup storage on {{ node }}</option>{% endfor %}</select></label>
         <label class="f">Mode<select name="mode"><option value="snapshot">Snapshot (no downtime)</option><option value="suspend">Suspend</option><option value="stop">Stop</option></select></label>
-        <label class="f">Notes <span class="help">(optional)</span><input type="text" name="notes" value="{{ '{{guestname}}' }} via Linkwatch"></label>
+        <label class="f">Notes <span class="help">(optional)</span><input type="text" name="notes" value="{{ '{{guestname}}' }} via VisCon1"></label>
         <button class="btn" type="submit">Back up</button></form>
       <form method="post" action="/hypervisors/{{ c.id }}/action"{{ hv.confirm_attrs(actions.migrate, 'migrate', vmid, what) }}>{{ hv.hidden(c, 'migrate', node, vtype, vmid) }}<h3>Migrate</h3>
         {% set allowed = d.migrate.allowed if d.migrate else other_nodes %}

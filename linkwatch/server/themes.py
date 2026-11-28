@@ -6,15 +6,25 @@ from sqlalchemy.orm import Session
 from .db import get_setting
 
 THEMES = {
-    "auto": "Linkwatch (follows the device's light or dark setting)",
+    "auto": "VisCon1 (follows the device's light or dark setting)",
     "midnight": "Midnight NOC (dark)",
     "light": "Classic Light",
     "zscaler": "Zscaler Blue (dark)",
     "graphite": "Graphite + Orange (dark)",
     "navy": "Navy console (dark, left sidebar)",
+    "as400": "AS/400 phosphor green (dark)",
 }
 LAYOUTS = {"top": "Top menu", "sidebar": "Left sidebar"}
 THEME_LAYOUT = {"navy": "sidebar"}       # a theme's own menu layout, used unless the site or the user picks one
+# which logo (static/brand/viscon1-<family>.svg) each theme shows; "auto" swaps light/dark with the device setting
+THEME_LOGO = {"light": "light", "as400": "green"}
+
+
+def logo_for(theme: str) -> str:
+    """'light', 'dark' or 'green'; 'auto' for the device-dependent default theme."""
+    if theme == "auto":
+        return "auto"
+    return THEME_LOGO.get(theme, "dark")
 
 
 def site_theme(s: Session) -> str:
