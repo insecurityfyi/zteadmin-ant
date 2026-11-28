@@ -1,4 +1,4 @@
-"""Linkwatch web app factory."""
+"""VisCon1 web app factory."""
 from __future__ import annotations
 
 import asyncio
@@ -12,13 +12,13 @@ from pathlib import Path
 
 import jinja2
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from starlette.middleware.sessions import SessionMiddleware
 
-from .. import __version__
+from .. import APP_FULL_NAME, APP_NAME, __version__
 from .config import Config
 from .db import Database
 from .gateway import Hub
@@ -29,7 +29,7 @@ from .users import audit, sync_admin_from_env
 
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/saml/")
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
@@ -131,6 +131,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     notifier = Notifier(db, vault, config.public_url)
     hub = Hub(db, vault, notifier, config.poll_interval)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
+    from .themes import logo_for
+    templates.env.globals.update(app_name=APP_NAME, app_full_name=APP_FULL_NAME, logo_for=logo_for)
     def missing_is_none(fn):
         # a key an integration didn't send renders as "–", not a template error
         return lambda v, *a: fn(None if isinstance(v, jinja2.Undefined) else v, *a)
@@ -158,7 +160,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         if task:
             task.cancel()
 
-    app = FastAPI(title="Linkwatch", version=__version__, lifespan=lifespan, docs_url="/api/docs", redoc_url=None,
+    app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan, docs_url="/api/docs", redoc_url=None,
                   openapi_url="/api/openapi.json")
     app.state.lw = state
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
@@ -204,6 +206,19 @@ def create_app(config: Config | None = None) -> FastAPI:
     # Added after the middleware above so it wraps it (sessions must be decoded first).
     app.add_middleware(SessionMiddleware, secret_key=sha256("session:" + config.secret_key), session_cookie="lw_session",
                        max_age=12 * 3600, same_site="lax", https_only=config.public_url.startswith("https://"))
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        # browsers and bookmark tools ask for this before reading the page's <link rel="icon">
+        return FileResponse(HERE / "static" / "brand" / "favicon-dark-32.png", media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.get("/manifest.webmanifest", include_in_schema=False)
+    def manifest():
+        icons = [{"src": f"/static/brand/icon-dark-{n}.png", "sizes": f"{n}x{n}", "type": "image/png"} for n in (192, 512)]
+        return JSONResponse({"name": f"{APP_NAME} ({APP_FULL_NAME})", "short_name": APP_NAME, "start_url": "/",
+                             "display": "standalone", "background_color": "#11141D", "theme_color": "#11141D", "icons": icons},
+                            media_type="application/manifest+json")
 
     @app.get("/healthz")
     def healthz():
@@ -268,6 +283,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .hypervisor_views import router as hypervisor_router
     from .zscaler_ai_views import router as zscaler_ai_router
     from .integration_views import router as integration_views_router
+    from .nas_views import router as nas_router
     from .nms_views import router as nms_router
     from .oid_views import router as oid_router
     from .path_views import router as path_router
@@ -291,6 +307,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(ssh_router)
     app.include_router(rdp_router)
     app.include_router(hypervisor_router)
+    app.include_router(nas_router)
     app.include_router(zscaler_ai_router)
     app.include_router(admin_router)
     return app

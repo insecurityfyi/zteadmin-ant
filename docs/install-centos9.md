@@ -1,4 +1,4 @@
-# Installing Linkwatch on the CentOS Stream 10 VPS
+# Installing VisCon1 on the CentOS Stream 10 VPS
 
 This guide sets up `utilz.perrego.net` (VPS `129.121.123.176`, deploy account
 `aperrego`) so that after every push to `main` on GitHub, one command on the
@@ -130,7 +130,7 @@ sudo firewall-cmd --zone=public --list-all
 
 A fresh CentOS Stream install usually shows `services: cockpit dhcpv6-client ssh`.
 
-### 4c. Allow only what Linkwatch needs
+### 4c. Allow only what VisCon1 needs
 
 ```sh
 # remove services you don't use (cockpit is the web console on port 9090)

@@ -70,7 +70,7 @@ class Cato(SSEIntegration):
     }
     fields: ClassVar[list[Field]] = [
         Field("account_id", "Account ID", help="The number in the Cato Management Application URL, e.g. 12345."),
-        Field("api_key", "API key", "password", help="Resources > API Keys > New, permission View. Optionally limit it to the Linkwatch server's IP."),
+        Field("api_key", "API key", "password", help="Resources > API Keys > New, permission View. Optionally limit it to the VisCon1 server's IP."),
         Field("api_host", "API host", required=False, help="Leave blank for api.catonetworks.com. Set e.g. api.us1.catonetworks.com for other regions."),
         *section_fields(SECTIONS, LABELS),
         SSEIntegration.ai_category_field(),

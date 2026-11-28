@@ -1,0 +1,13 @@
+{# Shared pieces for the NAS pages. Confirmation dialogs reuse the Hypervisors script (hv.js). #}
+{% macro hidden(n, name, back='') %}<input type="hidden" name="action" value="{{ name }}"><input type="hidden" name="back" value="{{ back or (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) }}"><input type="hidden" name="confirm" value=""><input type="hidden" name="confirm_text" value="">{% endmacro %}
+
+{% macro confirm_attrs(n, a, what) %}{% if a.confirm %} data-confirm="{{ a.confirm }}" data-expect="{{ n.confirm_name }}" data-title="{{ a.label }} {{ what }}?" data-help="{{ a.help }}"{% endif %}{% endmacro %}
+
+{# One button that posts one action against one target. #}
+{% macro act(n, actions, name, value=None, what='', label=None, cls='btn sm') %}{% set a = actions[name] %}<form class="inline" method="post" action="/nas/{{ n.id }}/action"{{ confirm_attrs(n, a, what) }}>{{ hidden(n, name) }}{% if a.target %}<input type="hidden" name="{{ a.target }}" value="{{ value }}">{% endif %}<button class="{{ cls }}{{ ' danger' if a.confirm == 'typed' else '' }}" type="submit"{% if a.help %} title="{{ a.help }}"{% endif %}>{{ label or a.label }}</button></form>{% endmacro %}
+
+{% macro when(v) %}{% if v is string and v.isdigit() and v|length >= 9 %}{{ v|int|ts }}{% elif v is number and v > 100000000 %}{{ v|ts }}{% elif v %}{{ v }}{% else %}<span class="dim">–</span>{% endif %}{% endmacro %}
+
+{% macro health(status) %}{% set s_ = (status or '')|lower %}<span class="dot {{ 'd-up' if s_ in ('normal', 'healthy', 'ok', 'running', 'initialized') else ('d-off' if s_ in ('', 'not_use', 'unknown') else ('d-down' if s_ in ('crashed', 'failing', 'abnormal', 'danger') else 'd-warn')) }}" title="{{ status or 'unknown' }}"></span>{% endmacro %}
+
+{% macro control_off_note(n, is_admin) %}{% if is_admin and not n.control %}<div class="flash warn" role="status">Control actions are off for <b>{{ n.name }}</b>, so this page is read-only. To reboot the NAS or start and stop packages, containers, VMs, backups and scrubbing, tick <i>Allow control actions</i> in <a href="/integrations/{{ n.id }}">the integration's settings</a>. See the <a href="https://github.com/insecurityfyi/zteadmin-ant/blob/main/docs/synology.md" target="_blank" rel="noopener">Synology guide</a> first.</div>{% endif %}{% endmacro %}

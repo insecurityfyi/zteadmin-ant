@@ -1,6 +1,6 @@
 # UniFi Network
 
-Linkwatch reads the UniFi Network application on your console (UDM, UDM Pro/SE,
+VisCon1 reads the UniFi Network application on your console (UDM, UDM Pro/SE,
 UCG, Cloud Key Gen2+, UniFi OS Server) or a self-hosted controller. It collects:
 
 - **Access points, switches, gateways:** status, CPU, memory, uptime, firmware,
@@ -57,7 +57,7 @@ and nothing is opened inbound.
    On a self-hosted controller or older firmware, create a local admin instead
    (Settings > Admins & Users, "Restrict to local access only", role *View Only*)
    and use its username and password. A ui.com account with two-factor won't work.
-2. In Linkwatch: **Integrations > UniFi Network**.
+2. In VisCon1: **Integrations > UniFi Network**.
    - *Poller that can reach it:* the poller on that LAN.
    - *UniFi console address:* e.g. `192.168.1.1`, or `10.0.0.5:8443` for a self-hosted controller.
    - *API key* (or username and password). Paste it into the form, not into chat or tickets.
@@ -66,7 +66,7 @@ and nothing is opened inbound.
 3. Press **Test**. You should see "Found N UniFi devices, N clients and N SSIDs".
 4. Graphs fill in after two or three poll intervals.
 
-If a switch or AP is also polled over SNMP, Linkwatch keeps the SNMP ports and
+If a switch or AP is also polled over SNMP, VisCon1 keeps the SNMP ports and
 adds the UniFi data to the same device.
 
 ## Troubleshooting

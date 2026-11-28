@@ -2,7 +2,7 @@
 
 Same shape as the SSH console (see ssh.py), with Apache Guacamole doing the RDP part:
 
-    browser (guacamole-common-js) ──wss──▶ Linkwatch server ──tcp──▶ guacd (sidecar container)
+    browser (guacamole-common-js) ──wss──▶ VisCon1 server ──tcp──▶ guacd (sidecar container)
                                                  ▲                       │ RDP, to a one-off port on the server
                                                  └── relay ◀─────────────┘
                                                  │

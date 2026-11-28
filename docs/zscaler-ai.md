@@ -102,7 +102,7 @@ Things to know:
   the whole object. Secrets, such as a provider's API key, are shown as `••••••`; leave
   them as they are to keep them.
 - A regenerated credential's new secret is shown once, on its own page. It isn't stored
-  in Linkwatch or written to any log.
+  in VisCon1 or written to any log.
 - When Zscaler refuses a change, the page and the audit log show Zscaler's own message,
   such as a duplicate rule name or a missing role.
 - After each action the AI tab re-reads the rules, AI Guard and activation state, so it
@@ -137,4 +137,4 @@ tried on a live tenant. In particular:
 These came from Zscaler's SDKs and haven't been tried against a live tenant:
 
 - the exact Shadow IT category name for AI apps (the category override setting covers this);
-- whether the `appClass=AI_ML` filter applies to the cloud application list. If the filter is ignored, the full list comes back; Linkwatch then skips the catalogue and notes this on the page.
+- whether the `appClass=AI_ML` filter applies to the cloud application list. If the filter is ignored, the full list comes back; VisCon1 then skips the catalogue and notes this on the page.

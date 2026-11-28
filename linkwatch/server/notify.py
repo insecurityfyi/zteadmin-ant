@@ -11,6 +11,7 @@ from typing import Any, Iterable
 import httpx
 from sqlalchemy import select
 
+from .. import APP_NAME
 from .alerts import SEVERITY_ORDER, AlertEvent
 from .models import Transport
 
@@ -37,7 +38,7 @@ def send_one(kind: str, cfg: dict[str, Any], ev: AlertEvent, public_url: str, ht
         msg["Subject"] = headline(ev)
         msg["From"] = cfg["sender"]
         msg["To"] = cfg["recipients"]
-        msg.set_content(f"{text}\n\n{link}\n")
+        msg.set_content(f"{text}\n\n{link}\n\n-- \nSent by {APP_NAME}\n")
         port = int(cfg.get("port") or 587)
         if port == 465:
             server = smtplib.SMTP_SSL(cfg["host"], port, timeout=20, context=ssl.create_default_context())
@@ -56,12 +57,12 @@ def send_one(kind: str, cfg: dict[str, Any], ev: AlertEvent, public_url: str, ht
             "content": {"type": "AdaptiveCard", "version": "1.4", "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                         "body": [{"type": "TextBlock", "text": headline(ev), "weight": "Bolder", "wrap": True},
                                  {"type": "TextBlock", "text": ev.detail or "", "wrap": True}],
-                        "actions": [{"type": "Action.OpenUrl", "title": "Open alerts", "url": link}]}}]}
+                        "actions": [{"type": "Action.OpenUrl", "title": f"Open {APP_NAME} alerts", "url": link}]}}]}
     elif kind == "slack":
-        payload = {"text": f"{text}\n<{link}|Open alerts>"}
+        payload = {"text": f"{text}\n<{link}|Open {APP_NAME} alerts>"}
     else:
         payload = {"event": ev.kind, "severity": ev.severity, "title": ev.title, "detail": ev.detail,
-                   "device": ev.device, "alert_id": ev.alert_id, "url": link}
+                   "device": ev.device, "alert_id": ev.alert_id, "url": link, "source": APP_NAME}
     client = http or httpx.Client(timeout=15)
     try:
         resp = client.post(cfg["url"], json=payload)

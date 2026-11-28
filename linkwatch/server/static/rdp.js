@@ -25,7 +25,7 @@
         body: JSON.stringify(Object.assign({}, target, body, size, { dpi: Math.round(96 * (window.devicePixelRatio || 1)) }))
       });
       data = await res.json();
-    } catch (e) { data = { error: "Could not reach the Linkwatch server." }; }
+    } catch (e) { data = { error: "Could not reach the VisCon1 server." }; }
     if (!res || !res.ok || !data.token) { setState("failed", "bad"); say(data.error || data.detail || "Could not start the session.", "bad"); return; }
     open(data.token);
   }

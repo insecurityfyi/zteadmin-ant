@@ -1,4 +1,4 @@
-"""Linkwatch remote poller.
+"""VisCon1 remote poller.
 
 Runs inside your LAN. It only ever opens outbound connections:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install (or update) a Linkwatch poller on a Linux machine on your LAN: a small
+# Install (or update) a VisCon1 poller on a Linux machine on your LAN: a small
 # VM, a Proxmox LXC container, or a Raspberry Pi. Run as root (or with sudo):
 #
 #   curl -fsSL https://raw.githubusercontent.com/insecurityfyi/zteadmin-ant/main/deploy/install-poller.sh \
@@ -22,7 +22,7 @@
 #      bridge), with NET_RAW so ping and mtr work, a volume for its key, and restart-on-boot
 #   4. waits for "Connected" in the logs
 #   5. before starting it, installs a small systemd helper (linkwatch-poller-helper.path/.service) that runs this
-#      script again when the poller asks, so Pollers > Update in Linkwatch can update it and report the result
+#      script again when the poller asks, so Pollers > Update in VisCon1 can update it and report the result
 #
 # The enrollment token is shown once by the server (Pollers > Add poller), works
 # once and expires after 24 hours. After the first start the poller keeps its own
@@ -158,7 +158,7 @@ if { [ -d "$VOLUME" ] || $RT volume inspect "$VOLUME" >/dev/null 2>&1; } \
   have_identity=1
 fi
 if [ "$have_identity" -eq 0 ] && [ -z "$TOKEN" ]; then
-  die "This machine isn't enrolled yet. In Linkwatch open Pollers > Add poller and pass the token: --token enr_..."
+  die "This machine isn't enrolled yet. In VisCon1 open Pollers > Add poller and pass the token: --token enr_..."
 fi
 
 # ------------------------------------------------------------------ run
@@ -204,7 +204,7 @@ install_helper() {
   tmp="$(mktemp /usr/local/sbin/.lwhelper.XXXXXX)"
   {
     echo '#!/usr/bin/env bash'
-    echo '# Installed by install-poller.sh. systemd runs this when the Linkwatch poller asks to be updated'
+    echo '# Installed by install-poller.sh. systemd runs this when the VisCon1 poller asks to be updated'
     echo '# (Pollers > Update): it runs the install script again and leaves the result for the poller to report.'
     echo 'set -uo pipefail'
     printf 'CTL=%q\nRT=%q\nURL=%q\nCACHE=%q\nCT=%q\n' "$ctl" "$RT" "$INSTALLER_URL" "$lib/install-poller.sh" "$NAME_CT"
@@ -243,7 +243,7 @@ HELPER
   chmod 0755 "$tmp"; mv -f "$tmp" /usr/local/sbin/linkwatch-poller-helper
   cat > /etc/systemd/system/linkwatch-poller-helper.service <<UNIT
 [Unit]
-Description=Update the Linkwatch poller when it asks (Pollers > Update)
+Description=Update the VisCon1 poller when it asks (Pollers > Update)
 
 [Service]
 Type=oneshot
@@ -252,7 +252,7 @@ TimeoutStartSec=20min
 UNIT
   cat > /etc/systemd/system/linkwatch-poller-helper.path <<UNIT
 [Unit]
-Description=Watch for update requests from the Linkwatch poller
+Description=Watch for update requests from the VisCon1 poller
 
 [Path]
 PathExists=$ctl/update.request
@@ -267,7 +267,7 @@ UNIT
   printf '{"version":1,"runtime":"%s","installed":%s}\n' "$RT" "$(date +%s)" > "$ctl/helper.json"
   chmod 0644 "$ctl/helper.json"
   if command -v selinuxenabled >/dev/null && selinuxenabled 2>/dev/null; then chcon --reference="$mp" "$ctl/helper.json" 2>/dev/null || true; fi
-  say "Installed the update helper (Pollers > Update in Linkwatch now works for this poller)"
+  say "Installed the update helper (Pollers > Update in VisCon1 now works for this poller)"
 }
 
 if [ "$HELPER" -eq 1 ]; then install_helper || say "Couldn't install the update helper; update by running this script"; fi

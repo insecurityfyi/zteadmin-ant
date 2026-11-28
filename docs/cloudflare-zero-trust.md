@@ -1,6 +1,6 @@
 # Cloudflare Zero Trust
 
-Linkwatch reads Cloudflare Zero Trust (Cloudflare One) over the **Cloudflare API v4**
+VisCon1 reads Cloudflare Zero Trust (Cloudflare One) over the **Cloudflare API v4**
 and its **GraphQL analytics**, with a read-only API token. It has the shared SSE tabs
 (see [sse.md](sse.md)) plus five tabs of its own, so the page covers nearly everything
 the API can show:
@@ -36,7 +36,7 @@ within 30 days (warning)**.
 In the Cloudflare dashboard go to **Manage Account > Account API Tokens** (or **My
 Profile > API Tokens**) and **Create Token > Create Custom Token**. Name it
 `linkwatch`. Add these permissions, **all Read**. Leave out anything for an area you
-don't use and switch that area off in Linkwatch.
+don't use and switch that area off in VisCon1.
 
 **Account permissions**
 
@@ -63,7 +63,7 @@ don't use and switch that area off in Linkwatch.
 | Zone Settings | SSL mode, minimum TLS, Always HTTPS, security level |
 | Analytics | Yesterday's requests, cache and threats, and security events |
 
-Restrict the token to your account and, optionally, to the Linkwatch server's public
+Restrict the token to your account and, optionally, to the VisCon1 server's public
 IP. Create it and copy it (it's shown once). Note your **account ID** from the
 account's Overview page or the dashboard URL.
 
@@ -123,8 +123,8 @@ Listed on each tab, too:
 
 ## Least certain
 
-- DNS `resolverDecision` codes. Linkwatch maps the codes from the DNS log reference to names, and anything whose name contains "blocked" counts as blocked. If your account returns names instead of codes, they're used as is.
-- The HTTP analytics application dimension (`httpApplicationIds` or similar) and the network analytics action dimension. Linkwatch looks them up and notes when they're missing.
+- DNS `resolverDecision` codes. VisCon1 maps the codes from the DNS log reference to names, and anything whose name contains "blocked" counts as blocked. If your account returns names instead of codes, they're used as is.
+- The HTTP analytics application dimension (`httpApplicationIds` or similar) and the network analytics action dimension. VisCon1 looks them up and notes when they're missing.
 - The DEX overview response shape (availability and timing fields are found by name), and the hostname-routes path.
 - Exact permission names in the token editor differ slightly between accounts and change as Cloudflare renames products.
 - Cloudflare is moving WARP devices to a newer devices API; `/devices` is still documented.

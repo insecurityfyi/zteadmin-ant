@@ -20,7 +20,7 @@ Only admins see the SSH buttons, and only admins can open the window or its WebS
 ## How it works
 
 ```
-browser ──wss──▶ Linkwatch server ──(existing poller WebSocket: "tunnel_open")──▶ poller
+browser ──wss──▶ VisCon1 server ──(existing poller WebSocket: "tunnel_open")──▶ poller
                        ▲                                                           │
                        └──────wss /api/poller/ws/tunnel/<id> (poller dials out)───┘──tcp──▶ device:22
 ```
