@@ -1,5 +1,5 @@
 <!doctype html>
-{% from "_brand.html" import logo, head_icons, tagline, footer with context %}
+{% from "_brand.html" import logo, head_icons, footer with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,7 +11,7 @@
 <body>
 <main class="login">
   <div class="p" style="display:flex;flex-direction:column;gap:14px">
-    <div class="login-brand">{{ logo(theme|default('auto'), 56) }}<div><h1 style="font-size:22px">{{ app_name }}</h1><div class="dim">{{ app_full_name }}</div>{{ tagline() }}</div></div>
+    <div class="login-brand">{{ logo(theme|default('auto'), 56) }}<div><h1 style="font-size:22px">{{ app_name }}</h1><div class="dim">{{ app_full_name }}</div></div></div>
     {% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
     {% if sso %}
     <a class="btn pri" href="/saml/login?next={{ next|urlencode }}" style="justify-content:center;gap:10px;padding:9px 12px">

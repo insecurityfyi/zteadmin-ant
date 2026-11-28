@@ -75,10 +75,10 @@ def test_slack_alert_names_the_app():
     assert "Open VisCon1 alerts" in sent["text"]
 
 
-def test_company_tagline_and_copyright_footer(logged_in, client):
+def test_copyright_footer_without_tagline(logged_in, client):
     from datetime import datetime
     footer = f"&copy; {datetime.now().year} Hatteras Security Group, LLC. All rights reserved."
     login = client.get("/login").text
-    assert "A product of Hatteras Security Group, LLC" in login and footer in login
+    assert footer in login and "A product of" not in login
     page = logged_in.get("/").text
-    assert "A product of Hatteras Security Group, LLC" in page and footer in page
+    assert footer in page and "A product of" not in page
