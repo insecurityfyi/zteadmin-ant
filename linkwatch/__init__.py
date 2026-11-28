@@ -8,3 +8,4 @@ __version__ = "0.1.0"
 
 APP_NAME = "VisCon1"
 APP_FULL_NAME = "Visibility and Control One"
+COMPANY = "Hatteras Security Group, LLC"

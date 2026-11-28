@@ -1,5 +1,5 @@
 <!doctype html>
-{% from "_brand.html" import logo, head_icons with context %}
+{% from "_brand.html" import logo, head_icons, footer with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}">
 <head>
 <meta charset="utf-8">
@@ -58,6 +58,7 @@
 </div>
 <div id="termwrap"><div id="term"></div></div>
 {% if not error %}
+{{ footer() }}
 <script id="target" type="application/json">{{ target|tojson }}</script>
 <script src="/static/vendor/xterm/xterm.js?v={{ version }}"></script>
 <script src="/static/vendor/xterm/addon-fit.js?v={{ version }}"></script>

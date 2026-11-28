@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from starlette.middleware.sessions import SessionMiddleware
 
-from .. import APP_FULL_NAME, APP_NAME, __version__
+from .. import APP_FULL_NAME, APP_NAME, COMPANY, __version__
 from .config import Config
 from .db import Database
 from .gateway import Hub
@@ -132,7 +132,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     hub = Hub(db, vault, notifier, config.poll_interval)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     from .themes import logo_for
-    templates.env.globals.update(app_name=APP_NAME, app_full_name=APP_FULL_NAME, logo_for=logo_for)
+    templates.env.globals.update(app_name=APP_NAME, app_full_name=APP_FULL_NAME, company=COMPANY, logo_for=logo_for,
+                                 current_year=lambda: datetime.now().year)
     def missing_is_none(fn):
         # a key an integration didn't send renders as "–", not a template error
         return lambda v, *a: fn(None if isinstance(v, jinja2.Undefined) else v, *a)

@@ -1,5 +1,5 @@
 <!doctype html>
-{% from "_brand.html" import logo, head_icons with context %}
+{% from "_brand.html" import logo, head_icons, footer with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}">
 <head>
 <meta charset="utf-8">
@@ -91,6 +91,7 @@
 <div id="screen" tabindex="0"></div>
 
 {% if target %}
+{{ footer() }}
 <script id="target" type="application/json">{{ target|tojson }}</script>
 <script src="/static/vendor/guacamole/guacamole-common.min.js?v={{ version }}"></script>
 <script src="/static/rdp.js?v={{ version }}"></script>
