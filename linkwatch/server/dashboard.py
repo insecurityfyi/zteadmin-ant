@@ -33,6 +33,7 @@ from .models import (
     User,
     utcnow,
 )
+from .speedtest import METRICS as SPEED_METRICS
 from .themes import theme_for
 from .web import back, flash, render, st
 
@@ -45,7 +46,7 @@ MAX_WIDGETS = 40
 class Opt:
     name: str
     label: str
-    kind: str = "select"            # select | number | text | device | port | site
+    kind: str = "select"            # select | number | text | device | port | site | poller
     choices: tuple = ()
     default: Any = ""
 
@@ -235,6 +236,17 @@ def load_device_table(s: Session, o: dict) -> dict:
     return {"devices": rows, "per_page": _limit(o, 10)}
 
 
+def load_speedtest(s: Session, o: dict) -> dict:
+    """Speed tests per ISP: the latest result and 7-day average for each, and one metric's history."""
+    from . import speedtest
+    metric = o.get("metric") if o.get("metric") in speedtest.METRICS else "download"
+    pid = _int(o.get("poller_id"))
+    isps = speedtest.isp_summary(s, pid)
+    m = speedtest.METRICS[metric]
+    return {"isps": isps, "metric": metric, "label": m[1], "unit": m[2], "poller_id": pid,
+            "series": [g["spec"] for g in isps], "chart": o.get("chart") != "off"}
+
+
 def load_note(s: Session, o: dict) -> dict:
     return {"text": str(o.get("text") or "")[:2000]}
 
@@ -272,6 +284,12 @@ WIDGETS: dict[str, Widget] = {
                           [Opt("ports", "Ports", choices=(("", "Every monitored port"), ("edge", "Routers and firewalls only"))),
                            Opt("size", "Height", choices=(("", "Normal"), ("tall", "Tall (spans two rows)")))]),
     "health": Widget("Overall health", 4, load_health, "A 0-100 score from devices up and open alerts."),
+    "speedtest": Widget("Speed tests by ISP", 6, load_speedtest,
+                        "Download, upload, latency, jitter and loss from your pollers' scheduled speed tests, per ISP, with history.",
+                        [Opt("metric", "Graph", choices=tuple((k, v[1]) for k, v in SPEED_METRICS.items()),
+                             default="download"),
+                         Opt("chart", "Show graph", choices=(("", "Yes"), ("off", "No, table only"))),
+                         Opt("poller_id", "Poller", "poller")]),
     "device_table": Widget("Devices", 12, load_device_table, "Every device with status, site, poller, CPU, memory and last poll; searchable, a page at a time.",
                            [Opt("limit", "Rows per page", "number", default=10)]),
 }
@@ -363,10 +381,11 @@ def dashboard(request: Request, edit: int = 0):
         pollers = s.scalar(select(func.count(Poller.id)).where(Poller.revoked.is_(False))) or 0
         interval = st(request).hub.interval(s)
         pick_devices = s.execute(select(Device.id, Device.hostname).order_by(Device.hostname).limit(3000)).all()
+        pick_pollers = s.execute(select(Poller.id, Poller.name).where(Poller.revoked.is_(False)).order_by(Poller.name)).all()
     return render(request, "dashboard.html", {
         "widgets": widgets, "layout_source": source, "headline": headline, "n_devices": n_devices, "n_sites": n_sites,
         "pollers": pollers, "interval": interval, "edit": bool(edit), "catalog": WIDGETS, "widths": WIDTHS,
-        "site_names": sites, "pick_devices": pick_devices, "layout_json": json.dumps(layout),
+        "site_names": sites, "pick_devices": pick_devices, "pick_pollers": pick_pollers, "layout_json": json.dumps(layout),
     })
 
 

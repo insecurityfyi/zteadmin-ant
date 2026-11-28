@@ -55,6 +55,7 @@ class Poller(Base):
     integrations: Mapped[list | None] = mapped_column(JSON)    # integration kinds its image supports (None = too old to say)
     features: Mapped[list | None] = mapped_column(JSON)        # optional tools its image has, e.g. ["mtr"]
     build: Mapped[str | None] = mapped_column(String(64))       # image build id (e.g. sha-0123abcd4567), "dev" for local builds
+    speedtest: Mapped[dict | None] = mapped_column(JSON)       # speed test schedule and lanes (see speedtest.py)
 
 
 class PollerCommand(Base):
@@ -481,6 +482,34 @@ class PathResult(Base):
     path_hash: Mapped[str | None] = mapped_column(String(16))
     asns: Mapped[list | None] = mapped_column(JSON)            # AS path, consecutive duplicates removed
     changed: Mapped[str | None] = mapped_column(String(8))     # route | asn, compared with the previous run
+
+
+class SpeedTest(Base):
+    """One speed test run by a poller on one lane (the default route, or bound to a source address)."""
+    __tablename__ = "speed_tests"
+    __table_args__ = (Index("ix_speedtest_ts", "ts"), Index("ix_speedtest_poller_ts", "poller_id", "ts"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poller_id: Mapped[int] = mapped_column(ForeignKey("pollers.id", ondelete="CASCADE"))
+    ts: Mapped[datetime] = mapped_column(DateTime)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False)       # not run: monthly data cap
+    error: Mapped[str | None] = mapped_column(String(500))
+    trigger: Mapped[str] = mapped_column(String(10), default="schedule")  # schedule | manual
+    lane: Mapped[str] = mapped_column(String(64), default="default")   # "default" or the bound source address
+    isp: Mapped[str | None] = mapped_column(String(80))
+    isp_source: Mapped[str | None] = mapped_column(String(12))          # manual | range | map | lookup | speedtest
+    public_ip: Mapped[str | None] = mapped_column(String(45))
+    org: Mapped[str | None] = mapped_column(String(120))
+    server: Mapped[str | None] = mapped_column(String(120))
+    server_url: Mapped[str | None] = mapped_column(String(300))
+    download_mbps: Mapped[float | None] = mapped_column(Float)
+    upload_mbps: Mapped[float | None] = mapped_column(Float)
+    ping_ms: Mapped[float | None] = mapped_column(Float)
+    jitter_ms: Mapped[float | None] = mapped_column(Float)
+    loss_pct: Mapped[float | None] = mapped_column(Float)
+    latency_from: Mapped[str | None] = mapped_column(String(8))         # icmp | http
+    bytes_used: Mapped[int | None] = mapped_column(BigInteger)
+    duration_s: Mapped[float | None] = mapped_column(Float)
 
 
 class AsnInfo(Base):

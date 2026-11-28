@@ -115,6 +115,8 @@ def rollup_and_prune(app_state) -> None:
             s.execute(delete(model).where(model.hourly.is_(True), model.ts < hourly_cut))
         from .paths import prune
         prune(s)
+        from .speedtest import prune as prune_speedtests
+        prune_speedtests(s)
     log.info("Rollup done up to %s", hour_end)
 
 

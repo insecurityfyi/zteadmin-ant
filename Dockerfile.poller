@@ -1,4 +1,17 @@
 # VisCon1 remote poller (runs on your LAN; outbound HTTPS only)
+
+# librespeed-cli for scheduled speed tests (LGPL-3.0, https://github.com/librespeed/speedtest-cli), built from the
+# tagged module source; the Go module proxy and checksum database verify what is downloaded. Cross-compiled on the
+# build host for each target platform, so the multi-arch build doesn't run Go under emulation.
+# Ookla's speedtest CLI is not used: its licence doesn't allow redistributing it in an image.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS librespeed
+ARG TARGETOS
+ARG TARGETARCH
+ARG LIBRESPEED_VERSION=v1.0.15
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} GOFLAGS=-trimpath \
+    go install -ldflags "-s -w" github.com/librespeed/speedtest-cli@${LIBRESPEED_VERSION} \
+ && install -D "$(find /go/bin -type f -name speedtest-cli | head -n1)" /out/librespeed-cli
+
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LW_DATA_DIR=/var/lib/linkwatch
 # ping gets cap_net_raw as *permitted* only (not effective): with --cap-add=NET_RAW it opens raw ICMP sockets,
@@ -7,6 +20,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LW_DATA_DIR=/var/lib/linkwatch
 RUN apt-get update && apt-get install -y --no-install-recommends iputils-ping mtr-tiny libcap2-bin \
  && setcap cap_net_raw+p /usr/bin/ping && setcap cap_net_raw+ep /usr/bin/mtr-packet \
  && apt-get purge -y libcap2-bin && rm -rf /var/lib/apt/lists/*
+COPY --from=librespeed /out/librespeed-cli /usr/local/bin/librespeed-cli
 WORKDIR /srv
 COPY linkwatch/requirements-poller.txt ./
 RUN pip install --no-cache-dir -r requirements-poller.txt

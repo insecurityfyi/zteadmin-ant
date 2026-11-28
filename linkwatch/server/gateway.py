@@ -128,8 +128,10 @@ class Hub:
                 if cls and cls.runs_on == "poller":
                     integrations.append({"id": i.id, "kind": i.kind, "config": self.vault.open(i.config_enc)})
             from .paths import poller_probes
+            from .speedtest import poller_config
+            poller = s.get(Poller, poller_id)
             return {"type": "config", "interval": self.interval(s), "devices": devices, "integrations": integrations,
-                    "probes": poller_probes(s, poller_id)}
+                    "probes": poller_probes(s, poller_id), "speedtest": poller_config(s, poller) if poller else None}
 
     async def push_config(self, poller_id: int) -> None:
         ws = self.conns.get(poller_id)
@@ -330,6 +332,8 @@ class Hub:
             s.query(ProcessedBatch).filter(ProcessedBatch.at < utcnow() - timedelta(days=7)).delete()
         if alerter:
             self.notifier.dispatch(alerter.events)
+        if alerter is not None and any(i.get("kind") == "speedtest" for i in batch.get("items") or [] if isinstance(i, dict)):
+            self.push_config_soon(poller_id)      # this month's data used changed: refresh each lane's remaining budget
 
     def _discovery(self, poller_id: int, msg: dict) -> None:
         if self._discovery_update(poller_id, msg):
