@@ -1,6 +1,6 @@
 {#- VisCon1 logo and icons. Each theme has its own logo (themes.THEME_LOGO); "auto" swaps light/dark with the device.
     Under prefers-reduced-motion the static SVG is shown (the animated SVGs also stop on their own). -#}
-{% macro _src(f, still=False) %}/static/brand/viscon1-{{ f }}{{ '-static' if still }}.svg?v={{ version }}{% endmacro %}
+{% macro _src(f, still=False) %}/static/brand/viscon1-{{ f }}{{ '-static' if still }}.svg?v={{ asset_version }}{% endmacro %}
 
 {% macro logo(theme, size=24) -%}
 {%- set f = logo_for(theme) -%}
@@ -21,14 +21,14 @@
 {%- set f = logo_for(theme) -%}
 {%- set png = 'dark' if f == 'auto' else f -%}
 <meta name="application-name" content="{{ app_name }}">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-{{ png }}-32.png?v={{ version }}">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-{{ png }}-32.png?v={{ asset_version }}">
 {% if f == 'auto' -%}
 <link rel="icon" type="image/svg+xml" href="{{ _src('light', True) }}" media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/svg+xml" href="{{ _src('dark', True) }}" media="(prefers-color-scheme: dark)">
 {%- else -%}
 <link rel="icon" type="image/svg+xml" href="{{ _src(f, True) }}">
 {%- endif %}
-<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon-{{ png }}.png?v={{ version }}">
+<link rel="apple-touch-icon" href="/static/brand/apple-touch-icon-{{ png }}.png?v={{ asset_version }}">
 <link rel="manifest" href="/manifest.webmanifest">
 {% if f == 'auto' -%}
 <meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">

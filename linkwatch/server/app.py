@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
+import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -30,6 +32,23 @@ from .users import audit, sync_admin_from_env
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
 PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest", "/sw.js", "/offline")
+BUILD = os.environ.get("LW_BUILD") or "dev"     # the commit the image was built from (deploy/update.sh sets it)
+
+
+def asset_version(static: Path | None = None) -> str:
+    """A short hash of everything under /static, used as the ``?v=`` on script and stylesheet links.
+
+    It changes whenever any file there changes, so a browser that cached last release's map.js or app.css
+    fetches the new one after a deploy instead of running the old copy.
+    """
+    static = static or HERE / "static"
+    h = hashlib.sha256()
+    for f in sorted(static.rglob("*")):
+        if f.is_file():
+            h.update(f.relative_to(static).as_posix().encode())
+            h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
@@ -144,7 +163,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         num=lambda n: f"{int(n or 0):,}", pct=lambda v: "–" if v is None else f"{v:.0f}%").items()})
     from . import gateway
     gateway.PUBLIC_URL = config.public_url.rstrip("/")
-    templates.env.globals.update(version=__version__, public_url=config.public_url, update_command=gateway.update_command)
+    templates.env.globals.update(version=__version__, build=BUILD, asset_version=asset_version(), public_url=config.public_url, update_command=gateway.update_command)
     state = AppState(config, db, vault, notifier, hub, templates)
 
     sync_admin_from_env(db, config.admin_password)
@@ -223,7 +242,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     def healthz():
         with db.session() as s:
             s.execute(text("SELECT 1"))
-        return {"ok": True, "version": __version__}
+        return {"ok": True, "version": __version__, "build": BUILD}
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, next: str = "/"):

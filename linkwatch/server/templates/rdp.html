@@ -8,7 +8,7 @@
 {{ head_icons(theme|default('auto')) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 <style>
   html,body{height:100%}
   body{display:flex;flex-direction:column;overflow:hidden}
@@ -93,8 +93,8 @@
 {% if target %}
 {{ footer() }}
 <script id="target" type="application/json">{{ target|tojson }}</script>
-<script src="/static/vendor/guacamole/guacamole-common.min.js?v={{ version }}"></script>
-<script src="/static/rdp.js?v={{ version }}"></script>
+<script src="/static/vendor/guacamole/guacamole-common.min.js?v={{ asset_version }}"></script>
+<script src="/static/rdp.js?v={{ asset_version }}"></script>
 {% endif %}
 </body>
 </html>

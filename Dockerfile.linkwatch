@@ -5,6 +5,9 @@ WORKDIR /srv
 COPY linkwatch/requirements-server.txt linkwatch/requirements-poller.txt ./
 RUN pip install --no-cache-dir -r requirements-server.txt -r requirements-poller.txt
 COPY linkwatch ./linkwatch
+# the commit this image was built from; shown in the sidebar and at /healthz
+ARG LW_BUILD=dev
+ENV LW_BUILD=${LW_BUILD}
 RUN useradd --create-home --uid 10001 linkwatch \
  && mkdir -p /var/lib/linkwatch/nss && chown -R linkwatch /var/lib/linkwatch
 # Zscaler Cloud NSS logs (size-capped; see docs/zscaler-cloud-nss.md). Mount the linkwatch-nss volume here.
