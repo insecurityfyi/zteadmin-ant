@@ -22,36 +22,64 @@ import time
 from typing import Any, ClassVar
 
 from .base import Field, IntegrationError, Record
-from .sse import SSEIntegration, counts, is_ai, num, section_fields, status_of
+from .cloudflare_extra import L7_TYPE, CloudflareExtras
+from .sse import (
+    SLOW_SECTIONS,
+    SSEIntegration,
+    counts,
+    is_ai,
+    num,
+    section_fields,
+    status_of,
+)
 
 BASE = "https://api.cloudflare.com/client/v4"
-SECTIONS = ["sites", "private", "users", "policy", "apps", "dlp"]
-LABELS = {"sites": "Magic WAN tunnels", "private": "Cloudflare Tunnels", "users": "WARP devices", "policy": "Gateway & Access"}
+SECTIONS = ["sites", "private", "users", "policy", "gateway", "access", "dex", "apps", "dlp", "zones", "audit"]
+LABELS = {"sites": "Magic WAN", "private": "Cloudflare Tunnels", "users": "WARP devices", "policy": "Gateway & Access rules",
+          "gateway": "Gateway", "access": "Access", "dex": "DEX & posture", "zones": "Zones", "audit": "Audit log"}
+HELP = {
+    "sites": "Magic WAN IPsec and GRE tunnels with health, sites, connectors, routes and Magic Firewall. Leave off unless you use Magic WAN.",
+    "gateway": "DNS, HTTP and network traffic by decision for 24 hours, top blocked domains and categories, locations, lists, settings.",
+    "access": "Access apps, policies, identity providers, groups, service token expiry and 24 hours of login events.",
+    "dex": "DEX fleet status and tests, device posture rules and WARP device profiles.",
+    "zones": "Every zone in the account: status, plan, SSL and security settings, DNS record count, yesterday's traffic and security events. Refreshed hourly.",
+    "audit": "The account audit log for the last 24 hours.",
+}
 TUNNEL_STATUS = {"healthy": "up", "degraded": "warn", "down": "down", "inactive": "off"}
-L7_TYPE = "AccountGatewayL7RequestsAdaptiveGroupsDimensions"
 
 
-class Cloudflare(SSEIntegration):
+class Cloudflare(CloudflareExtras, SSEIntegration):
     kind = "cloudflare"
     label = "Cloudflare Zero Trust"
     vendor = "Cloudflare"
-    description = "API v4: Cloudflare Tunnels, Magic WAN tunnels, WARP devices, Gateway and Access policies, app and AI usage, DLP profiles."
+    description = ("API v4 and GraphQL analytics: Cloudflare Tunnels, Magic WAN, WARP devices, DEX and posture, Gateway traffic and rules, "
+                   "Access apps and logins, app and AI usage, DLP, zones and the audit log.")
     sections = SECTIONS
     labels = LABELS
+    slow: ClassVar[dict[str, int]] = {**SLOW_SECTIONS, "zones": 3600, "gateway": 900}
     gaps: ClassVar[dict[str, list[tuple[str, str]]]] = {
         "sites": [("Magic WAN tunnel health, where the health-check dataset isn't available", "Health checks are only in GraphQL analytics on Magic WAN plans; otherwise tunnels show their configuration.")],
-        "users": [("Device posture results", "Posture checks are configured over the API, but per-device results are only in logs (Logpush).")],
-        "policy": [("Rule hit counts per rule", "Gateway analytics count by action, not by rule, over the API.")],
         "apps": [("Prompts sent to AI apps", "Captured only with Gateway's AI prompt logging, into logs (Logpush), not the analytics API."),
                  ("Per-app user counts", "Gateway HTTP analytics are sampled request counts; distinct users per app need Logpush.")],
         "dlp": [("DLP incidents and matched content", "DLP matches are recorded in Gateway HTTP logs (Logpush / Log Explorer), not in an incidents API.")],
+        "gateway": [("Individual DNS, HTTP and network log lines", "The analytics API returns sampled counts. Per-request logs (user, device, policy matched) need Logpush or Log Explorer."),
+                    ("Which rule blocked a request", "Counts are by decision or action, not by rule.")],
+        "access": [("More than 1,000 logins a day", "Only the latest 1,000 login events in 24 hours are read; the counts say when they are capped.")],
+        "dex": [("Per-test result history per device", "DEX's per-test endpoints are per test and per time window; the tab shows the overview figures only."),
+                ("Remote captures and packet traces", "Started and viewed in the dashboard.")],
+        "zones": [("Settings beyond the first 50 zones", "To stay inside API rate limits, DNS counts, settings and traffic are read for the first 50 zones only."),
+                  ("Individual WAF events", "Security events are counted by source and action for 24 hours; event detail needs Security Events in the dashboard or Logpush.")],
+        "audit": [("Older than 24 hours", "The tab reads the last day; the dashboard keeps 18 months.")],
+        "policy": [("Rule hit counts per rule", "Gateway analytics count by action, not by rule, over the API.")],
+        "users": [("Device posture results", "Posture checks are configured over the API, but per-device results are only in logs (Logpush)."),
+                  ("CASB findings", "Cloudflare's CASB (API-driven SaaS scanning) findings aren't in the public API yet; review them under Zero Trust > CASB."),
+                  ("Email security (Area 1) detections", "A separate product with its own API; not included.")],
     }
     fields: ClassVar[list[Field]] = [
         Field("account_id", "Account ID", help="On the account's Overview page in the dashboard, or in the URL after dash.cloudflare.com/."),
         Field("api_token", "API token", "password",
-              help="API Tokens > Create custom token with read permissions listed in the setup guide (Zero Trust, Cloudflare Tunnel, Magic WAN, Account Analytics, DLP)."),
-        *section_fields(SECTIONS, LABELS, defaults={"sites": False},
-                        help={"sites": "Magic WAN IPsec and GRE tunnels. Leave off unless you use Magic WAN."}),
+              help="A custom token with the read permissions listed in the setup guide. Areas whose permission is missing show their own error."),
+        *section_fields(SECTIONS, LABELS, defaults={"sites": False}, help=HELP),
         SSEIntegration.ai_category_field(),
     ]
 
@@ -62,12 +90,18 @@ class Cloudflare(SSEIntegration):
     def auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.secret('api_token')}", "Accept": "application/json"}
 
-    def api(self, path: str, params: dict | None = None, what: str | None = None) -> Any:
+    base = BASE
+
+    def api(self, path: str, params: dict | None = None, what: str | None = None, max_pages: int = 50) -> Any:
         """GET /accounts/{id}<path> -> result, following page-based pagination."""
+        return self.api_root(f"/accounts/{self.acct}{path}", params, what, max_pages)
+
+    def api_root(self, path: str, params: dict | None = None, what: str | None = None, max_pages: int = 50) -> Any:
+        """GET <path> under /client/v4 (zones live outside /accounts) -> result, paginated."""
         out: list = []
         page = 1
-        while page <= 50:
-            body = self.request("GET", f"{BASE}/accounts/{self.acct}{path}", params={**(params or {}), "page": page, "per_page": 100}, what=what) or {}
+        while page <= max_pages:
+            body = self.request("GET", f"{BASE}{path}", params={**(params or {}), "page": page, "per_page": 100}, what=what) or {}
             if body.get("success") is False:
                 errs = body.get("errors") or [{}]
                 raise IntegrationError(f"{what or path}: {str(errs[0].get('message') if isinstance(errs[0], dict) else errs[0])[:200]}")
@@ -81,6 +115,14 @@ class Cloudflare(SSEIntegration):
                 break
             page += 1
         return out
+
+    def dims(self, type_name: str) -> set[str]:
+        """Dimension names a GraphQL analytics node offers on this account, looked up once per sync."""
+        cache = self.__dict__.setdefault("_dims", {})
+        if type_name not in cache:
+            got = self.gql(f'query {{ __type(name: "{type_name}") {{ fields {{ name }} }} }}', {}, "analytics schema")
+            cache[type_name] = {f["name"] for f in (got.get("__type") or {}).get("fields") or [] if isinstance(f, dict)}
+        return cache[type_name]
 
     def gql(self, query: str, variables: dict, what: str) -> dict:
         body = self.request("POST", f"{BASE}/graphql", json={"query": query, "variables": variables}, what=what) or {}
@@ -109,8 +151,9 @@ class Cloudflare(SSEIntegration):
             raise IntegrationError("Magic WAN didn't answer (" + "; ".join(self.data["unavailable"][-2:])[:240] + "). Turn this area off if you don't use Magic WAN.")
         if items:
             self.optional("Magic WAN tunnel health", lambda: self._tunnel_health(items))
-        self.data["sites"] = {"items": items}
-        return self.site_records(items, "Magic WAN tunnel")
+        magic = self.magic_extras()
+        self.data["sites"] = {"items": items, "magic": magic}
+        return self.site_records(items, "Magic WAN tunnel") + self.connector_records(magic)
 
     def _tunnel_health(self, items: list[dict]) -> None:
         q = """query h($a: String!, $s: Time!) { viewer { accounts(filter: {accountTag: $a}) {
@@ -144,8 +187,9 @@ class Cloudflare(SSEIntegration):
                           "version": ", ".join(versions) or None, "ip": ", ".join(sorted({str(c.get("origin_ip")) for c in conns if c.get("origin_ip")}))[:80] or None,
                           "location": ", ".join(colos) or None, "last_seen": t.get("conns_active_at") or t.get("conns_inactive_at"),
                           "detail": f"{len(conns)} connections" + (f" to {', '.join(colos)}" if colos else "")})
-        routes = self.optional("Private network routes", lambda: len(self.api("/teamnet/routes", {"is_deleted": "false"}, "tunnel routes") or []))
-        self.data["private"] = {"items": items, "apps": routes, "label": "Cloudflare Tunnels", "apps_label": "private network routes"}
+        extra = self.route_extras()
+        routes = len(extra["routes"]) if extra.get("routes") is not None else None
+        self.data["private"] = {"items": items, "apps": routes, "label": "Cloudflare Tunnels", "apps_label": "private network routes", **extra}
         return self.private_records(items, "Cloudflare Tunnel")
 
     def collect_users(self) -> list[Record]:
@@ -194,8 +238,7 @@ class Cloudflare(SSEIntegration):
         app_names = {str(t.get("id")): t.get("name") for t in types if t.get("application_type_id") is not None}
         type_names = {str(t.get("id")): t.get("name") for t in types if t.get("application_type_id") is None}
         app_type = {str(t.get("id")): type_names.get(str(t.get("application_type_id"))) for t in types if t.get("application_type_id") is not None}
-        dims = {f["name"] for f in ((self.gql(f'query {{ __type(name: "{L7_TYPE}") {{ fields {{ name }} }} }}', {}, "Gateway analytics schema")
-                                     .get("__type") or {}).get("fields") or [])}
+        dims = self.dims(L7_TYPE)
         app_dim = next((d for d in ("httpApplicationIds", "applicationIds", "appIds") if d in dims), None)
         host_dim = "httpHost" if "httpHost" in dims else None
         if not app_dim and not host_dim:

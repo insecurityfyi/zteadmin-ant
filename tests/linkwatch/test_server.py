@@ -269,6 +269,20 @@ def test_sse_integration_pages(logged_in, app):
             assert "pub-dc1" in inv and "Dallas HQ" not in inv
     for kind in SSE_KINDS:
         assert logged_in.get(f"/integrations/new?kind={kind}").status_code == 200
+    cf = ids["cloudflare"]
+    assert {(cf, k) for k in ("gateway:dns", "access:logins", "zones:traffic")} <= keys
+    for tab, texts in [("gateway", ["www.badsite.com", "Security risks", "HQ office", "TLS decryption", "Allowed AI"]),
+                       ("access", ["wiki.contoso.com", "ci-runner", "in 10 days", "Entra ID", "eve@example.com", "Engineering"]),
+                       ("dex", ["M365 reachability", "91.5%", "Disk encrypted", "CrowdStrike", "Contractors"]),
+                       ("zones", ["contoso.com", "flexible", "waf: block"]),
+                       ("audit", ["admin@contoso.com", "rule update", "Block AI"]),
+                       ("sites", ["Dallas branch", "SN-0001", "10.1.0.0/16", "Allow ICMP"]),
+                       ("private", ["10.50.0.0/16", "Virtual networks"])]:
+        page = logged_in.get(f"/integrations/{cf}/overview?tab={tab}").text
+        for t in texts:
+            assert t in page, (tab, t)
+    assert "Zones</a>" in logged_in.get(f"/integrations/{cf}/overview").text
+    assert "Dallas branch" not in logged_in.get(f"/integrations/{ids['netskope']}/overview?tab=sites").text
 
 
 def test_sse_pages_with_sparse_data(logged_in, app):

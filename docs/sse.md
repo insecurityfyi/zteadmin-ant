@@ -35,6 +35,10 @@ Access", Cloudflare's is "Cloudflare Tunnels").
 | Apps & AI | Generative AI apps (users, events, data, sanctioned, policy) and all apps | AI data and users |
 | DLP | Incidents by severity and recent incidents where exposed; profiles and the rules that apply them | Incidents and incidents on AI apps |
 
+A platform can add tabs of its own. Cloudflare adds **Gateway**, **Access**, **DEX &
+posture**, **Zones** and **Audit log**, plus Magic WAN and tunnel-route panels on the
+shared tabs; see [cloudflare-zero-trust.md](cloudflare-zero-trust.md).
+
 Each tab ends with **"Not available through <vendor>'s API"**, listing what the console
 has but the API doesn't, and where to get it instead (usually log streaming to a SIEM).
 

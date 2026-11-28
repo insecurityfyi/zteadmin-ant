@@ -157,3 +157,39 @@ for _k, _v in SSE_KINDS.items():
     RECORDS[_k] = [{"external_id": "sites-s1", "hostname": "Dallas HQ", "type": _v, "status": "up", "extra": {"product": "sites"}},
                    {"external_id": "sites-s2", "hostname": "Austin Lab", "type": _v, "status": "down", "extra": {"product": "sites"}},
                    {"external_id": "private-p1", "hostname": "pub-dc1", "type": _v, "status": "up", "extra": {"product": "private"}}]
+
+# Cloudflare's own tabs on top of the shared SSE sample
+DATA["cloudflare"]["products"].update({k: {"ok": True, "objects": 1} for k in ("gateway", "access", "dex", "zones", "audit")})
+DATA["cloudflare"]["labels"].update({"gateway": "Gateway", "access": "Access", "dex": "DEX & posture", "zones": "Zones", "audit": "Audit log"})
+DATA["cloudflare"].update({
+    "metrics": [["gateway:dns", 940, 40, None], ["access:logins", 1, 1, None], ["zones:traffic", 10000, 12, 6000]],
+    "gateway": {"window": "24 hours",
+                "dns": {"total": 940, "blocked": 40, "by_decision": [["allowedOnNoPolicyMatch", 900], ["blockedByCategory", 30]],
+                        "top_blocked": [["www.badsite.com", 30]], "top_blocked_categories": [["Security risks", 40]]},
+                "http": {"total": 520, "blocked": 20, "by_decision": [["allow", 500], ["block", 20]], "top_blocked": [["chat.deepseek.com", 20]]},
+                "network": None, "locations": [{"name": "HQ office", "default": True, "networks": ["203.0.113.0/24"], "doh": "abc123", "ecs": False}],
+                "lists": [{"name": "Allowed AI", "type": "DOMAIN", "count": 4}], "proxy_endpoints": None,
+                "settings": [["TLS decryption", True], ["Activity logging", False]]},
+    "access": {"apps": [{"name": "Wiki", "domain": "wiki.contoso.com", "type": "self_hosted", "policies": ["Staff"], "session": "24h", "idps": "all"}],
+               "policies": [{"name": "Staff", "decision": "allow", "apps": 3, "include": "email domain: contoso.com", "require": "", "exclude": ""}],
+               "idps": [{"name": "Entra ID", "type": "azureAD", "scim": True}], "groups": [{"name": "Engineering", "include": "email: a@contoso.com"}],
+               "service_tokens": [{"name": "ci-runner", "expires": "2026-12-08T00:00:00Z", "days": 10, "status": "warn"}],
+               "org": {"name": "Contoso", "auth_domain": "contoso.cloudflareaccess.com", "session": "24h"},
+               "logins": {"allowed": 1, "denied": 1, "top_denied_users": [["eve@example.com", 1]], "by_app": [["wiki.contoso.com", 2]], "capped": False,
+                          "recent": [{"time": "2026-11-27T10:00:00Z", "user": "eve@example.com", "app": "wiki.contoso.com", "allowed": False, "ip": "198.51.100.9"}]}},
+    "dex": {"fleet": {"total": 120, "by_status": [["connected", 100], ["disconnected", 20]], "by_platform": [["windows", 90]], "by_version": [["2024.9", 120]],
+                      "by_colo": [], "by_mode": []},
+            "tests": [{"name": "M365 reachability", "kind": "http", "host": "https://outlook.office.com", "enabled": True, "availability": 91.5, "fetch_ms": 210}],
+            "posture": [{"name": "Disk encrypted", "type": "disk_encryption", "platforms": ["mac", "windows"]}],
+            "posture_integrations": [{"name": "CrowdStrike", "type": "crowdstrike_s2s", "interval": "10m"}],
+            "profiles": [{"name": "Contractors", "mode": "proxy", "match": "identity.groups.name in {\"Contractors\"}", "locked": True, "enabled": True}]},
+    "zones": {"items": [{"id": "z1", "name": "contoso.com", "status": "active", "paused": False, "plan": "Pro Plan", "ssl": "flexible", "min_tls": "1.2",
+                         "https": "on", "records": 42, "requests": 10000, "cached": 6000, "threats": 12, "events": [["waf: block", 7]]}], "capped": False},
+    "audit": {"events": [{"time": "2026-11-27T09:00:00Z", "actor": "admin@contoso.com", "action": "rule_update", "ok": True, "resource": "gateway_rule",
+                          "detail": "Block AI", "interface": "UI"}], "by_actor": [["admin@contoso.com", 1]], "by_action": [["rule_update", 1]], "failed": 0},
+})
+DATA["cloudflare"]["sites"]["magic"] = {"sites": [{"name": "Dallas branch", "ha": True}], "connectors": [{"id": "mc1", "serial": "SN-0001", "activated": True}],
+                                        "routes": [{"prefix": "10.1.0.0/16", "nexthop": "10.200.0.0", "priority": 100}],
+                                        "firewall": [{"order": 1, "description": "Allow ICMP", "action": "skip", "enabled": True, "expression": "ip.proto eq \"icmp\""}]}
+DATA["cloudflare"]["private"].update({"routes": [{"network": "10.50.0.0/16", "tunnel": "dc1", "vnet": "default"}], "vnets": [{"name": "default", "default": True}],
+                                      "hostnames": None})
