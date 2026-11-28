@@ -86,7 +86,7 @@ def test_map_merges_places_api_devices_and_shows_speeds_and_wans(logged_in, app)
         ids = {"core": core.id, "dist": dist.id, "gw": gw.id, "pve": host.id, "fw": fw.id}
     m = logged_in.get("/ui/map").json()
     nodes = _by_name(m)
-    assert sorted(nodes) == ["Internet", "dist-sw", "lab-sw01", "pa-440", "pve1", "zlabcgwm"]       # one lab-sw01
+    assert sorted(nodes) == ["Cable", "Fiber Co", "LTE", "dist-sw", "lab-sw01", "pa-440", "pve1", "zlabcgwm"]   # one lab-sw01
     assert {x["source"] for x in nodes["lab-sw01"]["merged"]} == {"snmp", "UniFi"}
     links = {frozenset((str(l["source"]), str(l["target"]))): l for l in m["links"] if l["protocol"] != "wan"}
     trunk = links[frozenset((str(ids["core"]), str(ids["dist"])))]
@@ -97,9 +97,25 @@ def test_map_merges_places_api_devices_and_shows_speeds_and_wans(logged_in, app)
     assert links[frozenset((str(ids["core"]), str(ids["fw"])))]["a_port"] == "Port 8"                # PAN found by its MAC
     wans = sorted((l for l in m["links"] if l["protocol"] == "wan"), key=lambda l: l["wan"])
     assert [(l["source"], l["target"], l["wan"], l["speed_label"]) for l in wans] == [
-        (ids["gw"], "internet", "WAN1", "1G"), (ids["gw"], "internet", "WAN2", "500M"), (ids["gw"], "internet", "WAN3", "")]
+        (ids["gw"], "isp:fiber-co", "WAN1", "1G"), (ids["gw"], "isp:cable", "WAN2", "500M"), (ids["gw"], "isp:lte", "WAN3", "")]
     assert wans[0]["down_bps"] == 250e6 and wans[0]["util"] == 25.0 and wans[0]["isp"] == "Fiber Co" and wans[2]["up"] is False
-    # a site filter keeps the Internet cloud out when no gateway is in view
+    assert nodes["LTE"]["status"] == "down" and nodes["Fiber Co"]["isp"] and nodes["Fiber Co"]["kind"] == "fiber"
+    # name the ISP behind each WAN on the map page
+    page = logged_in.get("/map").text
+    assert "Internet uplinks and ISPs" in page and "zlabcgwm|wan1" in page
+    r = logged_in.post("/map/isps", data={"key": ["zlabcgwm|wan1", "zlabcgwm|wan2", "zlabcgwm|wan3"],
+                                          "isp": ["Brightspeed Fiber", "Spectrum Business", "Starlink Satellite"]}, follow_redirects=False)
+    assert r.status_code == 303
+    nodes = _by_name(logged_in.get("/ui/map").json())
+    assert {n: nodes[n]["kind"] for n in ("Brightspeed Fiber", "Spectrum Business", "Starlink Satellite")} == {
+        "Brightspeed Fiber": "fiber", "Spectrum Business": "cable", "Starlink Satellite": "satellite"}
+    assert "Fiber Co" not in nodes
+    # two WANs on one ISP share its circle; clearing a name goes back to what the gateway reports
+    logged_in.post("/map/isps", data={"key": ["zlabcgwm|wan2", "zlabcgwm|wan3"], "isp": ["Brightspeed Fiber", ""]})
+    m = logged_in.get("/ui/map").json()
+    assert sorted(n["name"] for n in m["nodes"] if n.get("isp")) == ["Brightspeed Fiber", "LTE"]
+    assert len([l for l in m["links"] if l["target"] == "isp:brightspeed-fiber"]) == 2
+    # a site filter keeps the ISPs out when no gateway is in view
     assert logged_in.get("/ui/map?site=Nowhere").json() == {"nodes": [], "links": []}
 
 

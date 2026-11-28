@@ -14,8 +14,9 @@ Links come from:
   API-only devices such as Proxmox hosts and Palo Alto firewalls get linked;
 * links an admin drew by hand (``protocol = "manual"``).
 
-Gateways get an Internet cloud with one link per WAN uplink: from UniFi WANs, Meraki appliance uplinks,
-pfSense/VyOS gateways, ports an admin marked as Internet uplinks, or ports whose name says WAN/Internet.
+Gateways get one link per WAN uplink: from UniFi WANs, Meraki appliance uplinks,
+pfSense/VyOS gateways, ports an admin marked as Internet uplinks, or ports whose name says WAN/Internet. Each
+WAN ends at a circle for its ISP: the name an admin gave that WAN on the map page, else the ISP the API reports.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ GUESTS = {"VM", "Container"}
 _NO_GROUP = GUESTS | {"VPN tunnel"}
 _NO_IP_KEY = {"Zscaler"}
 WAN_SETTING = "map_wan_ports"
-INTERNET = "internet"
+ISP_SETTING = "map_wan_isps"       # {"<gateway host>|<wan name>": "Brightspeed Fiber", ...}
 _WAN_NAME = re.compile(r"(^|[^a-z])(wan\d*|internet|isp\d*)([^a-z]|$)", re.IGNORECASE)
 _PORT_PREFIX = [("tengigabitethernet", "te"), ("twentyfivegige", "twe"), ("fortygigabitethernet", "fo"),
                 ("hundredgige", "hu"), ("gigabitethernet", "gi"), ("fastethernet", "fa"), ("ethernet", "eth"),
@@ -255,6 +256,46 @@ def set_wan_port(s: Session, port_id: int, on: bool) -> None:
     set_setting(s, WAN_SETTING, json.dumps(sorted(ids)))
 
 
+def wan_key(gateway: str | None, wan: str | None) -> str:
+    return f"{(gateway or '').strip().lower()}|{(wan or '').strip().lower()}"[:200]
+
+
+def isp_names(s: Session) -> dict[str, str]:
+    try:
+        v = json.loads(get_setting(s, ISP_SETTING) or "{}")
+        return {str(k): str(n) for k, n in v.items() if n} if isinstance(v, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def set_isp_names(s: Session, names: dict[str, str]) -> None:
+    """Set (or with an empty name, clear) the ISP shown for each WAN, keyed by ``wan_key``."""
+    cur = isp_names(s)
+    for k, n in names.items():
+        n = (n or "").strip()[:80]
+        if n:
+            cur[k[:200]] = n
+        else:
+            cur.pop(k[:200], None)
+    set_setting(s, ISP_SETTING, json.dumps(cur, sort_keys=True))
+
+
+def isp_kind(name: str) -> str:
+    """Which glyph an ISP circle gets: satellite, fiber, cable, cellular, or a plain globe."""
+    n = (name or "").lower()
+    for kind, words in (("satellite", ("starlink", "satellite", "viasat", "hughes", "oneweb", "kuiper")),
+                        ("cellular", ("lte", "5g", "4g", "cellular", "t-mobile", "verizon wireless", "mobile")),
+                        ("fiber", ("fiber", "fibre", "ftth", "fios", "brightspeed")),
+                        ("cable", ("cable", "spectrum", "comcast", "xfinity", "cox", "docsis", "optimum"))):
+        if any(w in n for w in words):
+            return kind
+    return "globe"
+
+
+def _isp_id(name: str) -> str:
+    return "isp:" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 def build_map(s: Session, site: str = "", external: bool = False, show_all: bool = False, hide_aps: bool = False) -> dict:
     devs = {d.id: d for d in s.scalars(select(Device).options(selectinload(Device.site), selectinload(Device.ports))
                                        .where(Device.disabled.is_(False)))}
@@ -366,11 +407,18 @@ def build_map(s: Session, site: str = "", external: bool = False, show_all: bool
             continue
         nodes.append(_node(head, rows))
     node_ids = {n["id"] for n in nodes}
-    out_links = [l for l in out_links if (l["source"] in node_ids or l["source"] in ghosts or l["source"] == INTERNET)
-                 and (l["target"] in node_ids or l["target"] in ghosts or l["target"] == INTERNET)]
+    isps: dict[str, dict] = {}
+    for l in out_links:
+        if l["protocol"] == "wan" and l["source"] in node_ids:
+            isps.setdefault(l["target"], {"id": l["target"], "name": l["isp_label"], "status": "up", "type": "ISP", "isp": True,
+                                          "kind": isp_kind(l.get("isp") or ""), "named": bool(l.get("isp")), "up": False})
+            isps[l["target"]]["up"] |= l.get("up") is not False
+    for n in isps.values():
+        n["status"] = "up" if n.pop("up") else "down"
+    out_links = [l for l in out_links if (l["source"] in node_ids or l["source"] in ghosts or l["source"] in isps)
+                 and (l["target"] in node_ids or l["target"] in ghosts or l["target"] in isps)]
     extra_nodes = [g for k, g in ghosts.items() if any(k in (l["source"], l["target"]) for l in out_links)]
-    if any(l["target"] == INTERNET for l in out_links):
-        extra_nodes.append({"id": INTERNET, "name": "Internet", "status": "up", "type": "Internet", "internet": True})
+    extra_nodes += list(isps.values())
     return {"nodes": nodes + extra_nodes, "links": out_links}
 
 
@@ -492,6 +540,7 @@ def _wan_links(s: Session, devs: dict[int, Device], rep: dict[int, int], idx: _I
                                               "ip": (iface or {}).get("ip") or gw.get("source"),
                                               "latency_ms": gw.get("delay_ms"), "loss_pct": gw.get("loss_pct")})
 
+    names = isp_names(s)
     out: list[dict] = []
     for g in set(marked) | set(api) | set(auto):
         if g not in in_view:
@@ -506,8 +555,13 @@ def _wan_links(s: Session, devs: dict[int, Device], rep: dict[int, int], idx: _I
             speed = w.get("speed")
             busiest = max(w.get("down_bps") or 0, w.get("up_bps") or 0) if (w.get("down_bps") is not None or w.get("up_bps") is not None) else None
             util = round(busiest / (speed * 1e6) * 100, 1) if busiest is not None and speed else None
-            out.append({"source": g, "target": INTERNET, "a_port": w.get("port") or w.get("name"), "b_port": None, "protocol": "wan",
-                        "sources": ["wan"], "mesh": False, "wan": w.get("name"), "isp": w.get("isp"), "wan_ip": w.get("ip"),
+            key = wan_key(devs[g].hostname, w.get("name"))
+            isp = names.get(key) or (str(w["isp"]).strip() if w.get("isp") else "")
+            label = isp or f"{w.get('name') or 'WAN'} ISP"
+            target = _isp_id(isp) if isp else _isp_id(f"unnamed {devs[g].hostname} {w.get('name')}")
+            out.append({"source": g, "target": target, "a_port": w.get("port") or w.get("name"), "b_port": None, "protocol": "wan",
+                        "sources": ["wan"], "mesh": False, "wan": w.get("name"), "isp": isp or None, "isp_label": label,
+                        "isp_detected": w.get("isp"), "wan_key": key, "gateway": devs[g].hostname, "wan_ip": w.get("ip"),
                         "up": w.get("up"), "speed": speed, "speed_label": speed_label(speed), "util": util, "bps": busiest,
                         "down_bps": w.get("down_bps"), "up_bps": w.get("up_bps"),
                         "latency_ms": w.get("latency_ms"), "loss_pct": w.get("loss_pct")})
