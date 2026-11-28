@@ -670,4 +670,7 @@ def ingest_batch(s: Session, poller_id: int, batch: dict[str, Any]) -> Alerter |
         elif item.get("kind") == "probe":
             from .paths import ingest_probe
             ingest_probe(s, alerter, poller_id, item)
+        elif item.get("kind") == "speedtest":
+            from .speedtest import ingest as ingest_speedtest
+            ingest_speedtest(s, poller_id, item)
     return alerter

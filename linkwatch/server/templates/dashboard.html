@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% from "_g.html" import sevtag, sensor_value %}
 {% block title %}Dashboard{% endblock %}
+{% macro mb(v) %}{% if v is none %}–{% elif v >= 100 %}{{ v|round|int }}{% else %}{{ v|round(1) }}{% endif %}{% endmacro %}
+{% macro ms(v) %}{% if v is none %}–{% elif v >= 10 %}{{ v|round|int }}{% else %}{{ v|round(1) }}{% endif %}{% endmacro %}
 {% macro ranges() %}<div class="ranges">{% for r in ['6h','24h','7d','30d'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div>{% endmacro %}
 
 {% macro body(w) %}{% set c = w.ctx %}{% set o = w.opts %}
@@ -104,6 +106,19 @@
     {% else %}<tr><td colspan="8" class="dim">No devices yet.</td></tr>{% endfor %}</tbody></table></div>
     <div class="pager"><span data-showing></span><span class="pg" data-pages></span></div>
   </div>
+{% elif w.type == 'speedtest' %}
+  {% if c.isps %}
+  <div class="scroll"><table><thead><tr><th>ISP</th><th class="n">Down</th><th class="n">Up</th><th class="n">Latency</th><th class="n">Jitter</th><th class="n">Loss</th><th></th></tr></thead><tbody>
+  {% for g in c.isps %}{% set r = g.latest %}
+    <tr><td><span class="dot" style="background:{{ g.color }}"></span> <b>{{ g.isp }}</b>{% if g.avg_down is not none %}<div class="dim" style="font-size:12px">7-day avg {{ mb(g.avg_down) }} / {{ mb(g.avg_up) }} Mbps</div>{% endif %}</td>
+      <td class="n">{{ mb(r.download_mbps) }} <span class="dim">Mbps</span></td><td class="n">{{ mb(r.upload_mbps) }} <span class="dim">Mbps</span></td>
+      <td class="n">{{ ms(r.ping_ms) }} <span class="dim">ms</span></td><td class="n">{{ ms(r.jitter_ms) }} <span class="dim">ms</span></td>
+      <td class="n {{ 'bad' if (r.loss_pct or 0) >= 2 else '' }}">{{ r.loss_pct|pct }}</td><td class="dim mono nw">{{ r.ts|ago }}</td></tr>
+  {% endfor %}</tbody></table></div>
+  {% if c.chart %}<div class="legend" style="margin:10px 0 6px">{% for g in c.isps %}<span><i style="background:{{ g.color }}"></i>{{ g.isp }}</span>{% endfor %}<span class="dim">{{ c.label }}</span></div>
+  <div class="fig" data-src="/ui/metrics/speedtest?metric={{ c.metric }}{{ '&poller=' ~ c.poller_id if c.poller_id }}" data-range="7d" data-connect="1" data-dots="1" data-h="180"
+    {% if c.unit == '%' %}data-suffix="%"{% elif c.unit == 'ms' %}data-unit="ms"{% else %}data-suffix="{{ c.unit }}"{% endif %} data-label="{{ c.label }} by ISP" data-series='{{ c.series|tojson }}'></div>{% endif %}
+  {% else %}<p class="dim" style="margin:0">No speed test results yet. <a href="/speedtests">Turn on scheduled tests</a> for a poller, or run one now.</p>{% endif %}
 {% elif w.type == 'note' %}
   {% if c.text %}<div class="note" style="white-space:pre-wrap;overflow-wrap:anywhere">{{ c.text|urlize(40, true) }}</div>{% else %}<p class="dim" style="margin:0">Add some text in this widget's settings.</p>{% endif %}
 {% endif %}
@@ -117,6 +132,7 @@
   <label class="f">{{ opt.label }}
     {% if opt.kind == 'select' %}<select name="{{ opt.name }}">{% for k, label in opt.choices %}<option value="{{ k }}" {% if k|string == v|string %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     {% elif opt.kind == 'site' %}<select name="{{ opt.name }}"><option value="">All sites</option>{% for n in site_names %}<option {% if n == v %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    {% elif opt.kind == 'poller' %}<select name="{{ opt.name }}"><option value="">All pollers</option>{% for id, name in pick_pollers %}<option value="{{ id }}" {% if id|string == v|string %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
     {% elif opt.kind == 'device' %}<select name="{{ opt.name }}"><option value="">Choose a device</option>{% for id, name in pick_devices %}<option value="{{ id }}" {% if id|string == v|string %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>
     {% elif opt.kind == 'port' %}<input type="search" name="{{ opt.name }}_q" placeholder="Search device or port" data-port-search autocomplete="off" value="{{ (w.ctx.host ~ ' ' ~ w.ctx.port.name) if w.ctx.fixed and w.ctx.port else '' }}">
       <input type="hidden" name="{{ opt.name }}" value="{{ v }}"><span class="port-hits" style="display:flex;flex-direction:column;gap:2px;margin-top:4px"></span>
@@ -155,7 +171,7 @@
       {% if edit %}<span class="w-handle" draggable="true" title="Drag to move" aria-hidden="true">⠿</span>{% endif %}
       <h2>{{ title(w) }}</h2>
       {% if not edit %}
-        {% if w.type in ('traffic', 'device_graph') %}{{ ranges() }}{% elif w.type == 'device_table' %}<a href="/devices" class="sub">All devices</a>{% elif w.type == 'alerts' %}<a href="/alerts" class="sub">View all</a>{% elif w.type == 'map' %}<a href="/map" class="sub">Open</a>{% elif w.type == 'events' %}<a href="/eventlog" class="sub">View all</a>{% elif w.type == 'busiest' %}<a href="/ports?sort=util" class="sub">All ports</a>{% endif %}
+        {% if w.type in ('traffic', 'device_graph') %}{{ ranges() }}{% elif w.type == 'device_table' %}<a href="/devices" class="sub">All devices</a>{% elif w.type == 'alerts' %}<a href="/alerts" class="sub">View all</a>{% elif w.type == 'map' %}<a href="/map" class="sub">Open</a>{% elif w.type == 'events' %}<a href="/eventlog" class="sub">View all</a>{% elif w.type == 'speedtest' %}{% if me and me.role == 'admin' %}<form method="post" action="/speedtests/run" style="margin-left:auto"><input type="hidden" name="poller_id" value="{{ w.opts.poller_id or '' }}"><input type="hidden" name="next" value="/"><button class="btn sm" type="submit" title="Run a speed test now" onclick="return confirm('Run a speed test now? Each test uses a few hundred MB on a fast link.')">Run now</button></form>{% endif %}<a href="/speedtests" class="sub">All results</a>{% elif w.type == 'busiest' %}<a href="/ports?sort=util" class="sub">All ports</a>{% endif %}
       {% else %}
         <div class="w-tools">
           <button class="btn sm" type="button" data-move="-1" title="Move earlier" aria-label="Move earlier">←</button><button class="btn sm" type="button" data-move="1" title="Move later" aria-label="Move later">→</button>

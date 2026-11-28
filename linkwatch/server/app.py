@@ -306,6 +306,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .nms_views import router as nms_router
     from .oid_views import router as oid_router
     from .path_views import router as path_router
+    from .speedtest_views import router as speedtest_router
     from .pwa import router as pwa_router
     from .rdp import router as rdp_router
     from .ssh import router as ssh_router
@@ -327,6 +328,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(nms_router)
     app.include_router(oid_router)
     app.include_router(path_router)
+    app.include_router(speedtest_router)
     app.include_router(ssh_router)
     app.include_router(rdp_router)
     app.include_router(hypervisor_router)

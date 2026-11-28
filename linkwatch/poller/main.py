@@ -48,7 +48,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from .. import __version__
 from ..common.discovery import TargetError, expand_targets
 from ..integrations import IntegrationError, build
-from . import mtr, pveterm, tunnel
+from . import mtr, pveterm, speedtest, tunnel
 from .discover import scan
 from .ping import ping
 from .snmp import SnmpEngine, SnmpError, SnmpSession, poll_device
@@ -96,6 +96,11 @@ class Poller:
         self.probe_wake = asyncio.Event()
         self.probe_sem = asyncio.Semaphore(4)
         self.probing: set[int] = set()
+        self.speedtest: dict | None = None      # speed test schedule and lanes (see speedtest.py)
+        self.st_due: float | None = None        # wall clock, so a restart doesn't run an extra test
+        self.st_wake = asyncio.Event()
+        self.st_now: list[str | None] = []      # "Run now" requests: a lane key, or None for every lane
+        self.st_running = False
         self.key: str | None = None
         self.tunnels: set[asyncio.Task] = set()
         self.control = self.data_dir / "control"      # shared with the update helper on the host
@@ -171,7 +176,7 @@ class Poller:
         ident = ident or await self.enroll()
         self.key = ident["key"]
         self.background = [asyncio.create_task(self.schedule_loop()), asyncio.create_task(self.probe_loop()),
-                           asyncio.create_task(self.watch_update_result())]
+                           asyncio.create_task(self.speedtest_loop()), asyncio.create_task(self.watch_update_result())]
         backoff = 2.0
         while not self.reset_done.is_set():
             try:
@@ -215,6 +220,8 @@ class Poller:
         feats = ["custom_oids"]
         if mtr.available():
             feats.append("mtr")
+        if speedtest.available():
+            feats.append("speedtest")
         if tunnel.enabled():
             feats += ["ssh", "pveterm"]
         if tunnel.allows(3389):
@@ -248,6 +255,7 @@ class Poller:
     def status(self) -> dict:
         return {"version": __version__, "build": BUILD, "devices": len(self.devices), "integrations": len(self.integrations),
                 "probes": len(self.probes), "configured": self.configured.is_set(), "interval": self.interval,
+                "speedtest": bool(self.speedtest and self.speedtest.get("enabled")),
                 "spooled": len(self.spool)}
 
     def request_update(self, req: str) -> dict:
@@ -287,7 +295,7 @@ class Poller:
 
     def wipe(self) -> None:
         """Back to the state before enrollment: no key, no buffered results, no update state, no config in memory."""
-        for name in ("identity.json", "identity.tmp"):
+        for name in ("identity.json", "identity.tmp", "speedtest.json"):
             (self.data_dir / name).unlink(missing_ok=True)
         shutil.rmtree(self.spool.dir, ignore_errors=True)
         for name in ("update.request", "update.result", ".update.request.tmp"):
@@ -296,6 +304,7 @@ class Poller:
         self.reset_file.write_text(json.dumps(marker))
         self.devices, self.integrations, self.key = [], [], None
         self.set_probes([])
+        self.set_speedtest(None)
         log.warning("Factory reset: deleted this poller's key, spool and update state")
 
     async def after_reset(self) -> None:
@@ -317,6 +326,7 @@ class Poller:
             self.integrations = msg.get("integrations", [])
             self.interval = max(60, int(msg.get("interval", 300)))
             self.set_probes(msg.get("probes") or [])
+            self.set_speedtest(msg.get("speedtest"))
             log.info("Config: %d devices, %d integrations, every %ds", len(self.devices), len(self.integrations), self.interval)
             first = not self.configured.is_set()
             self.configured.set()
@@ -337,6 +347,9 @@ class Poller:
             if any(p["id"] == pid for p in self.probes):
                 self.probe_due[pid] = 0.0
                 self.probe_wake.set()
+        elif t == "speedtest_now":
+            self.st_now.append(str(msg["lane"]) if msg.get("lane") else None)
+            self.st_wake.set()
         elif t == "tunnel_open":
             sid, host = str(msg.get("sid") or ""), str(msg.get("host") or "")
             try:
@@ -596,6 +609,101 @@ class Poller:
             log.exception("Path probe %s failed", probe.get("id"))
         finally:
             self.probing.discard(probe["id"])
+
+    # speed tests --------------------------------------------------------------
+    @property
+    def st_file(self) -> Path:
+        return self.data_dir / "speedtest.json"
+
+    def st_state(self) -> dict:
+        try:
+            v = json.loads(self.st_file.read_text())
+            return v if isinstance(v, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def save_st_state(self, state: dict) -> None:
+        try:
+            tmp = self.st_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(state))
+            os.replace(tmp, self.st_file)
+        except OSError as exc:
+            log.warning("Could not save the speed test schedule: %s", exc)
+
+    def set_speedtest(self, cfg: dict | None) -> None:
+        old = self.speedtest or {}
+        self.speedtest = cfg if isinstance(cfg, dict) else None
+        new = self.speedtest or {}
+        if not new.get("enabled"):
+            self.st_due = None
+        elif self.st_due is None or any(old.get(k) != new.get(k) for k in ("enabled", "interval_h", "jitter_min")):
+            self.st_due = speedtest.next_due(self.st_state().get("last_run"), float(new.get("interval_h") or 6),
+                                             float(new.get("jitter_min") or 0), time.time(), random.uniform)
+            log.info("Speed tests every %sh; next in %d min", new.get("interval_h"), (self.st_due - time.time()) / 60)
+        self.st_wake.set()
+
+    async def speedtest_loop(self) -> None:
+        while True:
+            self.st_wake.clear()
+            now = time.time()
+            if self.st_now and not self.st_running:
+                wanted, self.st_now = list(self.st_now), []
+                await self.run_speedtests("manual", None if None in wanted else set(wanted))
+                continue
+            if self.st_due is not None and now >= self.st_due and not self.st_running:
+                await self.run_speedtests("schedule")
+                continue
+            wait = 300.0 if self.st_due is None else min(300.0, max(1.0, self.st_due - now))
+            try:
+                await asyncio.wait_for(self.st_wake.wait(), timeout=wait)
+            except asyncio.TimeoutError:
+                pass
+
+    async def run_speedtests(self, trigger: str, only: set[str] | None = None) -> None:
+        """Run the lanes one after another (never at the same time: they would share the uplink) and send the results."""
+        cfg = self.speedtest or {}
+        state = self.st_state()
+        last_bytes = state.get("last_bytes") or {}
+        self.st_running = True
+        items = []
+        try:
+            for lane in cfg.get("lanes") or [{"key": "default"}]:
+                key = str(lane.get("key") or "default")
+                if only is not None and key not in only:
+                    continue
+                why = speedtest.runnable(lane, last_bytes.get(key))
+                if why:
+                    log.info("Speed test %s skipped: %s", key, why)
+                    if trigger == "manual":
+                        items.append({"kind": "speedtest", "ts": time.time(), "ok": False, "skipped": True, "error": why,
+                                      "trigger": trigger, "lane": {"key": key, "source": lane.get("source")}})
+                    continue
+                item = await speedtest.run(cfg, lane, trigger)
+                if item.get("ok"):
+                    last_bytes[key] = int(item.get("bytes_sent") or 0) + int(item.get("bytes_received") or 0)
+                    log.info("Speed test %s: %.0f down / %s up Mbps", key, item["download_mbps"], item.get("upload_mbps"))
+                else:
+                    log.warning("Speed test %s: %s", key, item.get("error"))
+                items.append(item)
+        except Exception:
+            log.exception("Speed test failed")
+        finally:
+            self.st_running = False
+        if trigger == "schedule" or not state.get("last_run"):
+            state["last_run"] = time.time()
+        state["last_bytes"] = last_bytes
+        self.save_st_state(state)
+        if trigger == "schedule" and cfg.get("enabled"):
+            self.st_due = speedtest.next_due(state["last_run"], float(cfg.get("interval_h") or 6),
+                                             float(cfg.get("jitter_min") or 0), time.time(), random.uniform)
+        if items:
+            batch = {"type": "results", "batch_id": new_batch_id(), "partial": True, "items": items}
+            self.spool.put(batch)
+            if self.ws:
+                try:
+                    await self.ws.send(json.dumps(batch))
+                except ConnectionClosed:
+                    pass
 
     async def run_integration(self, integ: dict) -> dict[str, Any]:
         item: dict[str, Any] = {"kind": "integration", "integration_id": integ["id"], "ts": time.time(), "ok": False, "error": None}

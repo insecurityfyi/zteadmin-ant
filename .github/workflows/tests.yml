@@ -13,3 +13,22 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt -r linkwatch/requirements-dev.txt
       - run: python -m pytest -q
+
+  # Build (don't push) the poller image on pull requests, so a change to Dockerfile.poller, such as the
+  # librespeed-cli build stage, fails here rather than in the deploy on main.
+  poller-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.poller
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: linkwatch-poller:ci
+          cache-from: type=gha,scope=poller
+      - name: librespeed-cli runs in the image
+        run: docker run --rm --entrypoint librespeed-cli linkwatch-poller:ci --version

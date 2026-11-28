@@ -36,7 +36,7 @@ RDAP = "https://rdap.org/ip/{ip}"
 
 # registry / ASN owner names -> what people call the ISP
 ALIASES = [
-    (r"spacex|starlink", "Starlink"),
+    (r"spacex|starlink|space exploration", "Starlink"),
     (r"brightspeed", "Brightspeed"),
     (r"charter|spectrum|time warner|twc", "Spectrum"),
     (r"comcast|xfinity", "Comcast"),

@@ -9,6 +9,10 @@ Server -> poller
                   [{"id": 3, "oid": "1.3.6...", "mode": "get"|"walk", "label_oid": null, "sys_object_id": "1.3.6.1.4.1.9"}].
                   The poller skips one whose sys_object_id prefix does not match the device's live sysObjectID.
     poll_now      {"type": "poll_now", "device_id": 12}
+    speedtest_now {"type": "speedtest_now", "lane": "192.168.20.5" | null}
+                  Run a speed test now on one lane (or every lane), whatever the schedule. Poller feature "speedtest".
+                  The config's "speedtest" holds the schedule: {"enabled", "interval_h", "jitter_min", "server_ids",
+                  "server_json", "lanes": [{"key", "source", "duration", "no_upload", "budget_bytes", "blocked"}]}.
     ack           {"type": "ack", "batch_id": "..."}
     ping          {"type": "ping"}
     snmp_test     {"type": "snmp_test", "req": "...", "device_id": 12, "oid": "1.3.6...", "mode": "get"|"walk", "label_oid": null}
@@ -67,6 +71,14 @@ An ``IntegrationResult`` (kind "integration") carries one API collection run:
 
     {"kind": "integration", "integration_id": 3, "ts": ..., "ok": true, "error": null,
      "records": [Record, ...]}
+
+A ``SpeedTestResult`` (kind "speedtest") carries one librespeed-cli run on one lane:
+
+    {"kind": "speedtest", "ts": ..., "ok": true, "error": null, "skipped": false, "trigger": "schedule" | "manual",
+     "lane": {"key": "default", "source": null}, "download_mbps": 512.3, "upload_mbps": 38.1, "ping_ms": 24.5,
+     "jitter_ms": 3.1, "loss_pct": 0.0, "latency_from": "icmp" | "http", "public_ip": "203.0.113.7",
+     "org": "AS14593 Space Exploration Technologies Corporation", "server": {"name": "...", "url": "..."},
+     "bytes_sent": 41000000, "bytes_received": 380000000, "duration_s": 31.2}
 
 A ``Record`` is the normalized shape every integration returns (see
 ``linkwatch.integrations.base.Record``).

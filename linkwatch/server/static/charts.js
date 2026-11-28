@@ -18,7 +18,7 @@
     const spark = !!opts.spark;
     const W = spark ? Math.max(60, host.clientWidth || 96) : Math.max(280, host.clientWidth || 600), H = +(opts.h || 160);
     const L = spark ? 2 : 52, R = spark ? 4 : 10, T = spark ? 4 : 8, B = spark ? 4 : 22;
-    const vals = series.flatMap(s => data[s.key].filter(v => v != null));
+    const vals = series.flatMap(s => (data[s.key] || []).filter(v => v != null));
     const min = opts.min ? +opts.min : 0;
     let max = opts.max ? +opts.max : nice((Math.max(0, ...vals) || 1) * 1.1);
     if (!opts.max && (opts.unit || "num") === "num" && !opts.suffix && max < 40) max = Math.max(4, Math.ceil(max / 4) * 4);   // whole-number ticks for counts
@@ -40,10 +40,12 @@
     }
     series.forEach(s => {
       const segs = []; let cur = [];
-      data[s.key].forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([x(ts[i]), y(Math.max(min, Math.min(v, max)))]); });
+      // data-connect: sparse series (one point per speed test) join across the other series' points
+      (data[s.key] || []).forEach((v, i) => { if (v == null) { if (cur.length && !opts.connect) { segs.push(cur); cur = []; } } else cur.push([x(ts[i]), y(Math.max(min, Math.min(v, max)))]); });
       if (cur.length) segs.push(cur);
       segs.forEach(seg => {
         const d = seg.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L");
+        if (opts.dots) seg.forEach(p => svg.append(el("circle", { cx: p[0], cy: p[1], r: 2, fill: s.color })));
         if (s.area !== false && !s.dash) svg.append(el("path", { d: `M${seg[0][0]},${y(min)}L${d}L${seg[seg.length - 1][0]},${y(min)}Z`, fill: s.color, "fill-opacity": spark ? .18 : .12 }));
         svg.append(el("path", { d: "M" + d, fill: "none", stroke: s.color, "stroke-width": 1.6, "stroke-linejoin": "round", "stroke-dasharray": s.dash ? "4 3" : "" }));
       });

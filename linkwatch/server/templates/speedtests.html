@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Speed tests{% endblock %}
+{% macro mbps(v) %}{% if v is none %}–{% elif v >= 100 %}{{ v|round|int }}{% else %}{{ v|round(1) }}{% endif %}{% endmacro %}
+{% macro ms(v) %}{% if v is none %}–{% elif v >= 10 %}{{ v|round|int }} ms{% else %}{{ v|round(1) }} ms{% endif %}{% endmacro %}
+{% macro how(src) %}{{ {'manual':'typed for this lane','range':'Settings > Internet providers','map':'gateway WAN on the map','lookup':'address lookup','speedtest':'reported by the test server'}.get(src, '') }}{% endmacro %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+<div class="head"><div><h1>Speed tests</h1>
+  <p>Your pollers measure download, upload, latency, jitter and packet loss on a schedule, filed under the ISP each test went out through.</p></div>
+  <div class="actions">
+    <form method="get" action="/speedtests"><select name="poller" aria-label="Poller" onchange="this.form.submit()" style="width:auto"><option value="0">All pollers</option>{% for p in pollers %}<option value="{{ p.id }}" {% if p.id == chosen %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></form>
+    <div class="ranges">{% for r in ['24h','7d','30d','90d'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '7d' else 'false' }}">{{ r }}</button>{% endfor %}</div>
+    {% if admin %}<form method="post" action="/speedtests/run"><input type="hidden" name="poller_id" value="{{ chosen or '' }}"><input type="hidden" name="next" value="/speedtests{{ '?poller=' ~ chosen if chosen }}">
+      <button class="btn pri" type="submit" onclick="return confirm('Run a speed test now on {{ 'this poller' if chosen else 'every poller' }}? Each test uses a few hundred MB on a fast link.')">Run now</button></form>{% endif %}
+  </div></div>
+
+{% if isps %}
+<div class="grid">
+{% for g in isps %}{% set r = g.latest %}
+  <section class="p c4">
+    <div class="ph"><h2><span class="dot" style="background:{{ g.color }}"></span> {{ g.isp }}</h2><span class="sub">{{ r.ts|ago }}</span></div>
+    <div style="display:flex;gap:22px;align-items:baseline;flex-wrap:wrap">
+      <div><div class="dim" style="font-size:12px">Download</div><b style="font:700 26px var(--display)">{{ mbps(r.download_mbps) }}</b> <span class="dim">Mbps</span></div>
+      <div><div class="dim" style="font-size:12px">Upload</div><b style="font:700 26px var(--display)">{{ mbps(r.upload_mbps) }}</b> <span class="dim">Mbps</span></div>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:13px">
+      <span>Latency <b>{{ ms(r.ping_ms) }}</b></span><span>Jitter <b>{{ ms(r.jitter_ms) }}</b></span>
+      <span>Loss <b class="{{ 'bad' if (r.loss_pct or 0) >= 2 else '' }}">{{ r.loss_pct|pct }}</b></span></div>
+    <p class="help" style="margin:8px 0 0">7-day average {{ mbps(g.avg_down) }} down, {{ mbps(g.avg_up) }} up, {{ ms(g.avg_ping) }} · {{ g.n }} test{{ '' if g.n == 1 else 's' }}
+      · from {{ names.get(r.poller_id, 'a poller') }}{% if r.lane != 'default' %} via {{ r.lane }}{% endif %}{% if r.isp_source %} · ISP {{ how(r.isp_source) }}{% endif %}</p>
+  </section>
+{% endfor %}
+{% for key in ['download', 'upload', 'latency', 'loss'] %}{% set m = metrics[key] %}
+  <section class="p c6">
+    <div class="ph"><h2>{{ m[1] }}</h2></div>
+    <div class="legend" style="margin-bottom:8px">{% for g in isps %}<span><i style="background:{{ g.color }}"></i>{{ g.isp }}</span>{% endfor %}</div>
+    <div class="fig" data-src="/ui/metrics/speedtest?metric={{ key }}{{ '&poller=' ~ chosen if chosen }}" data-range="7d" data-connect="1" data-dots="1" data-h="200"
+      {% if m[2] == '%' %}data-suffix="%"{% elif m[2] == 'ms' %}data-unit="ms"{% else %}data-suffix="{{ m[2] }}"{% endif %} data-label="{{ m[1] }} by ISP"
+      data-series='{{ isps|map(attribute="spec")|list|tojson }}'></div>
+  </section>
+{% endfor %}
+</div>
+{% else %}
+<div class="p empty-state"><h2>No speed test results yet</h2>
+  <p>Turn on scheduled tests for a poller below, or press Run now. A test takes about half a minute.</p></div>
+{% endif %}
+
+<h2 style="margin:22px 0 10px">Pollers</h2>
+<div class="grid">
+{% for c in cards %}{% set p = c.p %}{% set cfg = c.cfg %}
+<section class="p c12" id="poller-{{ p.id }}">
+  <div class="ph"><h2><span class="dot {{ 'd-up' if c.online else 'd-down' }}"></span> {{ p.name }}</h2>
+    <span class="sub">{% if not cfg.enabled %}Scheduled tests off{% else %}{{ intervals[cfg.interval_h]|lower }}{% if cfg.jitter_min %}, {{ jitters[cfg.jitter_min] }}{% endif %}{% endif %}</span>
+    {% if admin and c.supported %}<form method="post" action="/speedtests/run" style="margin-left:auto"><input type="hidden" name="poller_id" value="{{ p.id }}"><input type="hidden" name="next" value="/speedtests#poller-{{ p.id }}"><button class="btn sm" type="submit">Run now</button></form>{% endif %}</div>
+  {% if c.seen and not c.supported %}<div class="flash warn" style="margin-top:0">This poller's image can't run speed tests yet. Update it from the <a href="/pollers">Pollers</a> page, or on the host with <code>{{ update_cmd }}</code>.</div>{% endif %}
+  <div class="scroll"><table><thead><tr><th>Lane</th><th>ISP</th><th>Last test</th><th class="n">Down</th><th class="n">Up</th><th class="n">Latency</th><th>Data this month</th><th>At this schedule</th>{% if admin %}<th></th>{% endif %}</tr></thead><tbody>
+  {% for ln in c.lanes %}{% set r = ln.last %}
+    <tr><td>{% if ln.key == 'default' %}Default route{% else %}<span class="mono">{{ ln.key }}</span>{% endif %}<div class="dim" style="font-size:12px">{{ ln.duration }} s per direction{% if ln.no_upload %}, download only{% endif %}</div></td>
+      <td>{{ ln.isp or (r.isp if r and r.isp else 'Detected automatically') }}</td>
+      <td>{% if r %}{% if r.ok %}{{ r.ts|ago }}{% elif r.skipped %}<span class="wa">{{ r.error }}</span>{% else %}<span class="bad" title="{{ r.error }}">Failed {{ r.ts|ago }}</span><div class="dim" style="font-size:12px">{{ (r.error or '')[:90] }}</div>{% endif %}{% else %}<span class="dim">never</span>{% endif %}</td>
+      <td class="n">{{ mbps(r.download_mbps) if r and r.ok else '–' }}</td><td class="n">{{ mbps(r.upload_mbps) if r and r.ok else '–' }}</td><td class="n">{{ ms(r.ping_ms) if r and r.ok else '–' }}</td>
+      <td>{{ ln.used|bytes }}{% if ln.cap %} of {{ ln.cap|bytes }}{% set pctv = (ln.used / ln.cap * 100) %}<span class="mbar"><i><b style="width:{{ [pctv, 100]|min }}%;background:{{ 'var(--down)' if pctv >= 100 else 'var(--warn)' if pctv >= 80 else 'var(--s1)' }}"></b></i></span>{% if ln.blocked %} <span class="tag" style="color:var(--down);border-color:var(--down)">paused until next month</span>{% endif %}{% endif %}</td>
+      <td class="dim">{% if ln.per_test %}~{{ ln.per_test|bytes }} a test{% if cfg.enabled %}, ~{{ ln.projected|bytes }} a month{% if ln.cap and ln.projected > ln.cap %} <span class="wa">(over the cap: tests stop when it's reached)</span>{% endif %}{% endif %}{% else %}–{% endif %}</td>
+      {% if admin %}<td>{% if c.supported and c.lanes|length > 1 %}<form method="post" action="/speedtests/run"><input type="hidden" name="poller_id" value="{{ p.id }}"><input type="hidden" name="lane" value="{{ ln.key }}"><input type="hidden" name="next" value="/speedtests#poller-{{ p.id }}"><button class="btn sm" type="submit">Run this lane</button></form>{% endif %}</td>{% endif %}</tr>
+  {% endfor %}</tbody></table></div>
+  {% if admin %}
+  <details style="margin-top:12px" {% if edit == p.id %}open{% endif %}><summary class="btn sm" style="display:inline-block">Settings</summary>
+    <form method="post" action="/speedtests/{{ p.id }}/settings" class="stack" style="margin-top:12px">
+      <label class="chk"><input type="checkbox" name="enabled" {% if cfg.enabled %}checked{% endif %}> Run speed tests on a schedule</label>
+      <div class="row2"><label class="f">How often<select name="interval_h">{% for k, v in intervals.items() %}<option value="{{ k }}" {% if k == cfg.interval_h %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        <label class="f">Random offset<select name="jitter_min">{% for k, v in jitters.items() %}<option value="{{ k }}" {% if k == cfg.jitter_min %}selected{% endif %}>{{ v }}</option>{% endfor %}</select><small>Moves each run a little so tests don't always land on the same minute.</small></label></div>
+      <div class="row2"><label class="f">Test servers (optional)<input type="text" name="server_ids" value="{{ cfg.server_ids|join(', ') }}" placeholder="Nearest public LibreSpeed server"><small>Server IDs from <code>librespeed-cli --list</code>. Pinning one server makes results comparable over time.</small></label>
+        <label class="f">Your own server list (optional)<input type="url" name="server_json" value="{{ cfg.server_json }}" placeholder="https://speed.example.com/servers.json"><small>A LibreSpeed servers JSON file, for a server you host.</small></label></div>
+      <fieldset class="f"><legend>Lanes</legend>
+        <small>One lane tests the poller's default route. To test each ISP, add a lane per WAN with a source address your gateway routes out that WAN (see <a href="https://github.com/insecurityfyi/zteadmin-ant/blob/main/docs/speedtest.md" target="_blank" rel="noopener">testing each ISP</a>). Lanes run one after another, never at the same time.</small>
+        <div class="scroll"><table><thead><tr><th>Source address</th><th>ISP name</th><th>Length</th><th>Monthly cap (GB)</th><th>Download only</th></tr></thead><tbody>
+        {% for i in range(max_lanes) %}{% set ln = cfg.lanes[i] if i < cfg.lanes|length else none %}
+          <tr><td><input type="text" name="lane{{ i }}_source" value="{{ ln.source if ln else '' }}" placeholder="{{ 'Default route' if i == 0 else '192.168.2' ~ i ~ '.5' }}" aria-label="Lane {{ i + 1 }} source address"></td>
+            <td><input type="text" name="lane{{ i }}_isp" value="{{ ln.isp if ln else '' }}" placeholder="Detect automatically" maxlength="80" aria-label="Lane {{ i + 1 }} ISP"></td>
+            <td><select name="lane{{ i }}_duration" aria-label="Lane {{ i + 1 }} test length">{% for k, v in durations.items() %}<option value="{{ k }}" {% if (ln.duration if ln else 10) == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></td>
+            <td><input type="number" step="any" min="0" name="lane{{ i }}_cap_gb" value="{{ ln.cap_gb if ln and ln.cap_gb else '' }}" placeholder="No cap" style="width:110px" aria-label="Lane {{ i + 1 }} monthly cap in GB"></td>
+            <td><input type="checkbox" name="lane{{ i }}_no_upload" {% if ln and ln.no_upload %}checked{% endif %} aria-label="Lane {{ i + 1 }} download only"></td></tr>
+        {% endfor %}</tbody></table></div>
+        <small>On a metered or capped link such as Starlink, set a monthly cap, a shorter test and a longer schedule. A 10-second test on a 300 Mbps link uses roughly 0.4 GB, so every 6 hours is about 50 GB a month. When a lane reaches its cap, its scheduled tests stop until the 1st of next month (UTC).</small>
+      </fieldset>
+      <div class="actions"><button class="btn pri" type="submit">Save</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+{% else %}
+<div class="p c12 empty-state"><p>No pollers yet. <a href="/pollers">Install one</a> first.</p></div>
+{% endfor %}
+</div>
+
+{% if history %}
+<h2 style="margin:22px 0 10px">Latest 30 tests</h2>
+<div class="p"><div class="scroll"><table><thead><tr><th>When</th><th>Poller</th><th>ISP</th><th class="n">Down</th><th class="n">Up</th><th class="n">Latency</th><th class="n">Jitter</th><th class="n">Loss</th><th class="n">Data</th><th>Server</th></tr></thead><tbody>
+{% for r in history %}
+  <tr><td class="nw">{{ r.ts|ago }}{% if r.trigger == 'manual' %} <span class="tag">manual</span>{% endif %}</td>
+    <td>{{ names.get(r.poller_id, '?') }}{% if r.lane != 'default' %}<div class="dim mono" style="font-size:12px">{{ r.lane }}</div>{% endif %}</td>
+    <td>{{ r.isp or '–' }}{% if r.public_ip %}<div class="dim mono" style="font-size:12px" title="{{ r.org or '' }}">{{ r.public_ip }}</div>{% endif %}</td>
+    {% if r.ok %}<td class="n">{{ mbps(r.download_mbps) }}</td><td class="n">{{ mbps(r.upload_mbps) }}</td><td class="n" title="{{ 'ICMP' if r.latency_from == 'icmp' else 'HTTP round trip' }}">{{ ms(r.ping_ms) }}</td>
+      <td class="n">{{ ms(r.jitter_ms) }}</td><td class="n">{{ r.loss_pct|pct }}</td><td class="n">{{ r.bytes_used|bytes }}</td><td class="dim">{{ r.server or '' }}</td>
+    {% else %}<td colspan="7" class="{{ 'wa' if r.skipped else 'bad' }}">{{ r.error or 'Failed' }}</td>{% endif %}</tr>
+{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}
