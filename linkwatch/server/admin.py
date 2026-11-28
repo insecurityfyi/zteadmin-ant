@@ -185,8 +185,11 @@ def account_page(request: Request):
         default = site_theme(s)
         me = s.get(User, request.state.user.id)
         my_layout = me.layout if me else None
+        from .pwa import SEVERITIES, subscriptions_for
+        push_subs = subscriptions_for(s, me) if me else []
     return render(request, "account.html", {"roles": ROLES, "min_password": MIN_PASSWORD, "themes": THEMES,
-                                            "site_theme": default, "layouts": LAYOUTS, "my_layout": my_layout})
+                                            "site_theme": default, "layouts": LAYOUTS, "my_layout": my_layout,
+                                            "push_subs": push_subs, "push_severities": SEVERITIES})
 
 
 @router.post("/account/theme")

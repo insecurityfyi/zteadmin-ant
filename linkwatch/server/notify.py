@@ -1,4 +1,4 @@
-"""Send alert notifications: email, Microsoft Teams, Slack or a generic webhook."""
+"""Send alert notifications: email, Microsoft Teams, Slack, a generic webhook, and Web Push to the installed app."""
 from __future__ import annotations
 
 import logging
@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .. import APP_NAME
 from .alerts import SEVERITY_ORDER, AlertEvent
-from .models import Transport
+from .models import PushSubscription, Transport, utcnow
 
 log = logging.getLogger("linkwatch.notify")
 LABEL = {"crit": "CRITICAL", "warn": "WARNING", "info": "INFO"}
@@ -99,3 +99,34 @@ class Notifier:
                     except Exception as exc:  # report, never crash ingestion
                         log.warning("Transport %s failed: %s", t.name, exc)
                         t.last_result = f"Failed: {exc.__class__.__name__}: {exc}"[:255]
+            self._push(s, events)
+
+    def push_message(self, ev: AlertEvent) -> dict[str, Any]:
+        """What the service worker shows. The tag makes a resolve replace the notification it resolves."""
+        resolved = ev.kind == "resolved"
+        return {"title": headline(ev), "body": (ev.detail or ev.device or "")[:300], "severity": ev.severity,
+                "url": "/alerts?state=resolved" if resolved else "/alerts?state=open", "tag": f"alert-{ev.alert_id}",
+                "renotify": not resolved, "requireInteraction": ev.severity == "crit" and not resolved}
+
+    def _push(self, s, events: list[AlertEvent]) -> None:
+        subs = s.scalars(select(PushSubscription)).all()
+        if not subs:
+            return
+        from . import push
+        vapid = push.Vapid.load(s, self.vault, self.public_url)
+        with httpx.Client(timeout=15) as http:
+            for sub in subs:
+                for ev in events:
+                    if SEVERITY_ORDER.get(ev.severity, 0) < SEVERITY_ORDER.get(sub.min_severity, 1):
+                        continue
+                    try:
+                        push.send(vapid, sub, self.push_message(ev), http,
+                                  urgency="high" if ev.severity == "crit" and ev.kind != "resolved" else "normal")
+                        sub.last_sent, sub.last_result = utcnow(), f"Sent: {headline(ev)}"[:255]
+                    except push.Gone:
+                        log.info("Push subscription %s (%s) is gone; removing it", sub.id, sub.label)
+                        s.delete(sub)
+                        break
+                    except Exception as exc:  # report, never crash ingestion
+                        log.warning("Push to %s failed: %s", sub.label or sub.id, exc)
+                        sub.last_result = f"Failed: {exc.__class__.__name__}: {exc}"[:255]

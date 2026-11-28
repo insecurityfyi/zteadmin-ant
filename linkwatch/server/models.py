@@ -416,6 +416,22 @@ class Transport(Base):
     last_result: Mapped[str | None] = mapped_column(String(255))
 
 
+class PushSubscription(Base):
+    """One browser or installed app that gets alert notifications (Web Push), signed in as a user."""
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    endpoint: Mapped[str] = mapped_column(Text)
+    endpoint_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str | None] = mapped_column(String(120))       # "iPhone · Safari", from the user agent
+    min_severity: Mapped[str] = mapped_column(String(8), default="warn")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_sent: Mapped[datetime | None] = mapped_column(DateTime)
+    last_result: Mapped[str | None] = mapped_column(String(255))
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
     id: Mapped[int] = mapped_column(primary_key=True)

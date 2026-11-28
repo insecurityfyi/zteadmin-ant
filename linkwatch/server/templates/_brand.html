@@ -30,6 +30,17 @@
 {%- endif %}
 <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon-{{ png }}.png?v={{ asset_version }}">
 <link rel="manifest" href="/manifest.webmanifest">
+{% if f == 'auto' -%}
+<meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1218" media="(prefers-color-scheme: dark)">
+{%- else -%}
+<meta name="theme-color" content="{{ theme_color(theme) }}">
+{%- endif %}
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{ app_name }}">
+<meta name="apple-mobile-web-app-status-bar-style" content="{{ 'default' if f == 'light' else 'black' }}">
+<script src="/static/pwa.js?v={{ asset_version }}" defer></script>
 {%- endmacro %}
 
 {% macro footer() -%}
