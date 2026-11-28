@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% import "_hv.html" as hv with context %}
+{% import "_nas.html" as nas with context %}
+{% from "_iv.html" import meter, chart, legend, yesno %}
+{% block title %}{{ n.name }}{% endblock %}
+{% block content %}
+{% set s = d.system or {} %}
+{% set u = d.util or {} %}
+{% set ctl = is_admin and n.control and n.can_rpc %}
+{% set vols = d.volumes or [] %}
+{% set vol_used = vols|selectattr('used')|sum(attribute='used') %}
+{% set vol_total = vols|selectattr('total')|sum(attribute='total') %}
+<div class="head"><div><div class="crumb"><a href="/nas">NAS</a> · {{ n.name }}</div>
+  <h1 style="display:flex;align-items:center;gap:10px"><span class="dot {{ 'd-warn' if d.problems else {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(n.status, 'd-off') }}"></span>{{ s.hostname or n.name }}{% if s.model %} <span class="tag">{{ s.model }}</span>{% endif %}</h1>
+  <p>{{ s.version or 'DSM' }}{% if s.uptime_s %} · up {{ s.uptime_s|duration }}{% endif %}{% if s.temp_c is not none %} · <span class="{{ 'wa' if s.temp_warning else '' }}">{{ s.temp_c|round|int }} °C</span>{% endif %} · last sync {{ n.last_sync|ago }} · {{ 'via poller ' ~ n.poller_name if n.poller_name else 'no poller' }}{% if device_id %} · <a href="/devices/{{ device_id }}">graphs and alerts</a>{% endif %}</p></div>
+  <div class="actions">
+    <form class="inline" method="post" action="/integrations/{{ n.id }}/sync"><button class="btn" type="submit">Sync now</button></form>
+    {% if n.web_url %}<a class="btn" href="{{ n.web_url }}" target="_blank" rel="noopener" title="Your browser must be able to reach {{ n.web_url }}">Open DSM</a>{% endif %}
+    {% if ctl %}{{ nas.act(n, actions, 'system_reboot', what=n.confirm_name, cls='btn') }}{{ nas.act(n, actions, 'system_shutdown', what=n.confirm_name, cls='btn') }}{% endif %}
+    <a class="btn" href="/integrations/{{ n.id }}">Settings</a></div></div>
+
+{% if n.last_error %}<div class="flash {{ 'bad' if n.status == 'error' else 'warn' }}" role="alert"><b>{{ 'Sync failed' if n.status == 'error' else 'Some parts failed' }}:</b> {{ n.last_error }}</div>{% endif %}
+{% if n.why_offline() %}<div class="flash warn" role="status">{{ n.why_offline() }}</div>{% endif %}
+{{ nas.control_off_note(n, is_admin) }}
+{{ hv.scaffolding(n) }}
+{% if d.problems %}<div class="flash warn" role="status"><b>Needs attention:</b> {{ d.problems|join('; ') }}</div>{% endif %}
+{% if d.unavailable %}<details class="p" style="padding:10px 16px"><summary class="sub" style="cursor:pointer">{{ d.unavailable|length }} part{{ '' if d.unavailable|length == 1 else 's' }} not available with this account</summary>
+  <ul class="dim" style="margin:8px 0 0;font-size:12.5px">{% for x in d.unavailable %}<li>{{ x }}</li>{% endfor %}</ul></details>{% endif %}
+{% if not d.system %}<div class="p empty-state"><h2>No data yet</h2><p>{% if n.status == 'never' %}This NAS hasn't synced yet. Press Sync now.{% else %}The last sync didn't return details. Fix the problem above, then press Sync now.{% endif %}</p></div>{% endif %}
+
+<nav class="tabs" aria-label="{{ n.name }} sections">{% for k, label in tabs %}<a href="?tab={{ k }}" {% if k == tab %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+
+{% if tab == 'overview' %}
+<div class="kpis" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+  <div class="kpi"><span>CPU</span><b>{{ u.cpu|pct }}</b><em>{% if u.load1 is not none %}load {{ u.load1 }}{% else %}{{ s.cpu_cores or '?' }} cores{% endif %}</em></div>
+  <div class="kpi"><span>Memory</span><b>{{ u.mem|pct }}</b><em>of {{ u.mem_total|bytes if u.mem_total else ((s.ram_mb ~ ' MB') if s.ram_mb else '?') }}</em></div>
+  <div class="kpi"><span>Network in / out</span><b style="font-size:18px">{{ u.rx_bps|bps }} / {{ u.tx_bps|bps }}</b><em>now</em></div>
+  <div class="kpi"><span>Storage used</span><b>{{ ((100 * vol_used / vol_total)|pct) if vol_total else '–' }}</b><em>{{ vol_used|bytes }} of {{ vol_total|bytes }}</em></div>
+  <div class="kpi"><span>Temperature</span><b class="{{ 'wa' if s.temp_warning else '' }}">{{ (s.temp_c|round|int ~ ' °C') if s.temp_c is not none else '–' }}</b><em>{% set hot = (d.disks or [])|selectattr('temp_c')|map(attribute='temp_c')|list %}{% if hot %}hottest disk {{ hot|max|round|int }} °C{% else %}&nbsp;{% endif %}</em></div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>CPU and memory</h2><span class="sub">%</span></div>{{ legend([('CPU', 'var(--s1)'), ('Memory', 'var(--s2)')]) }}
+    {{ chart(n.id, 'load', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)","area":false}], 'pct', 170, 'CPU and memory', 100) }}</div>
+  <div class="p c6"><div class="ph"><h2>Network</h2><span class="sub">all interfaces</span></div>{{ legend([('In', 'var(--s1)'), ('Out', 'var(--s2)')]) }}
+    {{ chart(n.id, 'net', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)","area":false}], 'bps', 170, 'Network') }}</div>
+  <div class="p c6"><div class="ph"><h2>Volumes</h2><a class="sub" href="?tab=storage">Storage</a></div>
+    <table><thead><tr><th></th><th>Volume</th><th>Used</th><th class="n">Size</th></tr></thead><tbody>
+    {% for v in vols %}<tr><td>{{ nas.health(v.status) }}</td><td><b>{{ v.name }}</b> <span class="dim">{{ v.fs or '' }}</span>{% if v.desc %}<div class="dim" style="font-size:12px">{{ v.desc }}</div>{% endif %}</td><td class="nw">{{ meter(v.pct, 80, 90) }}</td><td class="n">{{ v.total|bytes }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">No volumes reported.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>System</h2></div><dl class="kv">
+    <dt>Model</dt><dd>{{ s.model or '–' }}{% if s.serial %} <span class="dim mono" style="font-size:12px">{{ s.serial }}</span>{% endif %}</dd>
+    <dt>DSM</dt><dd>{{ s.version or '–' }}{% if d.dsm_update %} · {% if d.dsm_update.available %}<span class="wa">{{ d.dsm_update.version or 'an update' }} available</span>{% if d.dsm_update.reboot %} (needs a reboot){% endif %}{% else %}<span class="okc">up to date</span>{% endif %}{% endif %}</dd>
+    {% if s.cpu %}<dt>CPU</dt><dd>{{ s.cpu }}{% if s.cpu_cores %} · {{ s.cpu_cores }} cores{% endif %}{% if s.cpu_mhz %} · {{ s.cpu_mhz }} MHz{% endif %}</dd>{% endif %}
+    {% if s.ram_mb %}<dt>Memory</dt><dd>{{ s.ram_mb|int }} MB</dd>{% endif %}
+    {% if s.timezone %}<dt>Time zone</dt><dd>{{ s.timezone }}</dd>{% endif %}
+    {% if d.fan %}<dt>Fan mode</dt><dd>{{ d.fan.dual_fan_speed or d.fan.fan_speed or d.fan|tojson }}</dd>{% endif %}
+    <dt>UPS</dt><dd>{% if not d.ups %}<span class="dim">not reported</span>{% elif not d.ups.enabled %}<span class="dim">none connected</span>{% else %}{{ d.ups.model or 'UPS' }} · <span class="{{ 'wa' if d.ups.on_battery else 'okc' }}">{{ d.ups.status or ('on battery' if d.ups.on_battery else 'on line power') }}</span>{% if d.ups.charge is not none %} · {{ d.ups.charge|round|int }}% charged{% endif %}{% if d.ups.runtime_s %} · {{ d.ups.runtime_s|duration }} runtime{% endif %}{% endif %}</dd>
+    {% if d.security %}<dt>Security Advisor</dt><dd>{{ nas.health('normal' if (d.security.status or '')|lower == 'safe' else d.security.status) }} {{ d.security.status or 'unknown' }} · <a href="?tab=users">details</a></dd>{% endif %}
+  </dl></div>
+  {% if d.interfaces %}<div class="p"><div class="ph"><h2>Network interfaces</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Interface</th><th>Address</th><th>Type</th><th class="n">Speed</th></tr></thead><tbody>
+    {% for i in d.interfaces %}<tr><td><span class="dot {{ 'd-up' if i.status == 'connected' else 'd-off' }}" title="{{ i.status }}"></span></td><td class="mono">{{ i.name }}</td><td class="mono">{{ i.ip or '–' }}{% if i.mask %}/{{ i.mask }}{% endif %}{% if i.dhcp %} <span class="tag">DHCP</span>{% endif %}</td><td>{{ i.type or '' }}</td><td class="n">{{ (i.speed ~ ' Mb/s') if i.speed and i.speed > 0 else '–' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+</div>
+
+{% elif tab == 'storage' %}
+<div class="grid">
+  <div class="p"><div class="ph"><h2>Storage pools</h2><span class="sub">{{ (d.pools or [])|length }}</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Pool</th><th>RAID</th><th>Used</th><th class="n">Size</th><th>Disks</th><th>Data scrubbing</th></tr></thead><tbody>
+    {% for p in d.pools or [] %}<tr><td>{{ nas.health(p.status) }}</td><td><b>{{ p.name }}</b> <span class="dim">{{ p.status }}</span></td><td>{{ (p.raid or '')|replace('_', ' ') }}</td>
+      <td class="nw">{{ meter(p.pct, 80, 90) }}</td><td class="n">{{ p.total|bytes }}</td><td class="dim mono" style="font-size:12px">{{ p.disks|join(', ') }}</td>
+      <td class="nw">{% if p.scrubbing %}<span class="tag">running{% if p.progress is not none %} {{ p.progress|round|int }}%{% endif %}</span>{% elif p.last_scrub %}<span class="dim">last {{ nas.when(p.last_scrub) }}</span>{% endif %}
+        {% if ctl %}{% if p.scrubbing %}{{ nas.act(n, actions, 'scrub_stop', p.id, p.name, label='Stop') }}{% else %}{{ nas.act(n, actions, 'scrub_start', p.id, 'on ' ~ p.name, label='Run now') }}{% endif %}{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="dim">No storage pools reported.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p"><div class="ph"><h2>Volumes</h2></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Volume</th><th>File system</th><th>Pool</th><th>Used</th><th class="n">Used</th><th class="n">Size</th></tr></thead><tbody>
+    {% for v in vols %}<tr><td>{{ nas.health(v.status) }}</td><td><b>{{ v.name }}</b> <span class="dim">{{ v.status }}</span>{% if v.desc %}<div class="dim" style="font-size:12px">{{ v.desc }}</div>{% endif %}</td><td>{{ v.fs or '' }}</td><td class="dim">{{ v.pool or '' }}</td>
+      <td class="nw">{{ meter(v.pct, 80, 90) }}</td><td class="n">{{ v.used|bytes }}</td><td class="n">{{ v.total|bytes }}</td></tr>
+    {% else %}<tr><td colspan="7" class="dim">No volumes reported.</td></tr>{% endfor %}</tbody></table></div></div>
+  {% for v in (vols|selectattr('series')|list)[:4] %}<div class="p c6"><div class="ph"><h3>{{ v.name }}</h3><span class="sub">% used</span></div>
+    {{ chart(n.id, v.series, [{"key":"a","color":"var(--s2)"}], 'pct', 150, v.name ~ ' used', 100) }}</div>{% endfor %}
+  <div class="p"><div class="ph"><h2>Disks</h2><span class="sub">{{ (d.disks or [])|length }} · click a disk for SMART attributes</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th>Disk</th><th>Model</th><th class="n">Size</th><th>Type</th><th class="n">Temp</th><th>Status</th><th>SMART</th><th class="n">Life left</th><th class="n">Bad sectors</th><th>Used by</th></tr></thead><tbody>
+    {% for x in d.disks or [] %}<tr><td>{{ nas.health(x.status if (x.smart or 'normal')|lower in ('normal', 'healthy', 'unknown', '') else x.smart) }}</td>
+      <td><a class="row" href="/nas/{{ n.id }}/disk/{{ x.id|urlencode }}">{{ x.name }}</a>{% if x.enclosure %}<div class="dim" style="font-size:12px">{{ x.enclosure }}</div>{% endif %}</td>
+      <td>{{ x.vendor }} {{ x.model }}<div class="dim mono" style="font-size:11.5px">{{ x.serial or '' }}{% if x.firmware %} · fw {{ x.firmware }}{% endif %}</div></td>
+      <td class="n">{{ x.size|bytes }}</td><td>{{ x.type or '' }}{% if x.ssd %} SSD{% endif %}</td>
+      <td class="n {{ 'wa' if x.temp_c and x.temp_c >= 55 else '' }}">{{ (x.temp_c|round|int ~ ' °C') if x.temp_c is not none else '–' }}</td>
+      <td>{{ x.status or '–' }}</td><td class="{{ '' if (x.smart or 'normal')|lower in ('normal', 'healthy') else 'wa' }}">{{ x.smart or '–' }}</td>
+      <td class="n">{{ x.life_pct|pct if x.life_pct is not none else '–' }}</td><td class="n {{ 'wa' if x.bad_sectors else '' }}">{{ x.bad_sectors|int if x.bad_sectors is not none else '–' }}</td>
+      <td class="dim">{{ x.used_by or '' }}{% for w in x.warnings %} <span class="tag wa">{{ w|replace('_', ' ') }}</span>{% endfor %}</td></tr>
+    {% else %}<tr><td colspan="11" class="dim">No disks reported.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+{% elif tab == 'shares' %}
+{% set snappable = (d.shares or [])|selectattr('snapshots_supported')|list %}
+<div class="grid">
+  <div class="p"><div class="ph"><h2>Shared folders</h2><span class="sub">{{ (d.shares or [])|length }}</span></div>
+    <div class="scroll"><table><thead><tr><th>Name</th><th>Volume</th><th>Encrypted</th><th>Recycle bin</th><th class="n">Used</th><th class="n">Quota</th><th class="n">Snapshots</th></tr></thead><tbody>
+    {% for x in d.shares or [] %}<tr><td><b>{{ x.name }}</b>{% if x.hidden %} <span class="tag">hidden</span>{% endif %}{% if x.desc %}<div class="dim" style="font-size:12px">{{ x.desc }}</div>{% endif %}</td><td class="dim">{{ x.path or '' }}</td>
+      <td>{{ yesno(x.encrypted) }}</td><td>{{ yesno(x.recycle_bin) }}</td><td class="n">{{ (x.used_mb * 1000000)|bytes if x.used_mb else '–' }}</td><td class="n">{{ (x.quota_mb * 1000000)|bytes if x.quota_mb else 'none' }}</td>
+      <td class="n">{% if x.snapshot_count is not none %}<a href="#snap-{{ loop.index }}">{{ x.snapshot_count }}</a>{% elif x.snapshots_supported %}<span class="dim">–</span>{% else %}<span class="dim" title="Snapshots need a Btrfs volume">n/a</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="dim">No shared folders reported.</td></tr>{% endfor %}</tbody></table></div>
+    {% if ctl and snappable %}<form method="post" action="/nas/{{ n.id }}/action" class="filters" style="margin-top:12px">{{ nas.hidden(n, 'snapshot_create') }}
+      <select name="share" aria-label="Shared folder" required>{% for x in snappable %}<option>{{ x.name }}</option>{% endfor %}</select>
+      <input type="text" name="description" placeholder="Description, e.g. before-upgrade" maxlength="255" aria-label="Snapshot description" style="flex:1;min-width:180px">
+      <input type="hidden" name="has_lock" value="1"><label class="chk"><input type="checkbox" name="lock"> Lock <span class="help">(retention policies won't delete it)</span></label>
+      <button class="btn" type="submit">Take snapshot</button></form>{% endif %}</div>
+  {% for x in d.shares or [] %}{% if x.snapshots %}<div class="p c6" id="snap-{{ loop.index }}"><div class="ph"><h2>{{ x.name }}</h2><span class="sub">{{ x.snapshot_count }} snapshot{{ '' if x.snapshot_count == 1 else 's' }}{% if x.snapshot_count and x.snapshot_count > x.snapshots|length %}, newest {{ x.snapshots|length }} shown{% endif %}</span></div>
+    <div class="scroll"><table><thead><tr><th>Snapshot</th><th>Description</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for sn in x.snapshots %}<tr><td class="mono" style="font-size:12px">{{ sn.time }}{% if sn.locked %} <span class="tag">locked</span>{% endif %}{% if sn.scheduled %} <span class="tag">scheduled</span>{% endif %}</td><td class="dim">{{ sn.desc }}</td>
+      {% if ctl %}<td class="n">{% if not sn.locked %}<form class="inline" method="post" action="/nas/{{ n.id }}/action"{{ nas.confirm_attrs(n, actions.snapshot_delete, sn.time ~ ' of ' ~ x.name) }}>{{ nas.hidden(n, 'snapshot_delete') }}<input type="hidden" name="share" value="{{ x.name }}"><input type="hidden" name="snapshot" value="{{ sn.time }}"><button class="btn sm" type="submit">Delete</button></form>{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>{% endif %}{% endfor %}
+</div>
+
+{% elif tab == 'apps' %}
+<div class="grid">
+  <div class="p"><div class="ph"><h2>Containers</h2><span class="sub">{% if d.containers is none %}Container Manager isn't installed or isn't readable{% else %}{{ d.containers|selectattr('running')|list|length }} of {{ d.containers|length }} running{% endif %}</span></div>
+    {% if d.containers is not none %}<div class="scroll"><table><thead><tr><th></th><th>Container</th><th>Image</th><th>State</th><th class="n">CPU</th><th class="n">Memory</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for c in d.containers %}<tr><td><span class="dot {{ 'd-up' if c.running else 'd-off' }}"></span></td><td><b>{{ c.name }}</b>{% if c.project %} <span class="tag">{{ c.project }}</span>{% endif %}{% if c.package %} <span class="tag" title="Managed by a DSM package">package</span>{% endif %}</td>
+      <td class="dim mono" style="font-size:12px">{{ c.image or '' }}</td><td>{{ c.status }}{% if c.running and c.up_s %} <span class="dim">{{ c.up_s|duration }}</span>{% endif %}</td>
+      <td class="n">{{ c.cpu|pct if c.cpu is not none else '–' }}</td><td class="n">{{ c.mem|bytes if c.mem else '–' }}</td>
+      {% if ctl %}<td class="n nw">{% if c.running %}{{ nas.act(n, actions, 'container_restart', c.name, 'container ' ~ c.name) }} {{ nas.act(n, actions, 'container_stop', c.name, 'container ' ~ c.name) }}{% else %}{{ nas.act(n, actions, 'container_start', c.name) }}{% endif %}</td>{% endif %}</tr>
+    {% else %}<tr><td colspan="7" class="dim">No containers.</td></tr>{% endfor %}</tbody></table></div>{% endif %}</div>
+  {% if d.projects %}<div class="p c6"><div class="ph"><h2>Projects</h2><span class="sub">Compose projects in Container Manager</span></div>
+    <table><thead><tr><th></th><th>Project</th><th>State</th><th class="n">Containers</th></tr></thead><tbody>
+    {% for p in d.projects %}<tr><td><span class="dot {{ 'd-up' if p.status == 'running' else 'd-off' }}"></span></td><td><b>{{ p.name }}</b><div class="dim mono" style="font-size:11.5px">{{ p.path or '' }}</div></td><td>{{ p.status }}</td><td class="n">{{ p.containers }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  <div class="p"><div class="ph"><h2>Packages</h2><span class="sub">{{ (d.packages or [])|selectattr('status', 'equalto', 'running')|list|length }} of {{ (d.packages or [])|length }} running</span>
+    <input type="search" data-filter="pkgs" placeholder="Filter packages" aria-label="Filter packages" style="font:14px var(--body);padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"></div>
+    <div class="scroll"><table id="pkgs"><thead><tr><th></th><th>Package</th><th>Version</th><th>State</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for p in d.packages or [] %}<tr data-q="{{ (p.name ~ ' ' ~ p.id)|lower }}"><td><span class="dot {{ 'd-up' if p.status == 'running' else 'd-off' }}"></span></td><td><b>{{ p.name }}</b> <span class="dim mono" style="font-size:11.5px">{{ p.id }}</span></td><td>{{ p.version or '' }}</td><td>{{ p.status }}</td>
+      {% if ctl %}<td class="n">{% if p.startable %}{% if p.status == 'running' %}{{ nas.act(n, actions, 'package_stop', p.id, 'package ' ~ p.name) }}{% else %}{{ nas.act(n, actions, 'package_start', p.id) }}{% endif %}{% endif %}</td>{% endif %}</tr>
+    {% else %}<tr><td colspan="5" class="dim">No packages reported.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+{% elif tab == 'vms' %}
+<div class="p"><div class="ph"><h2>Virtual Machine Manager</h2><span class="sub">{{ (d.vms or [])|selectattr('running')|list|length }} of {{ (d.vms or [])|length }} running</span></div>
+  <div class="scroll"><table><thead><tr><th></th><th>VM</th><th>State</th><th class="n">vCPU</th><th class="n">Memory</th><th>Storage</th><th class="n">Disks</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+  {% for g in d.vms or [] %}<tr><td><span class="dot {{ 'd-up' if g.running else ('d-warn' if g.status not in ('shutdown', 'stopped') else 'd-off') }}"></span></td><td><b>{{ g.name }}</b>{% if g.desc %}<div class="dim" style="font-size:12px">{{ g.desc }}</div>{% endif %}</td>
+    <td>{{ g.status }}</td><td class="n">{{ g.vcpu or '–' }}</td><td class="n">{{ (g.ram_mb|int ~ ' MB') if g.ram_mb else '–' }}</td><td class="dim">{{ g.storage or '' }}</td><td class="n">{{ g.disks }}</td>
+    {% if ctl %}<td class="n nw">{% if g.running %}{{ nas.act(n, actions, 'vm_shutdown', g.id, 'VM ' ~ g.name) }} {{ nas.act(n, actions, 'vm_poweroff', g.id, 'VM ' ~ g.name, label='Power off', cls='btn sm danger') }}{% elif g.status in ('shutdown', 'stopped') %}{{ nas.act(n, actions, 'vm_poweron', g.id) }}{% endif %}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="8" class="dim">No virtual machines.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% elif tab == 'backups' %}
+<div class="p"><div class="ph"><h2>Hyper Backup tasks</h2><span class="sub">{% if d.backups is none %}Hyper Backup isn't installed or isn't readable{% else %}{{ d.backups|length }}{% endif %}</span></div>
+  {% if d.backups is not none %}<div class="scroll"><table><thead><tr><th></th><th>Task</th><th>Destination</th><th>State</th><th>Last backup</th><th>Last result</th><th>Next</th>{% if ctl %}<th></th>{% endif %}</tr></thead><tbody>
+  {% for b in d.backups %}<tr><td><span class="dot {{ 'd-warn' if not b.ok else ('d-up' if b.last_time else 'd-off') }}"></span></td><td><b>{{ b.name }}</b> <span class="dim">#{{ b.id }}</span></td><td>{{ (b.target or '')|replace('_', ' ') }}</td>
+    <td>{% if b.running %}<span class="tag">running{% if b.progress is not none %} {{ b.progress|round|int }}%{% endif %}</span>{% else %}{{ b.status or b.state or '–' }}{% endif %}</td>
+    <td class="nw">{{ nas.when(b.last_time) }}</td><td class="{{ '' if b.ok else 'wa' }}">{{ b.last_result or '–' }}{% if not b.ok and b.last_success %}<div class="dim" style="font-size:12px">last good {{ nas.when(b.last_success) }}</div>{% endif %}</td><td class="nw">{{ nas.when(b.next_time) }}</td>
+    {% if ctl %}<td class="n nw">{% if b.running %}{{ nas.act(n, actions, 'backup_cancel', b.id, b.name) }}{% else %}{{ nas.act(n, actions, 'backup_run', b.id) }}{% endif %}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="8" class="dim">No backup tasks.</td></tr>{% endfor %}</tbody></table></div>{% endif %}</div>
+<p class="help">Snapshot Replication shows under <a href="?tab=shares">Shares and snapshots</a>. Other backup apps (Active Backup, USB Copy, Cloud Sync) aren't read yet.</p>
+
+{% elif tab == 'users' %}
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Security Advisor</h2>{% if ctl and d.security %}{{ nas.act(n, actions, 'security_scan', label='Run scan now') }}{% endif %}</div>
+    {% if d.security %}<p style="margin-top:0">{{ nas.health('normal' if (d.security.status or '')|lower == 'safe' else d.security.status) }} <b>{{ d.security.status or 'unknown' }}</b>{% if d.security.last_scan %} · last scan {{ nas.when(d.security.last_scan) }}{% endif %}{% if d.security.progress is not none and d.security.progress < 100 %} · scanning {{ d.security.progress|round|int }}%{% endif %}</p>
+    <table><thead><tr><th>Category</th><th>Result</th><th class="n">Danger</th><th class="n">Warning</th><th class="n">Risk</th></tr></thead><tbody>
+    {% for c in d.security.categories %}<tr><td>{{ c.name }}</td><td>{{ c.severity }}</td><td class="n {{ 'bad' if c.danger else '' }}">{{ c.danger }}</td><td class="n {{ 'wa' if c.warning else '' }}">{{ c.warning }}</td><td class="n">{{ c.risk }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="dim">Security Advisor results aren't available.</p>{% endif %}</div>
+  <div class="p c6"><div class="ph"><h2>DSM update</h2></div>
+    {% if d.dsm_update %}<p style="margin-top:0">{% if d.dsm_update.available %}<span class="wa">{{ d.dsm_update.version or 'An update' }} is available</span>{% if d.dsm_update.reboot %}; installing it reboots the NAS{% endif %}.{% else %}<span class="okc">DSM is up to date</span> ({{ s.version }}).{% endif %}</p>
+    <p class="help">VisCon1 doesn't install DSM updates. Use DSM's Control Panel &gt; Update &amp; Restore, so you can read the release notes and pick a time.</p>
+    {% else %}<p class="dim">Update status isn't available.</p>{% endif %}</div>
+  <div class="p"><div class="ph"><h2>Connected users</h2><span class="sub">{{ (d.connections or [])|length }}</span></div>
+    <div class="scroll"><table><thead><tr><th>User</th><th>Type</th><th>From</th><th>Since</th><th>Doing</th></tr></thead><tbody>
+    {% for c in d.connections or [] %}<tr><td><b>{{ c.user }}</b></td><td>{{ c.type }}</td><td class="mono">{{ c.from }}</td><td class="nw">{{ nas.when(c.time) }}</td><td class="dim">{{ c.what or '' }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">Nobody connected.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{% endif %}
+{% endblock %}

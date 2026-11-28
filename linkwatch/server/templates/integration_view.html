@@ -9,6 +9,7 @@
     <div class="ranges">{% for r in ['6h','24h','7d','30d','1y'] %}<button class="fbtn" type="button" data-range-set="{{ r }}" aria-pressed="{{ 'true' if r == '24h' else 'false' }}">{{ r }}</button>{% endfor %}</div>
     <form class="inline" method="post" action="/integrations/{{ integ.id }}/sync"><button class="btn" type="submit">Sync now</button></form>
     {% if integ.kind == 'proxmox' %}<a class="btn" href="/hypervisors?i={{ integ.id }}">Virtual machines</a>{% endif %}
+    {% if integ.kind == 'synology' %}<a class="btn" href="/nas/{{ integ.id }}">NAS controls</a>{% endif %}
     <a class="btn" href="/integrations/{{ integ.id }}">Settings</a></div></div>
 {% if integ.last_error %}<div class="flash {{ 'bad' if integ.status == 'error' else 'warn' }}" role="alert"><b>{{ 'Sync failed' if integ.status == 'error' else 'Some parts failed' }}:</b> {{ integ.last_error }}</div>{% endif %}
 {% if data.unavailable %}<details class="p" style="padding:10px 16px"><summary class="sub" style="cursor:pointer">{{ data.unavailable|length }} optional panel{{ '' if data.unavailable|length == 1 else 's' }} not available with these credentials or this licence</summary>

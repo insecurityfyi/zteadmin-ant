@@ -12,12 +12,13 @@ from .pfsense import PfSense
 from .prisma import PrismaAccess
 from .proxmox import Proxmox
 from .sonicwall import SonicWall
+from .synology import Synology
 from .unifi import UniFi
 from .vyos import VyOS
 from .zscaler import Zscaler
 
 REGISTRY: dict[str, type[Integration]] = {
-    cls.kind: cls for cls in (Zscaler, Netskope, Cato, PrismaAccess, Cloudflare, Meraki, PanOS, FortiGate, SonicWall, PfSense, VyOS, UniFi, Proxmox)
+    cls.kind: cls for cls in (Zscaler, Netskope, Cato, PrismaAccess, Cloudflare, Meraki, PanOS, FortiGate, SonicWall, PfSense, VyOS, UniFi, Proxmox, Synology)
 }
 
 

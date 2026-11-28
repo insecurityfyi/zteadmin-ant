@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ disk.name }}{% endblock %}
+{% block content %}
+{% set h = smart.health %}
+<div class="head"><div><div class="crumb"><a href="/nas">NAS</a> · <a href="/nas/{{ n.id }}?tab=storage">{{ n.name }}</a></div>
+  <h1>{{ disk.name }} <span class="tag">{{ disk.id }}</span></h1>
+  <p>{{ disk.vendor or '' }} {{ disk.model or '' }}{% if disk.serial %} · <span class="mono">{{ disk.serial }}</span>{% endif %}{% if disk.size %} · {{ disk.size|bytes }}{% endif %}{% if disk.temp_c is not none %} · {{ disk.temp_c|round|int }} °C{% endif %} · status {{ disk.status or '–' }} · SMART {{ disk.smart or '–' }}</p></div></div>
+{% if error %}<div class="flash warn" role="alert">{{ error }}</div>{% endif %}
+{% if h %}<div class="p"><div class="ph"><h2>Health</h2></div>{% if h is mapping %}<dl class="kv">{% for k, v in h|dictsort %}<dt>{{ k|replace('_', ' ') }}</dt><dd>{{ v if v is string or v is number else v|tojson }}</dd>{% endfor %}</dl>{% else %}<p>{{ h }}</p>{% endif %}</div>{% endif %}
+<div class="p"><div class="ph"><h2>SMART attributes</h2><span class="sub">read live from the NAS</span></div>
+  <div class="scroll"><table><thead><tr><th class="n">ID</th><th>Attribute</th><th class="n">Value</th><th class="n">Worst</th><th class="n">Threshold</th><th class="n">Raw</th><th>Status</th></tr></thead><tbody>
+  {% for a in smart.attributes or [] %}<tr><td class="n">{{ a.id }}</td><td>{{ a.name }}</td><td class="n">{{ a.current }}</td><td class="n">{{ a.worst }}</td><td class="n">{{ a.threshold }}</td><td class="n mono">{{ a.raw }}</td><td class="{{ '' if (a.status or 'ok')|lower in ('ok', 'normal', '') else 'wa' }}">{{ a.status or '' }}</td></tr>
+  {% else %}<tr><td colspan="7" class="dim">{{ 'No SMART attributes returned (NVMe and some USB disks report none).' if not error else 'Not available right now.' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}
