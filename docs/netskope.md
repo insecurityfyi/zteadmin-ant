@@ -1,6 +1,6 @@
 # Netskope
 
-Linkwatch reads Netskope One over **REST API v2** with a read-only token. It shows
+VisCon1 reads Netskope One over **REST API v2** with a read-only token. It shows
 IPsec and GRE tunnels, NPA publishers, the Netskope Client fleet, Private Access rules,
 app and generative AI usage, and DLP alerts. See [sse.md](sse.md) for the page layout
 shared by all SSE platforms.
@@ -28,7 +28,7 @@ shared by all SSE platforms.
 4. Copy the token. It is shown once.
 
 Leave out endpoints for areas you don't license, and switch those areas off in
-Linkwatch so they don't show as failing.
+VisCon1 so they don't show as failing.
 
 ## 2. Add the integration
 
@@ -63,6 +63,6 @@ Press **Test**, then **Sync now**.
 
 ## Least certain
 
-- The datasearch docs show both `groupbys`/`orderbys` and `groupby`/`sortby` spellings. Linkwatch sends `groupbys`/`orderbys`.
+- The datasearch docs show both `groupbys`/`orderbys` and `groupby`/`sortby` spellings. VisCon1 sends `groupbys`/`orderbys`.
 - The client status datasearch type (`clientstatus`) and its field names, and the list endpoint for IPsec tunnels, weren't fully confirmed in Netskope's public docs.
 - Publisher status: some tenants return `status`, others only `lbrokerconnect`; both are handled.

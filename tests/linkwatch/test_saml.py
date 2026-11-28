@@ -199,14 +199,14 @@ def test_sso_end_to_end(logged_in, app):
         u = s.scalar(select(User).where(User.username == "ada@contoso.com"))
         assert (u.role, u.auth_source, u.external_id, u.full_name) == ("viewer", "saml", "oid-ada", "Ada Lovelace")
     assert logged_in.post("/settings/interval", data={"interval": "60"}, follow_redirects=False).status_code == 303  # read-only: bounced
-    assert "no Linkwatch password" in logged_in.get("/account").text
+    assert "no VisCon1 password" in logged_in.get("/account").text
 
     logged_in.post("/logout")
     assert sso_login(logged_in, aid="_e2", roles=("Linkwatch.Admin",)).status_code == 303
     assert logged_in.get("/admin").status_code == 200               # role synced up to admin
     logged_in.post("/logout")
     r = sso_login(logged_in, aid="_e3", roles=(), groups=("some-other-group",))
-    assert r.status_code == 403 and "allowed into Linkwatch" in r.text
+    assert r.status_code == 403 and "allowed into VisCon1" in r.text
     r = logged_in.post("/login", data={"username": "ada@contoso.com", "password": "anything-at-all"})
     assert r.status_code == 403 and "single sign-on" in r.text
 
@@ -218,7 +218,7 @@ def test_sso_group_ids_jit_off_and_break_glass(logged_in, app):
     setup_sso(logged_in, jit="", local_login="admins")
     logged_in.post("/logout")
     r = sso_login(logged_in, aid="_g1", roles=(), groups=("grp-viewers",))
-    assert r.status_code == 403 and "no Linkwatch account" in r.text
+    assert r.status_code == 403 and "no VisCon1 account" in r.text
     r = logged_in.post("/login", data={"username": "viewer1", "password": "viewer-password-1"})
     assert r.status_code == 403 and "limited to administrators" in r.text
     r = logged_in.post("/login", data={"username": "admin", "password": "pw-for-tests"}, follow_redirects=False)

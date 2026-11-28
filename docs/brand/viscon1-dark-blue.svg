@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="VisCon1">
+  <title>VisCon1 — Command Dial</title>
+  <desc>Visibility and Control 1 — command dial, eye, V and 1 in luminous electric blue and cyan.</desc>
+  <defs>
+    <style type="text/css"><![CDATA[
+
+    .dial-outer { transform-origin: 0 0; animation: spinCW 4s linear infinite; }
+    .dial-inner { transform-origin: 0 0; animation: spinCCW 4s linear infinite; }
+    .pupil-glow {
+      transform-box: fill-box; transform-origin: center;
+      animation: glow 2s ease-in-out infinite;
+    }
+    .pupil {
+      transform-box: fill-box; transform-origin: center;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .ripple-a { animation: rippleA 4s linear infinite; }
+    .ripple-b { animation: rippleB 4s linear infinite; }
+    .sheen {
+      transform-box: view-box; transform-origin: 0px 0px;
+      animation: sheen 4s ease-in-out infinite;
+    }
+    @keyframes spinCW   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes spinCCW  { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.10); }
+    }
+    @keyframes glow {
+      0%, 100% { opacity: 0.35; transform: scale(1); }
+      50%      { opacity: 0.72; transform: scale(1.22); }
+    }
+    @keyframes rippleA {
+      0%          { r: 11; opacity: 0.70; stroke-width: 2.0; }
+      45%         { r: 23; opacity: 0;    stroke-width: 0.5; }
+      50%, 100%   { r: 11; opacity: 0;    stroke-width: 2.0; }
+    }
+    @keyframes rippleB {
+      0%, 50%     { r: 11; opacity: 0;    stroke-width: 2.0; }
+      50.01%      { r: 11; opacity: 0.70; stroke-width: 2.0; }
+      95%         { r: 23; opacity: 0;    stroke-width: 0.5; }
+      100%        { r: 11; opacity: 0;    stroke-width: 2.0; }
+    }
+    @keyframes sheen {
+      0%   { transform: translate(-280px, 0); }
+      100% { transform: translate(560px, 0); }
+    }
+
+    ]]></style>
+    <clipPath id="iconClip-blue">
+      <rect x="0" y="0" width="512" height="512" rx="100" ry="100"/>
+    </clipPath>
+    <clipPath id="markClip-blue">
+      <path d="M 88.00,142.00 L 149.50,142.00 L 246.00,343.50 L 297.50,304.00 L 240.50,403.50 Z"/>
+      <path d="M 380.50,142.50 L 321.00,177.50 L 314.00,196.00 L 344.50,197.50 L 345.00,395.00 L 380.50,395.00 Z"/>
+    </clipPath>
+    <clipPath id="eyeClip-blue">
+      <path d="M 206.80,247.00 C 206.80,241.15 227.38,214.50 255.80,214.50 C 284.22,214.50 304.80,241.15 304.80,247.00 C 304.80,252.85 284.22,279.50 255.80,279.50 C 227.38,279.50 206.80,252.85 206.80,247.00 Z"/>
+    </clipPath>
+    <clipPath id="irisClip-blue">
+      <circle cx="255.8" cy="247.0" r="24.0"/>
+    </clipPath>
+    <linearGradient id="markGrad-blue" x1="88" y1="142" x2="400" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D0F0FF"/>
+      <stop offset="12%" stop-color="#5AA8FF"/>
+      <stop offset="40%" stop-color="#2EC0F0"/>
+      <stop offset="75%" stop-color="#1AD8C8"/>
+      <stop offset="100%" stop-color="#12A0A0"/>
+    </linearGradient>
+    <linearGradient id="bevelGrad-blue" x1="88" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D0F0FF" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#D0F0FF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edgeGrad-blue" x1="88" y1="142" x2="200" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#D0F0FF" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#D0F0FF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="segGrad" x1="-120" y1="-80" x2="120" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2EC8F0"/>
+      <stop offset="100%" stop-color="#1480A8"/>
+    </linearGradient>
+    <linearGradient id="sheenGrad-blue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#E8FFFF" stop-opacity="0"/>
+      <stop offset="42%" stop-color="#E8FFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#E8FFFF" stop-opacity="0.42"/>
+      <stop offset="58%" stop-color="#E8FFFF" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#E8FFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lidGrad-blue" cx="255.8" cy="247.0" r="49.0" gradientUnits="userSpaceOnUse">
+      <stop offset="42%" stop-color="#1480A0" stop-opacity="0"/>
+      <stop offset="58%" stop-color="#4EC8FF" stop-opacity="0.95"/>
+      <stop offset="78%" stop-color="#1480A0" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#1480A0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="irisGrad-blue" cx="45%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#0A3040" stop-opacity="0.3"/>
+      <stop offset="55%" stop-color="#0A3040"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient id="ringGrad-blue" cx="255.8" cy="223.0" r="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4EC8FF"/>
+      <stop offset="100%" stop-color="#1470A0"/>
+    </radialGradient>
+    <filter id="glowBlur-blue" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5"/>
+    </filter>
+    <filter id="softGlow-blue" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="
+        0 0 0 0 0.1
+        0 0 0 0 0.9
+        0 0 0 0 0.35
+        0 0 0 0.70 0" result="g"/>
+      <feMerge>
+        <feMergeNode in="g"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="markBloom-blue" x="-18%" y="-18%" width="136%" height="136%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="b"/>
+      <feColorMatrix in="b" type="matrix" values="
+        0.2 0 0.1 0 0
+        0.1 0.7 0.1 0 0
+        0.05 0.3 0.2 0 0
+        0 0 0 0.55 0" result="g"/>
+      <feMerge>
+        <feMergeNode in="g"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="pupilSoft-blue" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="#11141D"/>
+  <rect x="29.5" y="29.5" width="453.0" height="453.0"
+        rx="100" ry="100" fill="none" stroke="#1F232E" stroke-width="9"/>
+
+  <!-- soft bloom behind the mark + eye -->
+  <g opacity="0.55" filter="url(#glowBlur-blue)">
+    <circle cx="255.8" cy="247.0" r="70" fill="#2EC8E8" opacity="0.45"/>
+    <path d="M 88.00,142.00 L 149.50,142.00 L 246.00,343.50 L 297.50,304.00 L 240.50,403.50 Z" fill="#2EC8E8" opacity="0.35"/>
+    <path d="M 380.50,142.50 L 321.00,177.50 L 314.00,196.00 L 344.50,197.50 L 345.00,395.00 L 380.50,395.00 Z" fill="#2EC8E8" opacity="0.35"/>
+  </g>
+
+  <!-- rotating outer ticks (origin at eye center) -->
+  <g transform="translate(255.8,247.0)">
+    <g class="dial-outer">
+      <path d="M 144.09,-46.82 A 151.50,151.50 0 0 1 86.90,124.10" fill="none" stroke="#0A2838" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+      <path d="M 5.29,151.41 A 151.50,151.50 0 0 1 -116.06,97.38" fill="none" stroke="#0A2838" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+      <path d="M -144.09,-46.82 A 151.50,151.50 0 0 1 125.60,-84.72" fill="none" stroke="#0A2838" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+      <line x1="141.71" y1="-46.04" x2="146.46" y2="-47.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="145.74" y1="-30.98" x2="150.63" y2="-32.02" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="148.18" y1="-15.57" x2="153.16" y2="-16.10" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="149.00" y1="0.00" x2="157.00" y2="0.00" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="148.18" y1="15.57" x2="153.16" y2="16.10" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="145.74" y1="30.98" x2="150.63" y2="32.02" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="141.71" y1="46.04" x2="146.46" y2="47.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="136.12" y1="60.60" x2="140.69" y2="62.64" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="129.04" y1="74.50" x2="135.97" y2="78.50" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="120.54" y1="87.58" x2="124.59" y2="90.52" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="110.73" y1="99.70" x2="114.44" y2="103.05" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="99.70" y1="110.73" x2="103.05" y2="114.44" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="87.58" y1="120.54" x2="90.52" y2="124.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="0.00" y1="149.00" x2="0.00" y2="157.00" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="-15.57" y1="148.18" x2="-16.10" y2="153.16" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-30.98" y1="145.74" x2="-32.02" y2="150.63" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-46.04" y1="141.71" x2="-47.59" y2="146.46" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-60.60" y1="136.12" x2="-62.64" y2="140.69" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-74.50" y1="129.04" x2="-78.50" y2="135.97" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="-87.58" y1="120.54" x2="-90.52" y2="124.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-99.70" y1="110.73" x2="-103.05" y2="114.44" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-110.73" y1="99.70" x2="-114.44" y2="103.05" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-141.71" y1="-46.04" x2="-146.46" y2="-47.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-136.12" y1="-60.60" x2="-140.69" y2="-62.64" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-129.04" y1="-74.50" x2="-135.97" y2="-78.50" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="-120.54" y1="-87.58" x2="-124.59" y2="-90.52" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-110.73" y1="-99.70" x2="-114.44" y2="-103.05" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-99.70" y1="-110.73" x2="-103.05" y2="-114.44" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-87.58" y1="-120.54" x2="-90.52" y2="-124.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-74.50" y1="-129.04" x2="-78.50" y2="-135.97" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="-60.60" y1="-136.12" x2="-62.64" y2="-140.69" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-46.04" y1="-141.71" x2="-47.59" y2="-146.46" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-30.98" y1="-145.74" x2="-32.02" y2="-150.63" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-15.57" y1="-148.18" x2="-16.10" y2="-153.16" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="-0.00" y1="-149.00" x2="-0.00" y2="-157.00" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="15.57" y1="-148.18" x2="16.10" y2="-153.16" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="30.98" y1="-145.74" x2="32.02" y2="-150.63" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="46.04" y1="-141.71" x2="47.59" y2="-146.46" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="60.60" y1="-136.12" x2="62.64" y2="-140.69" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="74.50" y1="-129.04" x2="78.50" y2="-135.97" stroke="#4EC8FF" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+      <line x1="87.58" y1="-120.54" x2="90.52" y2="-124.59" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="99.70" y1="-110.73" x2="103.05" y2="-114.44" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="110.73" y1="-99.70" x2="114.44" y2="-103.05" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="120.54" y1="-87.58" x2="124.59" y2="-90.52" stroke="#1A6A9A" stroke-width="1.7" stroke-linecap="round" opacity="0.82"/>
+      <line x1="133.03" y1="-28.28" x2="143.79" y2="-30.56" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="136.00" y1="0.00" x2="147.00" y2="0.00" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="133.03" y1="28.28" x2="143.79" y2="30.56" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="124.24" y1="55.32" x2="134.29" y2="59.79" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="110.03" y1="79.94" x2="118.93" y2="86.40" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="91.00" y1="101.07" x2="98.36" y2="109.24" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-14.22" y1="135.25" x2="-15.37" y2="146.19" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-42.03" y1="129.34" x2="-45.43" y2="139.81" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-68.00" y1="117.78" x2="-73.50" y2="127.31" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-91.00" y1="101.07" x2="-98.36" y2="109.24" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-124.24" y1="-55.32" x2="-134.29" y2="-59.79" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-110.03" y1="-79.94" x2="-118.93" y2="-86.40" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-91.00" y1="-101.07" x2="-98.36" y2="-109.24" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-68.00" y1="-117.78" x2="-73.50" y2="-127.31" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-42.03" y1="-129.34" x2="-45.43" y2="-139.81" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="-14.22" y1="-135.25" x2="-15.37" y2="-146.19" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="14.22" y1="-135.25" x2="15.37" y2="-146.19" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="42.03" y1="-129.34" x2="45.43" y2="-139.81" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="68.00" y1="-117.78" x2="73.50" y2="-127.31" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="91.00" y1="-101.07" x2="98.36" y2="-109.24" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+      <line x1="110.03" y1="-79.94" x2="118.93" y2="-86.40" stroke="#176090" stroke-width="3.2" stroke-linecap="round" opacity="0.88"/>
+    </g>
+  </g>
+
+  <!-- counter-rotating inner segments -->
+  <g transform="translate(255.8,247.0)">
+    <g class="dial-inner">
+      <path d="M -112.23,-7.85 A 112.50,112.50 0 0 1 -87.43,-70.80" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M -76.72,-82.28 A 112.50,112.50 0 0 1 -49.32,-101.11" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M -40.32,-105.03 A 112.50,112.50 0 0 1 40.32,-105.03" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M 47.54,-101.96 A 112.50,112.50 0 0 1 72.31,-86.18" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M 9.81,112.07 A 112.50,112.50 0 0 1 -11.76,111.88" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M -25.31,109.62 A 112.50,112.50 0 0 1 -47.54,101.96" fill="none" stroke="url(#segGrad)" stroke-width="10.5" stroke-linecap="round"/>
+      <path d="M -54.25,-48.85 A 73.00,73.00 0 0 1 44.94,-57.52" fill="none" stroke="#1A88B8" stroke-width="5.0" stroke-linecap="round" opacity="0.9"/>
+    </g>
+  </g>
+
+  <!-- static inner ring around the eye -->
+  <circle cx="255.8" cy="247.0" r="60.0" fill="none"
+          stroke="url(#ringGrad-blue)" stroke-width="6.5"/>
+
+  <!-- eye -->
+  <g>
+    <path d="M 206.80,247.00 C 206.80,241.15 227.38,214.50 255.80,214.50 C 284.22,214.50 304.80,241.15 304.80,247.00 C 304.80,252.85 284.22,279.50 255.80,279.50 C 227.38,279.50 206.80,252.85 206.80,247.00 Z" fill="url(#lidGrad-blue)" opacity="0.95"/>
+    <path d="M 206.80,247.00 C 206.80,241.15 227.38,214.50 255.80,214.50 C 284.22,214.50 304.80,241.15 304.80,247.00 C 304.80,252.85 284.22,279.50 255.80,279.50 C 227.38,279.50 206.80,252.85 206.80,247.00 Z" fill="none" stroke="#4EC8FF" stroke-width="1.6" opacity="0.7"/>
+    <circle cx="255.8" cy="247.0" r="24.0" fill="url(#irisGrad-blue)"/>
+    <!-- sonar ripples inside the iris -->
+    <g clip-path="url(#irisClip-blue)">
+      <circle class="ripple-a" cx="255.8" cy="247.0" r="11" fill="none" stroke="#5EFFF2" stroke-linecap="round"/>
+      <circle class="ripple-b" cx="255.8" cy="247.0" r="11" fill="none" stroke="#5EFFF2" stroke-linecap="round"/>
+    </g>
+    <circle class="pupil-glow" filter="url(#glowBlur-blue)" cx="255.8" cy="247.0" r="16" fill="#2EE8E0"/>
+    <circle class="pupil" cx="255.8" cy="247.0" r="9.6" fill="#E8FFFC" filter="url(#pupilSoft-blue)"/>
+  </g>
+
+  <!-- V + 1 (drawn above the dial so rotating ticks slide behind them) -->
+  <g filter="url(#markBloom-blue)">
+    <path d="M 88.00,142.00 L 149.50,142.00 L 246.00,343.50 L 297.50,304.00 L 240.50,403.50 Z" fill="url(#markGrad-blue)"/>
+    <path d="M 380.50,142.50 L 321.00,177.50 L 314.00,196.00 L 344.50,197.50 L 345.00,395.00 L 380.50,395.00 Z" fill="url(#markGrad-blue)"/>
+    <path d="M 88.00,142.00 L 149.50,142.00 L 246.00,343.50 L 297.50,304.00 L 240.50,403.50 Z" fill="url(#bevelGrad-blue)"/>
+    <path d="M 380.50,142.50 L 321.00,177.50 L 314.00,196.00 L 344.50,197.50 L 345.00,395.00 L 380.50,395.00 Z" fill="url(#bevelGrad-blue)"/>
+    <!-- slim left-edge highlight -->
+    <path d="M 88.00,142.00 L 149.50,142.00 L 246.00,343.50 L 297.50,304.00 L 240.50,403.50 Z" fill="none" stroke="url(#edgeGrad-blue)" stroke-width="1.8" opacity="0.7"/>
+    <path d="M 380.50,142.50 L 321.00,177.50 L 314.00,196.00 L 344.50,197.50 L 345.00,395.00 L 380.50,395.00 Z" fill="none" stroke="url(#edgeGrad-blue)" stroke-width="1.8" opacity="0.5"/>
+  </g>
+  <g clip-path="url(#markClip-blue)">
+    <g transform="rotate(-22 255.8 247.0)">
+      <g class="sheen">
+        <rect x="0" y="-80" width="170" height="700" fill="url(#sheenGrad-blue)"/>
+      </g>
+    </g>
+  </g>
+</svg>

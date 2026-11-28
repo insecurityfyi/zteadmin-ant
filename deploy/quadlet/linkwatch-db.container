@@ -1,6 +1,6 @@
-# PostgreSQL for Linkwatch. Rootless Podman under the deploy user, managed by systemd (Quadlet).
+# PostgreSQL for VisCon1. Rootless Podman under the deploy user, managed by systemd (Quadlet).
 [Unit]
-Description=Linkwatch database (PostgreSQL)
+Description=VisCon1 database (PostgreSQL)
 
 [Container]
 ContainerName=linkwatch-db

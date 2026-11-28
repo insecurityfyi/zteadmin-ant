@@ -1,6 +1,6 @@
 # SonicWall (SonicOS 6.5.4 and 7.x)
 
-Linkwatch reads SonicWall firewalls in two ways. Use both, on the same IP address, and they show as one device:
+VisCon1 reads SonicWall firewalls in two ways. Use both, on the same IP address, and they show as one device:
 
 | Source | What it gives |
 | --- | --- |
@@ -14,13 +14,13 @@ The SonicOS API has very little live telemetry, which is why SNMP is worth addin
 SonicOS 7: **Device > Settings > Administration > SonicOS API**. SonicOS 6.5: **Manage > System Setup > Appliance > Base Settings > SonicOS API**.
 
 1. Tick **Enable SonicOS API**.
-2. Tick **RFC-2617 HTTP Basic Access authentication**. Linkwatch signs in with HTTP Basic over HTTPS only.
+2. Tick **RFC-2617 HTTP Basic Access authentication**. VisCon1 signs in with HTTP Basic over HTTPS only.
 3. Leave the other methods as they are. Session security can stay on.
 4. Click **Accept**.
 
 Also check that **HTTPS management** is allowed on the interface the poller reaches (Network > Interfaces > the interface > Management: HTTPS). If the management port isn't 443, put it in the address field, for example `10.0.0.1:8443`.
 
-## 2. Create an admin for Linkwatch
+## 2. Create an admin for VisCon1
 
 Use a dedicated account. **Don't reuse your own**: SonicOS allows one configuring admin at a time, and an API sign-in can end a web session for the same account.
 
@@ -29,11 +29,11 @@ Use a dedicated account. **Don't reuse your own**: SonicOS allows one configurin
 3. On the group, turn on **"Members go straight to the management UI on web login"**. Without it the API refuses the sign-in.
 4. Don't turn on two-factor authentication for this account.
 
-Linkwatch only reads. Each sync signs in, makes a few GET requests and signs out straight away (`DELETE /api/sonicos/auth`), so the admin session is freed within a second or two. It never takes over another admin's session.
+VisCon1 only reads. Each sync signs in, makes a few GET requests and signs out straight away (`DELETE /api/sonicos/auth`), so the admin session is freed within a second or two. It never takes over another admin's session.
 
 ## 3. Add the integration
 
-1. In Linkwatch: **Integrations > Connect an integration > SonicWall**.
+1. In VisCon1: **Integrations > Connect an integration > SonicWall**.
 2. Fill in:
    - **Firewall address:** for example `10.0.0.1` or `fw.example.lan:8443`.
    - **Admin username and password:** the account from step 2.
@@ -45,7 +45,7 @@ Linkwatch only reads. Each sync signs in, makes a few GET requests and signs out
 
 1. On the firewall: **Device > Settings > Administration > SNMP**. Enable SNMP and set a v3 user, or a v2c community limited to the poller's IP.
 2. Allow **SNMP** in the management options of the interface the poller reaches.
-3. In Linkwatch, add the SNMP credentials under **Settings**, then add the firewall under **Devices > Add device** with the same IP. You can also let **Discovery** find it.
+3. In VisCon1, add the SNMP credentials under **Settings**, then add the firewall under **Devices > Add device** with the same IP. You can also let **Discovery** find it.
 
 On the next sync the SonicWall integration attaches its data to that device. It matches on serial number, then IP address, then name.
 

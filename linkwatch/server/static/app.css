@@ -1,4 +1,4 @@
-/* Linkwatch console. Tokens first; dark values for both the OS setting and an explicit data-theme. */
+/* VisCon1 console. Tokens first; dark values for both the OS setting and an explicit data-theme. */
 :root,.theme-pick[data-theme="auto"]{
   --bg:#f3f5f7; --panel:#ffffff; --ink:#111a22; --mute:#5b6874; --line:#dde3e8; --soft:#eef2f5;
   --rail:#0f1d26; --railInk:#c3d0d9; --railHi:#ffffff;
@@ -37,6 +37,11 @@
   --rail:#0c1a31; --railInk:#c9d6e8; --railHi:#ffffff; --accent:#3b82f6; --onAccent:#ffffff; --up:#22c55e; --warn:#f59e0b; --down:#ef4444; --info:#60a5fa; --off:#64748b;
   --s1:#3b82f6; --s2:#4ade80; --s3:#a78bfa; color-scheme:dark}
 :root[data-theme="navy"]{--display:"Inter",system-ui,sans-serif; --body:"Inter",system-ui,sans-serif}
+:root[data-theme="as400"],.theme-pick[data-theme="as400"]{
+  --bg:#020a04; --panel:#071409; --ink:#9dff9d; --mute:#4fbf5a; --line:#14361a; --soft:#0b1f0f;
+  --rail:#000000; --railInk:#7ee787; --railHi:#c8ffc8; --accent:#33ff66; --onAccent:#001a06; --up:#33ff66; --warn:#ffd23f; --down:#ff5c5c; --info:#5cd6ff; --off:#3f6b45;
+  --s1:#33ff66; --s2:#ffd23f; color-scheme:dark}
+:root[data-theme="as400"]{--display:"IBM Plex Mono",ui-monospace,Menlo,monospace; --body:"IBM Plex Mono",ui-monospace,Menlo,monospace}
 *{box-sizing:border-box}
 html,body{min-height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--body)}
@@ -322,3 +327,8 @@ pre.cmd{background:var(--rail);color:#d6e3ea;border-radius:8px;padding:12px 14px
 .ph form.filters select,.ph form.filters input,.hv-bar select{width:auto;font-size:13.5px;padding:5px 8px}
 .p > form.filters select{width:auto}
 .hv-forms form > button{align-self:flex-start}
+/* VisCon1 logo (templates/_brand.html) */
+.logo{display:inline-flex;flex:none;line-height:0}
+.logo img{display:block}
+.login-brand{display:flex;align-items:center;gap:14px}
+.login-brand .dim{font-size:12.5px;margin-top:2px}

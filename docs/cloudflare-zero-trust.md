@@ -1,6 +1,6 @@
 # Cloudflare Zero Trust
 
-Linkwatch reads Cloudflare Zero Trust (Cloudflare One) over the **Cloudflare API v4**
+VisCon1 reads Cloudflare Zero Trust (Cloudflare One) over the **Cloudflare API v4**
 and its GraphQL analytics, with a read-only API token. It shows Cloudflare Tunnels,
 Magic WAN tunnels, WARP devices, Gateway and Access policies, app and generative AI
 usage, and DLP profiles. See [sse.md](sse.md) for the page layout shared by all SSE
@@ -24,7 +24,7 @@ platforms.
 | Account Analytics | Gateway HTTP analytics, Magic WAN health |
 | Magic WAN / Magic Transit | Magic WAN tunnels (only if you use it) |
 
-3. Limit it to your account, optionally to the Linkwatch server's IP, and create it.
+3. Limit it to your account, optionally to the VisCon1 server's IP, and create it.
 4. Note the **account ID** (the account's Overview page, or the dashboard URL).
 
 ## 2. Add the integration
@@ -59,6 +59,6 @@ field shows as a note instead of breaking the tab.
 
 ## Least certain
 
-- The Gateway HTTP analytics application dimension (`httpApplicationIds` or similar). Linkwatch looks it up; if none exists it groups by host instead.
+- The Gateway HTTP analytics application dimension (`httpApplicationIds` or similar). VisCon1 looks it up; if none exists it groups by host instead.
 - The Magic WAN health-check dataset name and fields.
 - Cloudflare is moving WARP devices to a newer devices API; `/devices` is still documented.

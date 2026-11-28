@@ -89,7 +89,7 @@ def saml_acs(request: Request, SAMLResponse: str = Form(""), RelayState: str | N
         problem = None
         if user is None:
             if not cfg.jit:
-                problem = f"There's no Linkwatch account for {username}. Ask an admin to add one."
+                problem = f"There's no VisCon1 account for {username}. Ask an admin to add one."
             elif role is None:
                 problem = _no_role(username, ident)
             elif len(username) > 64:
@@ -102,7 +102,7 @@ def saml_acs(request: Request, SAMLResponse: str = Form(""), RelayState: str | N
                 s.flush()
                 audit(s, "system", ip, "user created by SSO", f"{username} as {ROLES[role]}")
         elif user.disabled:
-            problem = "Your Linkwatch account is disabled."
+            problem = "Your VisCon1 account is disabled."
         elif user.auth_source == "saml":
             if role is None:
                 problem = _no_role(username, ident)
@@ -131,7 +131,7 @@ def saml_acs(request: Request, SAMLResponse: str = Form(""), RelayState: str | N
 
 
 def _no_role(username: str, ident) -> str:
-    msg = f"{username} isn't in an Entra group or app role that is allowed into Linkwatch."
+    msg = f"{username} isn't in an Entra group or app role that is allowed into VisCon1."
     if ident.attributes.get(CLAIM_GROUPS_LINK) and not ident.role_values:
         msg += (" Entra sent a group link instead of groups because you're in too many groups; "
                 "use app roles or 'Groups assigned to the application' in the groups claim.")

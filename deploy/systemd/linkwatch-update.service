@@ -1,5 +1,5 @@
 [Unit]
-Description=Linkwatch: deploy new commits from GitHub main (only after CI passes)
+Description=VisCon1: deploy new commits from GitHub main (only after CI passes)
 Wants=network-online.target
 After=network-online.target
 

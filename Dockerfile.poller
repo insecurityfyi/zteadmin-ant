@@ -1,4 +1,4 @@
-# Linkwatch remote poller (runs on your LAN; outbound HTTPS only)
+# VisCon1 remote poller (runs on your LAN; outbound HTTPS only)
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LW_DATA_DIR=/var/lib/linkwatch
 # ping gets cap_net_raw as *permitted* only (not effective): with --cap-add=NET_RAW it opens raw ICMP sockets,

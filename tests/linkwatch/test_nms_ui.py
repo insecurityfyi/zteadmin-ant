@@ -135,7 +135,7 @@ def test_navy_console_theme_sidebar_and_dashboard(logged_in, app):
     assert 'data-layout="top"' in logged_in.get("/").text
     logged_in.post("/account/theme", data={"theme": "light", "layout": "sidebar"})
     page = logged_in.get("/account").text
-    assert '<html lang="en" data-theme="light" data-layout="sidebar">' in page and "<title>Your account · Linkwatch</title>" in page
+    assert '<html lang="en" data-theme="light" data-layout="sidebar">' in page and "<title>Your account · VisCon1</title>" in page
     # the Navy layout is only the starting point for that theme
     assert "Overall health" not in logged_in.get("/").text
 

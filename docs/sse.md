@@ -1,6 +1,6 @@
 # SSE and SASE platforms
 
-Linkwatch reads four SSE / SASE clouds alongside Zscaler:
+VisCon1 reads four SSE / SASE clouds alongside Zscaler:
 
 | Platform | API | Setup guide |
 |---|---|---|
@@ -9,7 +9,7 @@ Linkwatch reads four SSE / SASE clouds alongside Zscaler:
 | Palo Alto Networks Prisma Access (Prisma SASE) | SASE APIs (configuration, Insights, ZTNA Connector) | [prisma-access.md](prisma-access.md) |
 | Cloudflare Zero Trust (Cloudflare One) | Cloudflare API v4 and GraphQL analytics | [cloudflare-zero-trust.md](cloudflare-zero-trust.md) |
 
-All four use **read-only credentials** and are called from the Linkwatch server, like
+All four use **read-only credentials** and are called from the VisCon1 server, like
 Zscaler and Meraki. Nothing is ever written to the platform.
 
 > **Not yet tested against real tenants.** The collectors were built from each vendor's
@@ -68,7 +68,7 @@ generative or LLM counts, as do well-known AI apps by name.
 ## Alerts
 
 The objects each integration reports (sites, connectors, the fleet and summary rows) are
-ordinary Linkwatch objects, so the built-in rules apply: a site or connector that goes
+ordinary VisCon1 objects, so the built-in rules apply: a site or connector that goes
 **down** opens a "Device down" alert, and a **degraded** one (some tunnels down) opens a
 "Problem reported" alert. The Generative AI usage row is marked as a problem when an
 unsanctioned AI app is in use, and the DLP row when there are high or critical DLP alerts

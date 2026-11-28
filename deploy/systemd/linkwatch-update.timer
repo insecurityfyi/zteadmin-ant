@@ -1,5 +1,5 @@
 [Unit]
-Description=Check GitHub for a new Linkwatch version every 5 minutes
+Description=Check GitHub for a new VisCon1 version every 5 minutes
 
 [Timer]
 OnBootSec=3min
