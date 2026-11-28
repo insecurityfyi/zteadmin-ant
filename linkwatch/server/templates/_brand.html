@@ -31,3 +31,11 @@
 <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon-{{ png }}.png?v={{ version }}">
 <link rel="manifest" href="/manifest.webmanifest">
 {%- endmacro %}
+
+{% macro tagline() -%}
+<span class="tagline">A product of {{ company }}</span>
+{%- endmacro %}
+
+{% macro footer() -%}
+<footer class="copyright">&copy; {{ current_year() }} {{ company }}. All rights reserved.</footer>
+{%- endmacro %}

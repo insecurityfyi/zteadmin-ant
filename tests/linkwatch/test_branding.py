@@ -73,3 +73,12 @@ def test_slack_alert_names_the_app():
     send_one("slack", {"url": "https://hooks.example/x"}, AlertEvent("opened", 1, "crit", "core down", None, "core"),
              "https://nms.example", http=Http())
     assert "Open VisCon1 alerts" in sent["text"]
+
+
+def test_company_tagline_and_copyright_footer(logged_in, client):
+    from datetime import datetime
+    footer = f"&copy; {datetime.now().year} Hatteras Security Group, LLC. All rights reserved."
+    login = client.get("/login").text
+    assert "A product of Hatteras Security Group, LLC" in login and footer in login
+    page = logged_in.get("/").text
+    assert "A product of Hatteras Security Group, LLC" in page and footer in page
