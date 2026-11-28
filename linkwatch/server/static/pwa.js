@@ -12,8 +12,52 @@
       navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(err => console.warn("VisCon1: service worker", err));
     });
   }
-  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvent = e; refreshInstall(); });
-  window.addEventListener("appinstalled", () => { installEvent = null; refreshInstall(); });
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvent = e; refreshInstall(); refreshLinks(); });
+  window.addEventListener("appinstalled", () => { installEvent = null; refreshInstall(); refreshLinks(); });
+
+  // ---------------------------------------------------------------- "Install app" in the top bar and the user menu
+  const safariMac = !ios && /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|Edg\/|OPR\//.test(navigator.userAgent);
+  const firefoxDesktop = /Firefox\//.test(navigator.userAgent) && !/Android|Mobile/.test(navigator.userAgent);
+  function refreshLinks() {
+    const installed = standalone();
+    document.querySelectorAll("[data-install-app]").forEach(a => {
+      // shown until the app is installed; the top-bar chip is left out only in desktop Firefox, which can't install
+      a.hidden = installed || (!a.hasAttribute("data-install-menu") && firefoxDesktop && !installEvent);
+    });
+  }
+  const shareIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Share"><path d="M12 3v13M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>';
+  function showSteps() {
+    let d = document.getElementById("install-dialog");
+    if (!d) {
+      d = document.createElement("dialog");
+      d.id = "install-dialog";
+      d.className = "hv-dialog";
+      const steps = ios
+        ? `<li>Open this page in <b>Safari</b> (or Chrome).</li><li>Tap ${shareIcon} <b>Share</b> (at the bottom on iPhone, the top on iPad).</li><li>Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open VisCon1 from its Home Screen icon. Turn on alert notifications from there under Your account.</li>`
+        : safariMac
+        ? `<li>In the menu bar choose <b>File › Add to Dock</b> (or ${shareIcon} Share › Add to Dock).</li><li>Click <b>Add</b>. VisCon1 opens from the Dock in its own window.</li>`
+        : `<li><b>Chrome:</b> menu ⋮ › <b>Cast, save and share › Install page as app</b>, or the install icon at the right of the address bar.</li><li><b>Edge:</b> menu ⋯ › <b>Apps › Install this site as an app</b>.</li><li><b>Android:</b> menu ⋮ › <b>Install app</b> or <b>Add to Home screen</b>.</li><li><b>Firefox</b> on a computer can't install web apps; use Chrome, Edge or Safari.</li>`;
+      d.innerHTML = `<h2>Install VisCon1</h2><p class="dim" style="margin:0">It gets its own icon and window, and can show alert notifications.</p><ol class="install-steps">${steps}</ol><form method="dialog" style="display:flex;gap:8px;justify-content:flex-end"><a class="btn" href="/account#app">More on Your account</a><button class="btn pri">OK</button></form>`;
+      document.body.appendChild(d);
+    }
+    if (d.showModal) d.showModal(); else location.href = "/account#app";
+  }
+  document.addEventListener("click", async e => {
+    const a = e.target.closest("[data-install-app]");
+    if (!a) return;
+    e.preventDefault();
+    a.closest("details") && (a.closest("details").open = false);
+    if (installEvent) {
+      const ev = installEvent;
+      installEvent = null;
+      ev.prompt();
+      try { await ev.userChoice; } catch (err) { /* dismissed */ }
+      refreshLinks(); refreshInstall();
+      return;
+    }
+    showSteps();
+  });
+  document.addEventListener("DOMContentLoaded", refreshLinks);
 
   const $ = sel => document.querySelector(sel);
   function refreshInstall() {
@@ -24,7 +68,7 @@
       btn.hidden = true; help.hidden = true;
       return;
     }
-    btn.hidden = !installEvent;
+    btn.hidden = false;      // a click installs (Chrome, Edge, Android) or shows the steps for this browser
     if (installEvent) { help.hidden = true; return; }
     help.hidden = false;
     help.textContent = ios

@@ -101,8 +101,10 @@ def test_pages_link_the_app(logged_in, client):
     for page in (client.get("/login").text, logged_in.get("/").text):
         assert '<link rel="manifest" href="/manifest.webmanifest">' in page
         assert "/static/pwa.js" in page and 'name="theme-color"' in page and "apple-mobile-web-app-capable" in page
+    page = logged_in.get("/").text
+    assert page.count("data-install-app") == 2 and 'href="/account#app" data-install-app data-install-menu>Install app</a>' in page
     page = logged_in.get("/account").text
-    assert 'id="app"' in page and "data-push-on" in page
+    assert 'id="app"' in page and "data-push-on" in page and "data-pwa-install data-install-app" in page
 
 
 # ------------------------------------------------------------------ Web Push

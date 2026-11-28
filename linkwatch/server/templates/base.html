@@ -123,9 +123,11 @@
   <div class="search">
     <form method="get" action="/devices" role="search"><input type="search" name="q" placeholder="Search devices" aria-label="Search hostname, IP, platform, serial" value="{{ q|default('') }}"></form>
     <a class="chip" href="/pollers" title="{{ pollers_connected }} of {{ pollers_total }} pollers connected"><span class="dot {% if pollers_total and pollers_connected >= pollers_total %}d-up{% elif pollers_connected %}d-warn{% else %}d-down{% endif %}"></span><span class="t">{{ pollers_connected }}/{{ pollers_total }} pollers</span></a>
+    <a class="chip install-chip" href="/account#app" data-install-app hidden title="Install {{ app_name }} as an app on this device"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="t">Install app</span></a>
     <details class="menu end {{ 'cur' if sec == 'admin' }}"><summary>{{ me.username if me else 'Settings' }}</summary><div class="dd">
       {% if me %}<div class="lbl">{{ 'Admin' if admin else 'Read-only' }}</div>{% endif %}
       <a href="/account">Your account</a>
+      <a href="/account#app" data-install-app data-install-menu>Install app</a>
       <hr>
       <a href="/pollers">Pollers</a>
       <a href="/settings">Settings</a>
