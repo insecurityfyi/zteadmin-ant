@@ -5,12 +5,12 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Offline · {{ app_name }}</title>
 {{ head_icons(theme|default('auto')) }}
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 </head>
 <body>
 <main class="login">
   <div class="p" style="display:flex;flex-direction:column;gap:14px;text-align:center;align-items:center">
-    <img src="/static/brand/icon-dark-192.png?v={{ version }}" width="72" height="72" alt="" style="border-radius:16px">
+    <img src="/static/brand/icon-dark-192.png?v={{ asset_version }}" width="72" height="72" alt="" style="border-radius:16px">
     <h1 style="font-size:20px;margin:0">{{ app_name }} can't be reached</h1>
     <p class="dim" style="margin:0">This device is offline, or the {{ app_name }} server isn't answering. Monitoring keeps running on the server; this page reconnects as soon as it can.</p>
     <button class="btn pri" type="button" onclick="location.reload()">Try again</button>

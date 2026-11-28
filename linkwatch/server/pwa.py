@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 
-from .. import APP_FULL_NAME, APP_NAME, __version__
+from .. import APP_FULL_NAME, APP_NAME
 from . import push
 from .models import PushSubscription, User, utcnow
 from .security import sha256
@@ -37,12 +37,17 @@ def theme_color(theme: str) -> str:
     return THEME_BG.get(theme, THEME_BG["auto"])
 
 
-def manifest_for(theme: str) -> dict:
+def asset_version(request: Request) -> str:
+    """The content hash the pages put on static links (?v=), so the app's cache and icons change with each release."""
+    return st(request).templates.env.globals["asset_version"]
+
+
+def manifest_for(theme: str, v: str) -> dict:
     fam = logo_for(theme)
     fam = "dark" if fam == "auto" else fam
-    icons = [{"src": f"/static/brand/icon-{fam}-{n}.png?v={__version__}", "sizes": f"{n}x{n}", "type": "image/png",
+    icons = [{"src": f"/static/brand/icon-{fam}-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png",
               "purpose": "any"} for n in (192, 512)]
-    icons += [{"src": f"/static/brand/icon-{fam}-maskable-{n}.png?v={__version__}", "sizes": f"{n}x{n}",
+    icons += [{"src": f"/static/brand/icon-{fam}-maskable-{n}.png?v={v}", "sizes": f"{n}x{n}",
                "type": "image/png", "purpose": "maskable"} for n in (192, 512)]
     short = [("Dashboard", "/"), ("Open alerts", "/alerts?state=open"), ("Network map", "/map"), ("Devices", "/devices")]
     return {
@@ -59,14 +64,14 @@ def manifest_for(theme: str) -> dict:
 def manifest(request: Request):
     with st(request).db.session() as s:
         theme = site_theme(s)
-    return JSONResponse(manifest_for(theme), media_type="application/manifest+json",
+    return JSONResponse(manifest_for(theme, asset_version(request)), media_type="application/manifest+json",
                         headers={"Cache-Control": "public, max-age=3600"})
 
 
 @router.get("/sw.js")
-def service_worker():
-    # served from the root so it controls every page; never cached, so a new version is picked up at once
-    body = (HERE / "static" / "sw.js").read_text().replace("__VERSION__", __version__)
+def service_worker(request: Request):
+    # served from the root so it controls every page; never cached, so a new release is picked up at once
+    body = (HERE / "static" / "sw.js").read_text().replace("__VERSION__", asset_version(request))
     return Response(body, media_type="text/javascript",
                     headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 

@@ -87,11 +87,11 @@ def test_maskable_and_badge_icons_exist():
 
 
 def test_service_worker_and_offline_page_are_public(client):
-    from linkwatch import __version__
+    from linkwatch.server.app import asset_version
     r = client.get("/sw.js")
     assert r.status_code == 200 and "javascript" in r.headers["content-type"]
     assert r.headers["service-worker-allowed"] == "/" and r.headers["cache-control"] == "no-cache"
-    assert "__VERSION__" not in r.text and f'"{__version__}"' in r.text
+    assert "__VERSION__" not in r.text and f'"{asset_version()}"' in r.text
     assert 'addEventListener("push"' in r.text and "notificationclick" in r.text
     r = client.get("/offline")
     assert r.status_code == 200 and "can't be reached" in r.text

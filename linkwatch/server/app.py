@@ -48,7 +48,6 @@ def asset_version(static: Path | None = None) -> str:
             h.update(f.relative_to(static).as_posix().encode())
             h.update(f.read_bytes())
     return h.hexdigest()[:10]
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
