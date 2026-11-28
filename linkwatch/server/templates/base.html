@@ -8,9 +8,9 @@
 {{ head_icons(theme|default('auto')) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@500;600;700{% if theme == 'navy' %}&family=Inter:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
-<script src="/static/charts.js?v={{ version }}" defer></script>
-<script src="/static/app.js?v={{ version }}" defer></script>
+<link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+<script src="/static/charts.js?v={{ asset_version }}" defer></script>
+<script src="/static/app.js?v={{ asset_version }}" defer></script>
 </head>
 <body>
 {% set sec = section|default('') %}
@@ -124,7 +124,7 @@
       {% if admin %}<a href="/admin">Administration</a>{% endif %}
       <hr>
       <form method="post" action="/logout"><button type="submit">Sign out</button></form>
-      <div class="lbl" style="padding-bottom:6px">v{{ version }}</div>
+      <div class="lbl" style="padding-bottom:6px">v{{ version }}{% if build != "dev" %} · build {{ build[:7] }}{% endif %}</div>
     </div></details>
   </div>
 </header>
