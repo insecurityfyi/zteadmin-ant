@@ -25,4 +25,28 @@
       {% for k, label in layouts.items() %}<label class="chk"><input type="radio" name="layout" value="{{ k }}" {% if my_layout == k %}checked{% endif %}> {{ label }}</label>{% endfor %}</fieldset>
     <div><button class="btn pri" type="submit">Save</button></div>
   </form></div>
+<div class="p" style="max-width:860px" id="app"><div class="ph"><h2>App and alert notifications</h2><span class="sub">Only for you</span></div>
+  <div class="stack" style="max-width:none" data-pwa-panel>
+    <p style="margin:0" data-pwa-install-state>{{ app_name }} can be installed as an app on your phone, tablet or computer. It opens in its own window, with its own icon.</p>
+    <div data-pwa-install-help class="dim" hidden></div>
+    <div><button class="btn" type="button" data-pwa-install hidden>Install {{ app_name }}</button></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
+    <p style="margin:0"><b>Alert notifications on this device.</b> <span data-push-state class="dim">Checking…</span></p>
+    <label class="f" style="max-width:320px">Notify me about
+      <select data-push-severity>{% for k, label in push_severities.items() %}<option value="{{ k }}" {% if k == 'warn' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn pri" type="button" data-push-on hidden>Turn on notifications</button>
+      <button class="btn" type="button" data-push-test hidden>Send a test</button>
+      <button class="btn danger" type="button" data-push-off hidden>Turn off on this device</button>
+    </div>
+    <div class="flash" data-push-msg role="status" hidden></div>
+  </div>
+  {% if push_subs %}<h3 style="margin:16px 0 6px;font-size:14px">Your devices that get notifications</h3>
+  <div class="scroll"><table><thead><tr><th>Device</th><th>Notify about</th><th>Added</th><th>Last sent</th><th></th></tr></thead><tbody>
+  {% for p in push_subs %}<tr><td><b>{{ p.label or 'Device' }}</b></td>
+    <td><form class="inline" method="post" action="/account/push/{{ p.id }}/severity"><select name="min_severity" onchange="this.form.submit()" aria-label="Notify about">{% for k, label in push_severities.items() %}<option value="{{ k }}" {% if p.min_severity == k %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></td>
+    <td class="dim">{{ p.created_at|ago }}</td><td class="dim" title="{{ p.last_result or '' }}">{{ p.last_sent|ago if p.last_sent else '–' }}{% if p.last_result and p.last_result.startswith('Failed') %} <span style="color:var(--down)">failed</span>{% endif %}</td>
+    <td class="nw"><form class="inline" method="post" action="/account/push/{{ p.id }}/delete"><button class="btn sm danger" type="submit">Remove</button></form></td></tr>{% endfor %}
+  </tbody></table></div>{% endif %}
+</div>
 {% endblock %}

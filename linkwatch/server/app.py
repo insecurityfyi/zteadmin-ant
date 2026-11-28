@@ -29,7 +29,7 @@ from .users import audit, sync_admin_from_env
 
 log = logging.getLogger("linkwatch")
 HERE = Path(__file__).parent
-PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest")
+PUBLIC_PREFIXES = ("/static/", "/login", "/healthz", "/api/poller/", "/api/v1/", "/api/nss/", "/saml/", "/favicon.ico", "/manifest.webmanifest", "/sw.js", "/offline")
 VIEWER_MAY_POST = ("/logout", "/account")
 
 
@@ -132,7 +132,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     hub = Hub(db, vault, notifier, config.poll_interval)
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     from .themes import logo_for
+    from .pwa import theme_color
     templates.env.globals.update(app_name=APP_NAME, app_full_name=APP_FULL_NAME, company=COMPANY, logo_for=logo_for,
+                                 theme_color=theme_color,
                                  current_year=lambda: datetime.now().year)
     def missing_is_none(fn):
         # a key an integration didn't send renders as "–", not a template error
@@ -149,6 +151,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     with db.session() as s:
         if not s.scalar(select(func.count(User.id))):
             log.warning("No users exist and LW_ADMIN_PASSWORD is not set: nobody can sign in until it is.")
+    with db.session() as s:
+        from .push import Vapid
+        Vapid.load(s, vault, config.public_url)     # make the Web Push key pair once, before alerts need it
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -213,13 +218,6 @@ def create_app(config: Config | None = None) -> FastAPI:
         # browsers and bookmark tools ask for this before reading the page's <link rel="icon">
         return FileResponse(HERE / "static" / "brand" / "favicon-dark-32.png", media_type="image/png",
                             headers={"Cache-Control": "public, max-age=86400"})
-
-    @app.get("/manifest.webmanifest", include_in_schema=False)
-    def manifest():
-        icons = [{"src": f"/static/brand/icon-dark-{n}.png", "sizes": f"{n}x{n}", "type": "image/png"} for n in (192, 512)]
-        return JSONResponse({"name": f"{APP_NAME} ({APP_FULL_NAME})", "short_name": APP_NAME, "start_url": "/",
-                             "display": "standalone", "background_color": "#11141D", "theme_color": "#11141D", "icons": icons},
-                            media_type="application/manifest+json")
 
     @app.get("/healthz")
     def healthz():
@@ -290,12 +288,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .nms_views import router as nms_router
     from .oid_views import router as oid_router
     from .path_views import router as path_router
+    from .pwa import router as pwa_router
     from .rdp import router as rdp_router
     from .ssh import router as ssh_router
     from .snmp_views import router as snmp_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
     from .web import router as web_router
+    app.include_router(pwa_router)       # manifest, service worker, offline page, push subscriptions
     app.include_router(api_router)
     app.include_router(dashboard_router)
     app.include_router(rules_router)
