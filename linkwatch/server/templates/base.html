@@ -1,5 +1,5 @@
 <!doctype html>
-{% from "_brand.html" import logo, head_icons, tagline, footer with context %}
+{% from "_brand.html" import logo, head_icons, footer with context %}
 <html lang="en" data-theme="{{ theme|default('auto') }}" data-layout="{{ layout|default('top') }}">
 <head>
 <meta charset="utf-8">
@@ -32,7 +32,7 @@
   'settings': '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 }[name]|safe }}</svg>{% endmacro %}
 <header class="topbar">
-  <a class="brand" href="/" title="{{ app_name }} · {{ app_full_name }}">{{ logo(theme|default('auto'), 26) }}<span class="brand-text"><span>{{ app_name }}</span>{{ tagline() }}</span></a>
+  <a class="brand" href="/" title="{{ app_name }} · {{ app_full_name }}">{{ logo(theme|default('auto'), 26) }}<span>{{ app_name }}</span></a>
   <nav class="menus" aria-label="Sections">
     <details class="menu {{ 'cur' if sec == 'overview' }}"{% if side and sec == 'overview' %} open{% endif %}><summary>{{ ic('overview') }}<span class="lb">Overview</span></summary><div class="dd">
       <a href="/" {% if nav == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
