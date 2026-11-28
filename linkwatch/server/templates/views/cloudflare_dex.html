@@ -1,0 +1,38 @@
+{# Cloudflare: DEX & posture tab #}
+{% set x = data.dex or {} %}
+{% set f = x.fleet or {} %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Devices reporting</span><b>{{ f.total|num if x.get('fleet') else '–' }}</b><em>{% for k, n in (f.by_status or [])[:2] %}{{ n|num }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}&nbsp;</em></div>
+  {% set low = (x.tests or [])|selectattr('availability')|selectattr('availability', 'lt', 95)|list %}
+  <div class="kpi"><span>DEX tests</span><b>{{ (x.tests or [])|length if x.get('tests') is not none else '–' }}</b><em>{% if low %}<span class="wa">{{ low|length }} below 95%</span>{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>Posture rules</span><b>{{ (x.posture or [])|length if x.get('posture') is not none else '–' }}</b><em>{{ (x.posture_integrations or [])|length }} integrations</em></div>
+  <div class="kpi"><span>Device profiles</span><b>{{ (x.profiles or [])|length if x.get('profiles') is not none else '–' }}</b><em>&nbsp;</em></div>
+</div>
+{% if x.get('fleet') %}<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Status</h2><span class="sub">last 10 minutes</span></div>{{ bars(f.by_status or [], f.total, 'var(--off)', ['connected']) }}</div>
+  <div class="p c4"><div class="ph"><h2>Platforms</h2></div>{{ bars(f.by_platform or [], f.total, 'var(--s2)') }}</div>
+  <div class="p c4"><div class="ph"><h2>WARP versions</h2></div>{{ bars((f.by_version or [])[:10], f.total) }}</div>
+  {% if f.by_mode %}<div class="p c4"><div class="ph"><h2>Modes</h2></div>{{ bars(f.by_mode, f.total, 'var(--s2)') }}</div>{% endif %}
+  {% if f.by_colo %}<div class="p c4"><div class="ph"><h2>Cloudflare data centers</h2></div>{{ bars(f.by_colo[:10], f.total) }}</div>{% endif %}
+  <div class="p {{ 'c4' if f.by_mode or f.by_colo else '' }}"><div class="ph"><h2>Fleet over time</h2></div>
+    {{ legend([('Devices', 'var(--s1)'), ('Connected', 'var(--up)')]) }}
+    {{ chart(integ.id, 'dex:fleet', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--up)","area":false}], 'num', 150, 'DEX fleet') }}</div>
+</div>{% endif %}
+<div class="p"><div class="ph"><h2>DEX tests</h2></div>
+  <div class="scroll"><table><thead><tr><th>Test</th><th>Type</th><th>Target</th><th>Interval</th><th class="n">Availability</th><th class="n">Fetch time</th><th class="n">Round trip</th></tr></thead><tbody>
+  {% for t in x.tests or [] %}<tr class="{{ '' if t.enabled else 'dim' }}"><td><b>{{ t.name }}</b>{% if not t.enabled %} <span class="tag">disabled</span>{% endif %}</td><td>{{ t.kind or '' }}</td><td class="mono" style="font-size:12.5px">{{ t.host or '' }}</td><td class="dim">{{ t.interval or '' }}</td>
+    <td class="n {{ 'wa' if t.get('availability') is not none and t.availability < 95 else '' }}">{{ (t.availability ~ '%') if t.get('availability') is not none else '–' }}</td>
+    <td class="n">{{ (t.fetch_ms|round|int ~ ' ms') if t.get('fetch_ms') is not none else '–' }}</td><td class="n">{{ (t.rtt_ms|round|int ~ ' ms') if t.get('rtt_ms') is not none else '–' }}</td></tr>
+  {% else %}<tr><td colspan="7" class="dim">{{ 'No DEX tests.' if x.get('tests') is not none else 'Not available with this token or plan.' }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Device posture rules</h2></div>
+    <table><thead><tr><th>Rule</th><th>Type</th><th>Platforms</th><th>Schedule</th></tr></thead><tbody>
+    {% for p in x.posture or [] %}<tr><td><b>{{ p.name }}</b>{% if p.description %}<div class="dim" style="font-size:12px">{{ p.description }}</div>{% endif %}</td><td class="dim">{{ (p.type or '')|replace('_', ' ') }}</td><td>{{ p.platforms|join(', ') or 'all' }}</td><td class="dim">{{ p.schedule or '' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">None.</td></tr>{% endfor %}</tbody></table>
+    {% if x.posture_integrations %}<h3 style="margin:14px 0 6px">Posture integrations</h3><table><tbody>{% for i in x.posture_integrations %}<tr><td><b>{{ i.name }}</b></td><td class="dim">{{ i.type }}</td><td class="dim">every {{ i.interval or '?' }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>
+  <div class="p c6"><div class="ph"><h2>WARP device profiles</h2><span class="sub">in precedence order</span></div>
+    <table><thead><tr><th>Profile</th><th>Mode</th><th>Applies to</th><th>Locked</th></tr></thead><tbody>
+    {% for p in x.profiles or [] %}<tr class="{{ '' if p.enabled else 'dim' }}"><td><b>{{ p.name }}</b>{% if p.default %} <span class="tag">default</span>{% endif %}</td><td>{{ (p.mode or '–')|replace('_', ' ') }}</td><td class="mono dim" style="font-size:12px">{{ (p.match or ('everyone else' if p.default else ''))[:120] }}</td><td>{{ yesno(p.locked) }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">None.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{{ gap_panel(['dex']) }}

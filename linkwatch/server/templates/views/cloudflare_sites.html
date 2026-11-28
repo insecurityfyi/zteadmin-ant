@@ -1,0 +1,20 @@
+{# Cloudflare: Magic WAN panels appended to the shared Sites tab #}
+{% set m = sites.magic or {} %}
+{% if m %}<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Magic WAN sites</h2></div>
+    <table><thead><tr><th>Site</th><th>HA</th><th>Connector</th></tr></thead><tbody>
+    {% for x in m.sites or [] %}<tr><td><b>{{ x.name }}</b>{% if x.description %}<div class="dim" style="font-size:12px">{{ x.description }}</div>{% endif %}</td><td>{{ yesno(x.ha) }}</td><td class="mono dim" style="font-size:12px">{{ x.connector or '' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="dim">{{ 'No sites.' if m.get('sites') is not none else 'Not available.' }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Magic WAN Connectors</h2></div>
+    <table><thead><tr><th>Serial</th><th>Activated</th><th>Version</th><th>Last heartbeat</th></tr></thead><tbody>
+    {% for c in m.connectors or [] %}<tr><td class="mono">{{ c.serial or c.id }}</td><td>{{ yesno(c.activated) }}</td><td class="mono">{{ c.version or '' }}</td><td class="dim">{{ (c.last_heartbeat or '–')[:19]|replace('T', ' ') }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">{{ 'No connectors.' if m.get('connectors') is not none else 'Not available.' }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Static routes</h2></div>
+    <table><thead><tr><th>Prefix</th><th>Next hop</th><th class="n">Priority</th><th>Description</th></tr></thead><tbody>
+    {% for r in m.routes or [] %}<tr><td class="mono">{{ r.prefix }}</td><td class="mono">{{ r.nexthop }}</td><td class="n">{{ r.priority if r.priority is not none else '' }}</td><td class="dim">{{ r.description or '' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">{{ 'No routes.' if m.get('routes') is not none else 'Not available.' }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Magic Firewall rules</h2></div>
+    <table><thead><tr><th class="n">#</th><th>Rule</th><th>Action</th><th>Expression</th></tr></thead><tbody>
+    {% for r in m.firewall or [] %}<tr class="{{ '' if r.enabled else 'dim' }}"><td class="n">{{ r.order }}</td><td><b>{{ r.description or '–' }}</b></td><td>{{ act(r.action) }}</td><td class="mono dim" style="font-size:12px">{{ (r.expression or '')[:160] }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">{{ 'No rules.' if m.get('firewall') is not none else 'Not available.' }}</td></tr>{% endfor %}</tbody></table></div>
+</div>{% endif %}

@@ -13,6 +13,11 @@ onto these sections:
 ``apps``     SaaS and generative AI app usage, with the policy that applies where we can tell
 ``dlp``      DLP profiles and rules, and incidents where the API exposes them
 
+A platform can add sections of its own (Cloudflare: gateway, access, dex, zones, audit). Their
+data goes under the section key, the page includes ``views/<kind>_<section>.html`` for them, and
+the same file name is appended to a shared tab to add platform-specific panels to it. Extra graphs
+go in ``data["metrics"]`` as ``[key, a, b, c]`` rows.
+
 Shape of ``data`` (every key is optional; a section that failed is absent and its error sits
 in ``products``)::
 
@@ -124,8 +129,8 @@ def section_fields(sections: list[str], labels: dict[str, str] | None = None, de
                    help: dict[str, str] | None = None) -> list[Field]:
     """One on/off box per section, named after the section key."""
     names = dict(SECTIONS) | (labels or {})
-    return [Field(k, names[k], "bool", required=False, default=(defaults or {}).get(k, True),
-                  help=(help or {}).get(k, SECTION_HELP[k])) for k in sections]
+    return [Field(k, names.get(k, k.title()), "bool", required=False, default=(defaults or {}).get(k, True),
+                  help=(help or {}).get(k, SECTION_HELP.get(k, ""))) for k in sections]
 
 
 def counts(values) -> list[list]:
@@ -140,6 +145,7 @@ class SSEIntegration(Integration):
     sections: ClassVar[list[str]] = []          # which of SECTIONS this platform offers
     labels: ClassVar[dict[str, str]] = {}       # per-platform tab names, e.g. {"private": "Publishers"}
     gaps: ClassVar[dict[str, list[tuple[str, str]]]] = {}   # what the API doesn't expose, per section
+    slow: ClassVar[dict[str, int]] = SLOW_SECTIONS   # sections refreshed at most every N seconds
     record_type: ClassVar[str] = ""             # Device.type for records; defaults to vendor
     max_retries: ClassVar[int] = 4
 
@@ -262,7 +268,7 @@ class SSEIntegration(Integration):
 
     def _run_section(self, section: str) -> list[Record]:
         fn = getattr(self, f"collect_{section}")
-        ttl = SLOW_SECTIONS.get(section)
+        ttl = self.slow.get(section)
         if not ttl:
             return fn()
         key = (self.kind, self.cache_key(), section)
