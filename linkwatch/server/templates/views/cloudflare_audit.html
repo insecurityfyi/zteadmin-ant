@@ -1,0 +1,16 @@
+{# Cloudflare: Audit log tab #}
+{% set au = data.audit or {} %}
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Changes (24 h)</h2><span class="sub">{{ (au.events or [])|length }}{% if au.failed %}, <span class="bad">{{ au.failed }} failed</span>{% endif %}</span></div>
+    <h3 style="margin:4px 0 6px">By who</h3>{{ bars(au.by_actor or [], (au.events or [])|length) }}
+    <h3 style="margin:14px 0 6px">By action</h3>{{ bars(au.by_action or [], (au.events or [])|length, 'var(--s2)') }}</div>
+  <div class="p c8"><div class="ph"><h2>Changes over time</h2><span class="sub">rolling 24 h</span></div>
+    {{ legend([('Changes', 'var(--s1)'), ('Failed', 'var(--down)')]) }}
+    {{ chart(integ.id, 'audit:events', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)"}], 'num', 200, 'Audit events') }}</div>
+</div>
+<div class="p"><div class="ph"><h2>Audit log</h2><span class="sub">newest first</span>{{ filter_box('cf-audit', 'Who, action, resource') }}</div>
+  <div class="scroll" style="max-height:600px;overflow:auto"><table id="cf-audit"><thead><tr><th>Time</th><th>Who</th><th>Action</th><th>Resource</th><th>Via</th><th>IP</th></tr></thead><tbody>
+  {% for e in au.events or [] %}<tr data-q="{{ [e.actor, e.action, e.resource, e.detail, e.ip]|select|join(' ')|lower }}"><td class="dim nw">{{ (e.time or '')[:19]|replace('T', ' ') }}</td><td>{{ e.actor or '' }}</td>
+    <td class="{{ '' if e.ok else 'bad' }}">{{ (e.action or '')|replace('_', ' ') }}{% if not e.ok %} (failed){% endif %}</td><td>{{ (e.resource or '')|replace('_', ' ') }}{% if e.detail %} <span class="dim">{{ e.detail }}</span>{% endif %}</td><td class="dim">{{ e.interface or '' }}</td><td class="mono dim">{{ e.ip or '' }}</td></tr>
+  {% else %}<tr><td colspan="6" class="dim">No changes in the last 24 hours.</td></tr>{% endfor %}</tbody></table></div></div>
+{{ gap_panel(['audit']) }}

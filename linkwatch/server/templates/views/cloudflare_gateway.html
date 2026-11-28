@@ -1,0 +1,40 @@
+{# Cloudflare: Gateway tab. Included by _sse.html, which defines chart, legend, bars, act, yesno, gap_panel. #}
+{% set g = data.gateway or {} %}
+{% set dns, http, net = g.dns or {}, g.http or {}, g.network or {} %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>DNS queries (24 h)</span><b>{{ dns.total|num if dns else '–' }}</b><em>{% if dns %}<span class="{{ 'bad' if dns.blocked else '' }}">{{ dns.blocked|num }} blocked</span>{% else %}not available{% endif %}</em></div>
+  <div class="kpi"><span>HTTP requests (24 h)</span><b>{{ http.total|num if http else '–' }}</b><em>{% if http %}{{ http.blocked|num }} blocked{% else %}not available{% endif %}</em></div>
+  <div class="kpi"><span>Network sessions (24 h)</span><b>{{ net.total|num if net else '–' }}</b><em>{% if net %}{{ net.blocked|num }} blocked{% else %}not available{% endif %}</em></div>
+  <div class="kpi"><span>DNS locations</span><b>{{ (g.locations or [])|length if g.get('locations') is not none else '–' }}</b><em>{{ (g.lists or [])|length }} lists</em></div>
+</div>
+<p class="dim" style="margin:-4px 0 14px;font-size:13px">Counts are Cloudflare's sampled Gateway analytics for the last 24 hours. {% if g.refreshed %}Refreshed {{ g.refreshed|replace('T', ' ')|replace('Z', ' UTC') }}, every 15 minutes.{% endif %}</p>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>DNS queries</h2><span class="sub">total and blocked, rolling 24 h</span></div>
+    {{ legend([('Queries', 'var(--s1)'), ('Blocked', 'var(--down)')]) }}
+    {{ chart(integ.id, 'gateway:dns', [{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)"}], 'num', 160, 'DNS queries') }}</div>
+  <div class="p c6"><div class="ph"><h2>HTTP requests</h2><span class="sub">total and blocked, rolling 24 h</span></div>
+    {{ legend([('Requests', 'var(--s2)'), ('Blocked', 'var(--down)')]) }}
+    {{ chart(integ.id, 'gateway:http', [{"key":"a","color":"var(--s2)","area":false},{"key":"b","color":"var(--down)"}], 'num', 160, 'HTTP requests') }}</div>
+  {% for title, part, what in [('DNS decisions', dns, 'Top blocked domains'), ('HTTP actions', http, 'Top blocked hosts'), ('Network actions', net, 'Top blocked destinations')] if part %}
+  <div class="p c4"><div class="ph"><h2>{{ title }}</h2><span class="sub">{{ part.total|num }}</span></div>{{ bars(part.by_decision or [], part.total, 'var(--s1)', ['allowedbyqueryname', 'allowedonnopolicymatch', 'allow', 'allowedbyanswer']) }}
+    <h3 style="margin:14px 0 6px">{{ what }}</h3>
+    <table><tbody>{% for k, n in part.top_blocked or [] %}<tr><td class="mono" style="font-size:12.5px;word-break:break-all">{{ k }}</td><td class="n">{{ n|num }}</td></tr>{% else %}<tr><td class="dim">Nothing blocked.</td></tr>{% endfor %}</tbody></table></div>
+  {% endfor %}
+  {% if dns.top_blocked_categories %}<div class="p c4"><div class="ph"><h2>Top blocked DNS categories</h2></div>{{ bars(dns.top_blocked_categories, (dns.top_blocked_categories|map('last')|max), 'var(--down)') }}</div>{% endif %}
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>DNS locations</h2></div>
+    <table><thead><tr><th>Location</th><th>Networks</th><th>DoH subdomain</th><th>ECS</th></tr></thead><tbody>
+    {% for l in g.locations or [] %}<tr><td><b>{{ l.name }}</b>{% if l.default %} <span class="tag">default</span>{% endif %}</td><td class="mono" style="font-size:12px">{{ l.networks|join(', ') or '–' }}</td><td class="mono" style="font-size:12px">{{ l.doh or '' }}</td><td>{{ yesno(l.ecs) }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">{{ 'No locations.' if g.get('locations') is not none else 'Not available with this token.' }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Settings</h2></div>
+    <table><tbody>{% for k, v in g.settings or [] %}<tr><td>{{ k }}</td><td>{% if v is sameas true or v is sameas false %}{{ yesno(v) }}{% else %}{{ v }}{% endif %}</td></tr>
+    {% else %}<tr><td class="dim">{{ 'No settings returned.' if g.get('settings') is not none else 'Not available with this token.' }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Lists</h2></div>
+    <table><thead><tr><th>List</th><th>Type</th><th class="n">Entries</th></tr></thead><tbody>
+    {% for l in g.lists or [] %}<tr><td><b>{{ l.name }}</b>{% if l.description %}<div class="dim" style="font-size:12px">{{ l.description }}</div>{% endif %}</td><td class="dim">{{ l.type }}</td><td class="n">{{ l.count if l.count is not none else '–' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="dim">No lists.</td></tr>{% endfor %}</tbody></table></div>
+  {% if g.proxy_endpoints %}<div class="p c6"><div class="ph"><h2>Proxy endpoints</h2></div>
+    <table><tbody>{% for p in g.proxy_endpoints %}<tr><td><b>{{ p.name }}</b></td><td class="mono" style="font-size:12px">{{ p.subdomain or '' }}</td><td class="mono dim" style="font-size:12px">{{ p.ips|join(', ') }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>
+{{ gap_panel(['gateway']) }}

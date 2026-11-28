@@ -1,0 +1,42 @@
+{# Cloudflare: Access tab #}
+{% set a = data.access or {} %}
+{% set lg = a.logins or {} %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Applications</span><b>{{ (a.apps or [])|length if a.get('apps') is not none else '–' }}</b><em>{{ (a.policies or [])|length }} reusable policies</em></div>
+  <div class="kpi"><span>Logins (24 h)</span><b>{{ lg.allowed|num if a.get('logins') else '–' }}</b><em>{% if a.get('logins') %}<span class="{{ 'bad' if lg.denied else '' }}">{{ lg.denied|num }} denied</span>{% if lg.capped %} · latest 1,000{% endif %}{% else %}not available{% endif %}</em></div>
+  {% set bad = (a.service_tokens or [])|selectattr('status', 'in', ['warn', 'down'])|list %}
+  <div class="kpi"><span>Service tokens</span><b class="{{ 'wa' if bad else '' }}">{{ (a.service_tokens or [])|length if a.get('service_tokens') is not none else '–' }}</b><em>{% if bad %}<span class="wa">{{ bad|length }} expired or expiring</span>{% else %}none expiring in 30 days{% endif %}</em></div>
+  <div class="kpi"><span>Identity providers</span><b>{{ (a.idps or [])|length if a.get('idps') is not none else '–' }}</b><em>{% if a.org %}{{ a.org.auth_domain }}{% else %}&nbsp;{% endif %}</em></div>
+</div>
+<div class="grid">
+  <div class="p c8"><div class="ph"><h2>Logins</h2><span class="sub">allowed and denied, rolling 24 h</span></div>
+    {{ legend([('Allowed', 'var(--up)'), ('Denied', 'var(--down)')]) }}
+    {{ chart(integ.id, 'access:logins', [{"key":"a","color":"var(--up)","area":false},{"key":"b","color":"var(--down)"}], 'num', 170, 'Access logins') }}</div>
+  <div class="p c4"><div class="ph"><h2>Most denied users</h2></div>{{ bars(lg.top_denied_users or [], (lg.top_denied_users or [[0, 1]])|map('last')|max, 'var(--down)') }}
+    <h3 style="margin:14px 0 6px">Logins by app</h3>{{ bars(lg.by_app or [], (lg.by_app or [[0, 1]])|map('last')|max) }}</div>
+</div>
+<div class="p"><div class="ph"><h2>Applications</h2>{{ filter_box('cf-apps', 'App, domain, policy') }}</div>
+  <div class="scroll"><table id="cf-apps"><thead><tr><th>App</th><th>Domain</th><th>Type</th><th>Policies</th><th>Session</th><th>IdPs</th></tr></thead><tbody>
+  {% for x in a.apps or [] %}<tr data-q="{{ [x.name, x.domain, x.type, x.policies|join(' ')]|select|join(' ')|lower }}"><td><b>{{ x.name }}</b></td><td class="mono" style="font-size:12.5px">{{ x.domain or '' }}</td><td class="dim">{{ (x.type or '')|replace('_', ' ') }}</td>
+    <td style="font-size:13px">{{ x.policies|join(', ') or '–' }}</td><td>{{ x.session or '' }}</td><td class="dim">{{ x.idps }}</td></tr>
+  {% else %}<tr><td colspan="6" class="dim">{{ 'No applications.' if a.get('apps') is not none else 'Not available with this token.' }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Reusable policies</h2></div>
+    <table><thead><tr><th>Policy</th><th>Decision</th><th>Include / require / exclude</th><th class="n">Apps</th></tr></thead><tbody>
+    {% for p in a.policies or [] %}<tr><td><b>{{ p.name }}</b></td><td>{{ act(p.decision) }}</td><td class="dim" style="font-size:12.5px">{{ p.include or 'anyone' }}{% if p.require %}<div>require: {{ p.require }}</div>{% endif %}{% if p.exclude %}<div>exclude: {{ p.exclude }}</div>{% endif %}</td><td class="n">{{ p.apps if p.apps is not none else '–' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">None.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Service tokens</h2><span class="sub">soonest expiry first</span></div>
+    <table><thead><tr><th></th><th>Token</th><th>Expires</th><th>Last used</th></tr></thead><tbody>
+    {% for t in a.service_tokens or [] %}<tr><td>{{ sdot(t.status) }}</td><td><b>{{ t.name }}</b></td><td class="{{ {'down': 'bad', 'warn': 'wa'}.get(t.status, '') }}">{{ (t.expires or '–')[:10] }}{% if t.get('days') is not none %} <span class="dim">({{ 'expired' if t.days < 0 else 'in ' ~ t.days ~ ' days' }})</span>{% endif %}</td><td class="dim">{{ (t.last_seen or '–')[:16]|replace('T', ' ') }}</td></tr>
+    {% else %}<tr><td colspan="4" class="dim">None.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Identity providers</h2></div>
+    <table><tbody>{% for i in a.idps or [] %}<tr><td><b>{{ i.name }}</b></td><td class="dim">{{ i.type }}</td><td>{% if i.scim %}<span class="tag">SCIM</span>{% endif %}</td></tr>{% else %}<tr><td class="dim">None.</td></tr>{% endfor %}</tbody></table>
+    {% if a.org %}<dl class="kv" style="margin-top:12px"><dt>Team</dt><dd>{{ a.org.name or '' }}</dd><dt>Session</dt><dd>{{ a.org.session or '–' }}</dd><dt>WARP session</dt><dd>{{ a.org.warp_auth_session or '–' }}</dd></dl>{% endif %}</div>
+  <div class="p c6"><div class="ph"><h2>Access groups</h2></div>
+    <table><tbody>{% for x in a.groups or [] %}<tr><td><b>{{ x.name }}</b></td><td class="dim" style="font-size:12.5px">{{ x.include }}</td></tr>{% else %}<tr><td class="dim">None.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% if lg.recent %}<div class="p"><div class="ph"><h2>Recent logins</h2><span class="sub">newest first</span>{{ filter_box('cf-logins', 'User, app, IP') }}</div>
+  <div class="scroll" style="max-height:480px;overflow:auto"><table id="cf-logins"><thead><tr><th>Time</th><th>User</th><th>App</th><th>Result</th><th>IdP</th><th>IP</th><th>Country</th></tr></thead><tbody>
+  {% for e in lg.recent %}<tr data-q="{{ [e.user, e.app, e.ip, e.country]|select|join(' ')|lower }}"><td class="dim nw">{{ (e.time or '')[:19]|replace('T', ' ') }}</td><td>{{ e.user or '' }}</td><td class="mono" style="font-size:12.5px">{{ e.app or '' }}</td>
+    <td class="{{ 'okc' if e.allowed else 'bad' }}">{{ 'allowed' if e.allowed else 'denied' }}</td><td class="dim">{{ e.idp or '' }}</td><td class="mono dim">{{ e.ip or '' }}</td><td class="dim">{{ e.country or '' }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{{ gap_panel(['access']) }}

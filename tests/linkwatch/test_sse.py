@@ -25,7 +25,7 @@ def test_sse_registry_and_fields():
         assert cls.sse and cls.runs_on == "server"
         names = [f.name for f in cls.fields]
         assert set(cls.sections) <= set(names) and "ai_category" in names, kind
-        assert all(k in dict(sse.SECTIONS) for k in cls.sections)
+        assert all(k in dict(sse.SECTIONS) or k in cls.labels for k in cls.sections)
 
 
 def test_helpers():
@@ -254,6 +254,8 @@ def test_prisma_bad_credentials():
 
 # Cloudflare ---------------------------------------------------------------------
 CF = "https://api.cloudflare.com/client/v4/accounts/abc"
+CF_ROOT = "https://api.cloudflare.com/client/v4"
+CF_EXTRA_OFF = {"gateway": False, "access": False, "dex": False, "zones": False, "audit": False}
 
 
 def ok(result, pages=1):
@@ -303,7 +305,10 @@ def test_cloudflare_collects_every_section():
         {"id": "p1", "name": "Financial", "type": "predefined", "entries": [{"enabled": True}, {"enabled": False}]},
         {"id": "p2", "name": "Unused", "type": "custom", "entries": [{"enabled": False}]}]))
 
-    c = build("cloudflare", {"account_id": "abc", "api_token": "Bearer cf-token", "sites": True})
+    for path in ("/magic/sites", "/magic/connectors", "/magic/routes", "/rulesets/phases/magic_transit/entrypoint",
+                 "/teamnet/virtual_networks", "/zerotrust/routes/hostname"):
+        respx.get(f"{CF}{path}").mock(return_value=httpx.Response(404))
+    c = build("cloudflare", {"account_id": "abc", "api_token": "Bearer cf-token", "sites": True, **CF_EXTRA_OFF})
     recs = {r["external_id"]: r for r in c.collect()}
     d = c.data
     assert c.errors == [], c.errors
@@ -327,7 +332,9 @@ def test_cloudflare_sites_off_by_default_and_partial_failure():
     respx.get(f"{CF}/cfd_tunnel").mock(return_value=ok([{"id": "c1", "name": "dc1", "status": "degraded"}]))
     respx.get(f"{CF}/teamnet/routes").mock(return_value=httpx.Response(403))
     respx.get(f"{CF}/devices").mock(return_value=httpx.Response(403))
-    c = build("cloudflare", {"account_id": "abc", "api_token": "t", "policy": False, "apps": False, "dlp": False})
+    respx.get(f"{CF}/teamnet/virtual_networks").mock(return_value=ok([]))
+    respx.get(f"{CF}/zerotrust/routes/hostname").mock(return_value=ok([]))
+    c = build("cloudflare", {"account_id": "abc", "api_token": "t", "policy": False, "apps": False, "dlp": False, **CF_EXTRA_OFF})
     recs = c.collect()
     assert "sites" not in c.data["products"] and recs[0]["status"] == "warn"
     assert c.data["products"]["users"]["ok"] is False and "WARP devices" in c.errors[0]
@@ -337,7 +344,7 @@ def test_cloudflare_sites_off_by_default_and_partial_failure():
 def test_slow_sections_are_cached_hourly():
     respx.get(f"{CF}/dlp/profiles").mock(return_value=ok([{"name": "Financial", "entries": []}]))
     respx.get(f"{CF}/gateway/rules").mock(return_value=ok([]))
-    cfg = {"account_id": "abc", "api_token": "t", "private": False, "users": False, "policy": False, "apps": False}
+    cfg = {"account_id": "abc", "api_token": "t", "private": False, "users": False, "policy": False, "apps": False, **CF_EXTRA_OFF}
     build("cloudflare", cfg).collect()
     c2 = build("cloudflare", cfg)
     c2.collect()
@@ -349,6 +356,149 @@ def test_rate_limit_is_retried(monkeypatch):
     monkeypatch.setattr(sse.SSEIntegration, "_sleep", staticmethod(lambda s: None))
     route = respx.get(f"{CF}/cfd_tunnel").mock(side_effect=[httpx.Response(429, headers={"Retry-After": "1"}), ok([])])
     respx.get(f"{CF}/teamnet/routes").mock(return_value=ok([]))
-    c = build("cloudflare", {"account_id": "abc", "api_token": "t", "users": False, "policy": False, "apps": False, "dlp": False})
+    respx.get(f"{CF}/teamnet/virtual_networks").mock(return_value=ok([]))
+    respx.get(f"{CF}/zerotrust/routes/hostname").mock(return_value=ok([]))
+    c = build("cloudflare", {"account_id": "abc", "api_token": "t", "users": False, "policy": False, "apps": False, "dlp": False, **CF_EXTRA_OFF})
     c.collect()
     assert route.call_count == 2 and c.data["products"]["private"]["ok"]
+
+
+@respx.mock
+def test_cloudflare_extra_sections():
+    from datetime import datetime, timedelta, timezone
+    soon = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    later = (datetime.now(timezone.utc) + timedelta(days=200)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def gql(request):
+        body = json.loads(request.content)
+        q = body["query"]
+        if "__type" in q:
+            name = q.split('name: "')[1].split('"')[0]
+            fields = {"AccountGatewayResolverQueriesAdaptiveGroupsDimensions": ["resolverDecision", "queryNameReversed", "categoryIds"],
+                      "AccountGatewayL7RequestsAdaptiveGroupsDimensions": ["action", "httpHost"],
+                      "AccountGatewayL4SessionsAdaptiveGroupsDimensions": ["datetime"]}[name]
+            return httpx.Response(200, json={"data": {"__type": {"fields": [{"name": f} for f in fields]}}})
+        if "gatewayResolverQueriesAdaptiveGroups" in q and "categoryIds" in q:
+            return httpx.Response(200, json={"data": {"viewer": {"accounts": [{"gatewayResolverQueriesAdaptiveGroups": [
+                {"count": 40, "dimensions": {"categoryIds": [68, 99], "resolverDecision": 5}},
+                {"count": 900, "dimensions": {"categoryIds": [7], "resolverDecision": 8}}]}]}}})
+        if "gatewayResolverQueriesAdaptiveGroups" in q:
+            return httpx.Response(200, json={"data": {"viewer": {"accounts": [{"gatewayResolverQueriesAdaptiveGroups": [
+                {"count": 900, "dimensions": {"resolverDecision": 8, "queryNameReversed": "com.microsoft.login"}},
+                {"count": 30, "dimensions": {"resolverDecision": 5, "queryNameReversed": "com.badsite.www"}},
+                {"count": 10, "dimensions": {"resolverDecision": "blockedByQueryName", "queryNameReversed": "ai.deepseek.chat"}}]}]}}})
+        if "gatewayL7RequestsAdaptiveGroups" in q:
+            return httpx.Response(200, json={"data": {"viewer": {"accounts": [{"gatewayL7RequestsAdaptiveGroups": [
+                {"count": 500, "dimensions": {"action": 1, "httpHost": "github.com"}},
+                {"count": 20, "dimensions": {"action": 2, "httpHost": "chat.deepseek.com"}}]}]}}})
+        if "httpRequests1dGroups" in q:
+            assert body["variables"]["z"] == ["z1", "z2"]
+            return httpx.Response(200, json={"data": {"viewer": {"zones": [
+                {"zoneTag": "z1", "httpRequests1dGroups": [{"sum": {"requests": 10000, "cachedRequests": 6000, "threats": 12, "bytes": 5e8}}]}]}}})
+        if "firewallEventsAdaptiveGroups" in q:
+            return httpx.Response(200, json={"data": {"viewer": {"zones": [
+                {"zoneTag": "z1", "firewallEventsAdaptiveGroups": [{"count": 7, "dimensions": {"action": "block", "source": "waf"}}]}]}}})
+        return httpx.Response(400)
+    respx.post(f"{CF_ROOT}/graphql").mock(side_effect=gql)
+    respx.get(f"{CF}/gateway/categories").mock(return_value=ok([{"id": 68, "name": "Security risks", "subcategories": [{"id": 99, "name": "Malware"}]}]))
+    respx.get(f"{CF}/gateway/locations").mock(return_value=ok([{"name": "HQ", "client_default": True, "networks": [{"network": "203.0.113.0/24"}], "doh_subdomain": "abc123"}]))
+    respx.get(f"{CF}/gateway/lists").mock(return_value=ok([{"name": "Allowed AI", "type": "DOMAIN", "count": 4}]))
+    respx.get(f"{CF}/gateway/proxy_endpoints").mock(return_value=httpx.Response(403))
+    respx.get(f"{CF}/gateway/configuration").mock(return_value=ok({"settings": {"tls_decrypt": {"enabled": True}, "activity_log": {"enabled": False},
+                                                                                "antivirus": {"enabled_upload_phase": True, "enabled_download_phase": False}}}))
+    respx.get(f"{CF}/access/apps").mock(return_value=ok([{"name": "Wiki", "domain": "wiki.contoso.com", "type": "self_hosted", "session_duration": "24h",
+                                                         "policies": [{"name": "Staff"}]}]))
+    respx.get(f"{CF}/access/policies").mock(return_value=ok([{"name": "Staff", "decision": "allow", "app_count": 3,
+                                                             "include": [{"email_domain": {"domain": "contoso.com"}}], "require": [{"group": {"id": "g1"}}]}]))
+    respx.get(f"{CF}/access/identity_providers").mock(return_value=ok([{"name": "Entra ID", "type": "azureAD", "scim_config": {"enabled": True}}]))
+    respx.get(f"{CF}/access/groups").mock(return_value=ok([{"name": "Engineering", "include": [{"email": {"email": "a@contoso.com"}}]}]))
+    respx.get(f"{CF}/access/service_tokens").mock(return_value=ok([{"name": "ci-runner", "expires_at": soon}, {"name": "monitor", "expires_at": later}]))
+    respx.get(f"{CF}/access/organizations").mock(return_value=ok({"name": "Contoso", "auth_domain": "contoso.cloudflareaccess.com", "session_duration": "24h"}))
+    logs = respx.get(f"{CF}/access/logs/access_requests").mock(return_value=httpx.Response(200, json={"success": True, "result": [
+        {"user_email": "ada@contoso.com", "app_domain": "wiki.contoso.com", "allowed": True, "created_at": hb, "connection": "azureAD"},
+        {"user_email": "eve@example.com", "app_domain": "wiki.contoso.com", "allowed": False, "created_at": hb}]}))
+    respx.get(f"{CF}/dex/fleet-status/live").mock(return_value=ok({"deviceStats": {"uniqueDevicesTotal": 120,
+        "byStatus": [{"value": "connected", "count": 100}, {"value": "disconnected", "count": 20}], "byPlatform": [{"value": "windows", "count": 90}]}}))
+    respx.get(f"{CF}/dex/tests/overview").mock(return_value=ok({"tests": [
+        {"name": "M365", "kind": "http", "host": "https://outlook.office.com", "enabled": True, "interval": "0h5m0s",
+         "httpResults": {"resourceFetchTime": {"avgMs": 210}}, "httpResultsByColo": [], "overview": {"availabilityPct": 91.5}}]}))
+    respx.get(f"{CF}/devices/posture").mock(return_value=ok([{"name": "Disk encrypted", "type": "disk_encryption", "match": [{"platform": "windows"}, {"platform": "mac"}]}]))
+    respx.get(f"{CF}/devices/posture/integration").mock(return_value=ok([{"name": "CrowdStrike", "type": "crowdstrike_s2s", "interval": "10m"}]))
+    respx.get(f"{CF}/devices/policies").mock(return_value=ok([{"name": "Contractors", "precedence": 10, "match": "identity.groups.name in {\"Contractors\"}",
+                                                              "service_mode_v2": {"mode": "proxy"}, "switch_locked": True}]))
+    respx.get(f"{CF}/devices/policy").mock(return_value=ok({"service_mode_v2": {"mode": "warp"}}))
+    respx.get(f"{CF_ROOT}/zones").mock(return_value=ok([
+        {"id": "z1", "name": "contoso.com", "status": "active", "plan": {"name": "Pro Plan"}, "name_servers": ["a.ns.cloudflare.com"]},
+        {"id": "z2", "name": "old.example", "status": "active", "paused": True, "plan": {"name": "Free Website"}}]))
+    respx.get(url__regex=rf"{CF_ROOT}/zones/z\d/dns_records").mock(return_value=httpx.Response(200, json={"success": True, "result": [{}], "result_info": {"total_count": 42}}))
+    respx.get(url__regex=rf"{CF_ROOT}/zones/z\d/settings").mock(return_value=ok([{"id": "ssl", "value": "strict"}, {"id": "min_tls_version", "value": "1.2"},
+                                                                               {"id": "always_use_https", "value": "on"}]))
+    respx.get(f"{CF}/audit_logs").mock(return_value=ok([
+        {"when": hb, "actor": {"email": "admin@contoso.com", "ip": "198.51.100.7"}, "action": {"type": "rule_update", "result": True},
+         "resource": {"type": "gateway_rule"}, "interface": "UI", "metadata": {"rule_name": "Block AI"}},
+        {"when": hb, "actor": {"email": "bot@contoso.com"}, "action": {"type": "login", "result": False}, "resource": {"type": "account"}}]))
+
+    only = {k: False for k in ("sites", "private", "users", "policy", "apps", "dlp")}
+    c = build("cloudflare", {"account_id": "abc", "api_token": "t", **only})
+    recs = {r["external_id"]: r for r in c.collect()}
+    d = c.data
+    assert c.errors == [], c.errors
+    assert set(d["products"]) == {"gateway", "access", "dex", "zones", "audit"}
+
+    g = d["gateway"]
+    assert g["dns"]["total"] == 940 and g["dns"]["blocked"] == 40
+    assert g["dns"]["top_blocked"][0] == ["www.badsite.com", 30] and ["chat.deepseek.ai", 10] in g["dns"]["top_blocked"]
+    assert dict(g["dns"]["top_blocked_categories"]) == {"Security risks": 40, "Malware": 40}
+    assert g["http"]["blocked"] == 20 and g["http"]["top_blocked"] == [["chat.deepseek.com", 20]]
+    assert g["network"] is None and any("network analytics" in u for u in d["unavailable"])
+    assert g["locations"][0]["networks"] == ["203.0.113.0/24"] and g["lists"][0]["count"] == 4 and g["proxy_endpoints"] is None
+    assert ["TLS decryption", True] in g["settings"] and ["Activity logging", False] in g["settings"]
+
+    a = d["access"]
+    assert a["apps"][0]["policies"] == ["Staff"] and a["policies"][0]["include"] == "email domain: contoso.com"
+    assert a["idps"][0]["scim"] and a["org"]["auth_domain"] == "contoso.cloudflareaccess.com"
+    assert a["logins"]["allowed"] == 1 and a["logins"]["denied"] == 1 and a["logins"]["top_denied_users"] == [["eve@example.com", 1]]
+    assert "since" in logs.calls[0].request.url.params
+    assert a["service_tokens"][0]["name"] == "ci-runner" and a["service_tokens"][0]["status"] == "warn"
+    assert recs["access-service-tokens"]["status"] == "warn" and "ci-runner" in recs["access-service-tokens"]["detail"]
+
+    x = d["dex"]
+    assert x["fleet"]["total"] == 120 and x["fleet"]["by_status"][0] == ["connected", 100]
+    assert x["tests"][0]["availability"] == 91.5 and x["tests"][0]["fetch_ms"] == 210
+    assert recs["dex-summary"]["status"] == "warn"
+    assert x["posture"][0]["platforms"] == ["mac", "windows"] and x["posture_integrations"][0]["name"] == "CrowdStrike"
+    assert [p["name"] for p in x["profiles"]] == ["Contractors", "Default"] and x["profiles"][1]["mode"] == "warp"
+
+    z = {i["name"]: i for i in d["zones"]["items"]}
+    assert z["contoso.com"]["records"] == 42 and z["contoso.com"]["ssl"] == "strict" and z["contoso.com"]["requests"] == 10000
+    assert z["contoso.com"]["events"] == [["waf: block", 7]]
+    assert recs["zones-z1"]["status"] == "up" and recs["zones-z2"]["status"] == "off"
+
+    au = d["audit"]
+    assert len(au["events"]) == 2 and au["failed"] == 1 and au["events"][0]["detail"] == "Block AI"
+
+    keys = {m[0] for m in d["metrics"]}
+    assert {"gateway:dns", "gateway:http", "access:logins", "dex:fleet", "zones:traffic", "audit:events"} <= keys
+
+
+@respx.mock
+def test_cloudflare_magic_wan_extras():
+    respx.get(f"{CF}/magic/ipsec_tunnels").mock(return_value=ok({"ipsec_tunnels": [{"id": "t1", "name": "dal"}]}))
+    respx.get(f"{CF}/magic/gre_tunnels").mock(return_value=ok({"gre_tunnels": []}))
+    respx.post(f"{CF_ROOT}/graphql").mock(return_value=httpx.Response(200, json={"errors": [{"message": "no access to dataset"}]}))
+    respx.get(f"{CF}/magic/sites").mock(return_value=ok([{"name": "Dallas", "ha_mode": True, "connector_id": "mc1"}]))
+    from datetime import datetime, timezone
+    respx.get(f"{CF}/magic/connectors").mock(return_value=ok([
+        {"id": "mc1", "device": {"serial_number": "SN1"}, "activated": True, "last_heartbeat": datetime.now(timezone.utc).isoformat(), "last_seen_version": "2024.6"},
+        {"id": "mc2", "activated": True, "last_heartbeat": "2020-01-01T00:00:00Z"}]))
+    respx.get(f"{CF}/magic/routes").mock(return_value=ok({"routes": [{"prefix": "10.1.0.0/16", "nexthop": "10.200.0.0", "priority": 100}]}))
+    respx.get(f"{CF}/rulesets/phases/magic_transit/entrypoint").mock(return_value=ok({"rules": [
+        {"description": "Allow ICMP", "action": "skip", "expression": "ip.proto eq \"icmp\""}]}))
+    only = {k: False for k in ("private", "users", "policy", "apps", "dlp")}
+    c = build("cloudflare", {"account_id": "abc", "api_token": "t", "sites": True, **only, **CF_EXTRA_OFF})
+    recs = {r["external_id"]: r for r in c.collect()}
+    m = c.data["sites"]["magic"]
+    assert m["sites"][0]["name"] == "Dallas" and m["routes"][0]["prefix"] == "10.1.0.0/16" and m["firewall"][0]["action"] == "skip"
+    assert recs["sites-connector-mc1"]["status"] == "up" and recs["sites-connector-mc2"]["status"] == "down"
+    assert any("tunnel health" in u for u in c.data["unavailable"])
