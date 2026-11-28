@@ -158,7 +158,7 @@
     {% else %}<p class="dim">Security Advisor results aren't available.</p>{% endif %}</div>
   <div class="p c6"><div class="ph"><h2>DSM update</h2></div>
     {% if d.dsm_update %}<p style="margin-top:0">{% if d.dsm_update.available %}<span class="wa">{{ d.dsm_update.version or 'An update' }} is available</span>{% if d.dsm_update.reboot %}; installing it reboots the NAS{% endif %}.{% else %}<span class="okc">DSM is up to date</span> ({{ s.version }}).{% endif %}</p>
-    <p class="help">Linkwatch doesn't install DSM updates. Use DSM's Control Panel &gt; Update &amp; Restore, so you can read the release notes and pick a time.</p>
+    <p class="help">VisCon1 doesn't install DSM updates. Use DSM's Control Panel &gt; Update &amp; Restore, so you can read the release notes and pick a time.</p>
     {% else %}<p class="dim">Update status isn't available.</p>{% endif %}</div>
   <div class="p"><div class="ph"><h2>Connected users</h2><span class="sub">{{ (d.connections or [])|length }}</span></div>
     <div class="scroll"><table><thead><tr><th>User</th><th>Type</th><th>From</th><th>Since</th><th>Doing</th></tr></thead><tbody>

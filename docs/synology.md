@@ -1,6 +1,6 @@
 # Synology NAS (DSM 7.x; DSM 6.2 mostly works)
 
-Linkwatch reads a Synology NAS over the DSM Web API (the same API DSM's own web interface uses) and, if you allow it, lets admins control it from the **NAS** menu: reboot or shut it down, start and stop packages, containers and virtual machines, run and cancel Hyper Backup tasks and data scrubbing, take and delete snapshots, and run Security Advisor. The calls run on a poller inside your network; nothing connects in to the NAS from the internet.
+VisCon1 reads a Synology NAS over the DSM Web API (the same API DSM's own web interface uses) and, if you allow it, lets admins control it from the **NAS** menu: reboot or shut it down, start and stop packages, containers and virtual machines, run and cancel Hyper Backup tasks and data scrubbing, take and delete snapshots, and run Security Advisor. The calls run on a poller inside your network; nothing connects in to the NAS from the internet.
 
 > **Not yet tested against a real NAS.** The API calls follow DSM 7.2's web interface traffic, Synology's published API guides (authentication, Virtual Machine Manager) and well-used community clients, and are covered by tests against those response shapes. Nobody has pressed these buttons on a real DiskStation yet. Some of the control calls are less certain than others; see [What hasn't been tested](#what-hasnt-been-tested). Try them on a NAS you can afford to reboot first.
 
@@ -16,10 +16,10 @@ A NAS with a problem (a volume or pool not healthy, a disk failing or flagged by
 
 Don't use your own admin account. A dedicated one can be locked down, audited separately, and disabled without locking you out.
 
-1. **Control Panel > User & Group > User > Create.** Name: `linkwatch`. Description: *Linkwatch monitoring*. A long random password (Linkwatch stores it encrypted).
+1. **Control Panel > User & Group > User > Create.** Name: `viscon1`. Description: *VisCon1 monitoring*. A long random password (VisCon1 stores it encrypted).
 2. Tick **Disallow the user to change account password**.
 3. **Join groups:** `administrators`. This is required: DSM only answers the system, storage, package, container and backup APIs for members of the administrators group, and returns *permission denied* (error 105) otherwise. There is no read-only administrator role in DSM.
-4. **Assign shared folders permissions:** tick **No access** for every shared folder. Linkwatch never reads files; this stops the account being used for SMB, AFP, NFS or File Station even though it is an administrator. (Shares created later need the same; DSM's *Deny* always wins.)
+4. **Assign shared folders permissions:** tick **No access** for every shared folder. VisCon1 never reads files; this stops the account being used for SMB, AFP, NFS or File Station even though it is an administrator. (Shares created later need the same; DSM's *Deny* always wins.)
 5. **Assign application permissions:** **Deny** everything except **DSM**. The API sign-in counts as DSM.
 6. Finish, then under **Control Panel > User & Group > Advanced > Password Settings**, if you use password expiry, make sure it can't expire this account's password (or set yourself a reminder: an expired password stops monitoring with *the account's password has expired*).
 
@@ -27,14 +27,14 @@ Don't use your own admin account. A dedicated one can be locked down, audited se
 
 The API signs in with a password, so the account needs either no 2FA prompt or a trusted-device token. Pick one:
 
-**A. Exempt the account (simplest).** If you enforce 2FA under **Control Panel > Security > Account > 2-Factor Authentication**, enforce it for *specific users or groups* rather than all administrators, and leave `linkwatch` out. On DSM 7.2 also check **Adaptive Multi-Factor Authentication** on the same page: it asks for a second factor when an administrator signs in from a new place, so either leave it off or rely on option B. Compensate with step 3 below (the account can only sign in from the poller).
+**A. Exempt the account (simplest).** If you enforce 2FA under **Control Panel > Security > Account > 2-Factor Authentication**, enforce it for *specific users or groups* rather than all administrators, and leave `viscon1` out. On DSM 7.2 also check **Adaptive Multi-Factor Authentication** on the same page: it asks for a second factor when an administrator signs in from a new place, so either leave it off or rely on option B. Compensate with step 3 below (the account can only sign in from the poller).
 
-**B. Use a device token.** Keep 2FA on and give Linkwatch a token that marks the poller as a trusted device, the same thing DSM's *Remember this device* checkbox does:
+**B. Use a device token.** Keep 2FA on and give VisCon1 a token that marks the poller as a trusted device, the same thing DSM's *Remember this device* checkbox does:
 
-1. Sign in to DSM once as `linkwatch` and set up the authenticator app when asked.
+1. Sign in to DSM once as `viscon1` and set up the authenticator app when asked.
 2. On the poller host, with a code from the authenticator at hand, run:
    ```sh
-   podman exec -it linkwatch-poller python -m linkwatch.integrations.synology pair https://10.10.5.20:5001 linkwatch
+   podman exec -it linkwatch-poller python -m linkwatch.integrations.synology pair https://10.10.5.20:5001 viscon1
    ```
    (`docker exec` if you run Docker; add `--insecure` for DSM's self-signed certificate.) It asks for the password and the 6-digit code and prints a device token.
 3. Paste the token into the integration's **2FA device token** field.
@@ -47,7 +47,7 @@ If the token stops working (*the 2-step verification code or device token was re
 - **Control Panel > Security > Protection > Auto Block:** keep it on. To stop a typo in the password locking the poller out, you can add the poller's address to the **Allow List** there; a blocked poller shows *DSM has blocked the poller's IP address (Auto Block)*.
 - **Control Panel > Login Portal > Advanced** (DSM 7.2) or your firewall can restrict the administrator sign-in to the management network.
 
-Linkwatch keeps one DSM session per NAS for up to 20 minutes and reuses it for every sync and action, so **Log Center > Connection** shows a `linkwatch` sign-in about three times an hour (and after the poller restarts), named *Linkwatch*, from the poller's address. A sign-in from anywhere else is worth a look.
+VisCon1 keeps one DSM session per NAS for up to 20 minutes and reuses it for every sync and action, so **Log Center > Connection** shows a `viscon1` sign-in about three times an hour (and after the poller restarts), named *VisCon1*, from the poller's address. A sign-in from anywhere else is worth a look.
 
 ## 2. Add the integration
 
@@ -56,7 +56,7 @@ Linkwatch keeps one DSM session per NAS for up to 20 minutes and reuses it for e
 3. Tick **Allow control actions** if you want admins to be able to control the NAS. Leave it off for monitoring only; the NAS pages then show everything with no buttons, and the poller refuses any action even if asked.
 4. **Test**, then **Save**. A **NAS** menu appears.
 
-For fan, power-supply and interface graphs, also add the NAS as an SNMP device (**Control Panel > Terminal & SNMP > SNMP** in DSM; SNMPv3 recommended, then **Devices > Add SNMP device** in Linkwatch with the same address).
+For fan, power-supply and interface graphs, also add the NAS as an SNMP device (**Control Panel > Terminal & SNMP > SNMP** in DSM; SNMPv3 recommended, then **Devices > Add SNMP device** in VisCon1 with the same address).
 
 ## 3. Using it
 
@@ -72,7 +72,7 @@ The NAS page has tabs:
 
 Data comes from the last sync (the normal poll interval). After an action, the poller syncs the NAS again a few seconds later, so press reload to see the new state. The disk SMART page is fetched live when you open it.
 
-Linkwatch doesn't install DSM or package updates: those can reboot the NAS and deserve a look at the release notes, so do them in DSM.
+VisCon1 doesn't install DSM or package updates: those can reboot the NAS and deserve a look at the release notes, so do them in DSM.
 
 ### Safety rails
 

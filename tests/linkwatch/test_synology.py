@@ -150,7 +150,7 @@ def test_collect_reads_everything(dsm):
     assert dsm.logins == 1
     assert all("passwd" not in c or c.get("api") == "SYNO.API.Auth" for c in dsm.calls)
     login = next(c for c in dsm.calls if c.get("api") == "SYNO.API.Auth")
-    assert login["version"] == "6" and login["session"] == "Linkwatch" and login["format"] == "sid"
+    assert login["version"] == "6" and login["session"] == "VisCon1" and login["format"] == "sid"
     assert all(c["_sid"] == "sid1" for c in dsm.calls if c.get("api") not in ("SYNO.API.Info", "SYNO.API.Auth"))
     snap_list = next(c for c in dsm.calls if c.get("api") == "SYNO.Core.Share.Snapshot")
     assert snap_list["name"] == '"docker"' and json.loads(snap_list["additional"]) == ["desc", "lock", "schedule_snapshot"]
@@ -191,7 +191,7 @@ def test_login_errors_are_plain(dsm, code, msg):
 def test_device_token_is_sent(dsm):
     build("synology", {**CFG, "device_token": "DEVTOKEN"}).collect()
     login = next(c for c in dsm.calls if c.get("api") == "SYNO.API.Auth")
-    assert login["device_id"] == "DEVTOKEN" and login["device_name"] == "Linkwatch"
+    assert login["device_id"] == "DEVTOKEN" and login["device_name"] == "VisCon1"
 
 
 def test_not_a_nas():

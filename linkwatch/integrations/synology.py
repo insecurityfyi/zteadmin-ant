@@ -34,7 +34,7 @@ import httpx
 
 from .base import Field, Integration, IntegrationError, Record, host_url, verify_field
 
-SESSION_NAME = "Linkwatch"
+SESSION_NAME = "VisCon1"
 SESSION_TTL = 20 * 60          # reuse a login for this long; DSM's own idle timeout is longer by default
 
 PKG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]{0,63}$")
@@ -646,7 +646,7 @@ class Synology(Integration):
 
     def op_snapshot_create(self, p):
         share = _match(SHARE_RE, p.get("share"), "shared folder")
-        info = {"desc": str(p.get("description") or "Taken from Linkwatch")[:255], "lock": _flag(p.get("lock"))}
+        info = {"desc": str(p.get("description") or "Taken from VisCon1")[:255], "lock": _flag(p.get("lock"))}
         out = self.call("SYNO.Core.Share.Snapshot", "create", version=1, post=True, name=js(share), snapinfo=info)
         return self._done(f"Snapshot of {share} taken" + (f" ({out})." if isinstance(out, str) else "."))
 
