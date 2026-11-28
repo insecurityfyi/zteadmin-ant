@@ -16,6 +16,12 @@ learned through a downstream switch, a hub or a phone's PC port, or seen only by
 the gateway) is kept but marked with the reason.
 * ``rest/wlanconf`` the configured SSIDs (so idle ones show up too)
 * ``stat/health``  WAN/ISP summary and internet latency
+* ``stat/event``   the last hour of Wi-Fi connects, disconnects, roams and failures (optional: newer
+  Network releases may return nothing, and then those counts stay empty)
+
+Wireless detail for the Wireless dashboard rides along: per client signal, noise, SNR, link rates, retry
+and roam counters; per radio channel utilization (own traffic and interference), noise floor, TX power,
+retry and drop counters. Counters are cumulative; the server turns them into rates between polls.
 
 Sign-in is an API key (UniFi OS consoles with Network 9.0 or later:
 Settings > Control Plane > Integrations) sent as ``X-API-KEY``. A local
@@ -86,6 +92,7 @@ class UniFi(Integration):
         self.headers = {"Accept": "application/json"}
         self.data: dict[str, Any] = {}
         self.errors: list[str] = []
+        self._events_ok = False
 
     # ------------------------------------------------------------ sign-in
     def _login(self) -> None:
@@ -152,6 +159,7 @@ class UniFi(Integration):
         ssids: dict[str, dict] = {}
         switch_ports: list[dict] = []
         health: dict[str, Any] = {}
+        wifi_events: list[dict] = []
         sites = self._sites()
         multi = len(sites) > 1
         for site in sites:
@@ -170,6 +178,7 @@ class UniFi(Integration):
                         "band": w.get("wlan_band"), "vlan": w.get("vlan") if w.get("vlan_enabled") else None,
                         "guest": bool(w.get("is_guest")), "clients": 0, "down_bps": 0.0, "up_bps": 0.0, "aps": set()})
             site_clients = [self._client(c, sname, names) for c in self._api(f"/s/{sid}/stat/sta")]
+            wifi_events.extend(self._events(sid, sname, names))
             switch_ports.extend(attachment(devices, site_clients, sname, names))
             clients.extend(site_clients)
             for h in self._safe(f"/s/{sid}/stat/health"):
@@ -204,6 +213,7 @@ class UniFi(Integration):
                 ap["up_bps"] += c.get("up_bps") or 0
         for s in ssids.values():
             s["aps"] = sorted(s["aps"])
+        _count_events(ssids, wifi_events, multi)
         clients.sort(key=lambda c: -((c.get("down_bps") or 0) + (c.get("up_bps") or 0)))
         wireless = sum(1 for c in clients if not c["wired"])
         self.data = {
@@ -221,6 +231,7 @@ class UniFi(Integration):
             "aps": sorted(aps, key=lambda a: -a["clients"]),
             "clients": clients[:MAX_CLIENTS],
             "switch_ports": switch_ports,
+            "events_ok": bool(wifi_events) or self._events_ok,
         }
         if len(clients) > MAX_CLIENTS:
             self.errors.append(f"Only the {MAX_CLIENTS} busiest of {len(clients)} clients are kept")
@@ -239,6 +250,21 @@ class UniFi(Integration):
         except IntegrationError as exc:
             self.errors.append(f"{path.split('/', 3)[-1]}: {exc}")
             return []
+
+    def _events(self, sid: str, site: str, names: dict) -> list[dict]:
+        """Wi-Fi events from the last hour. Silent on failure: newer releases moved these to the system log."""
+        try:
+            rows = self._api(f"/s/{sid}/stat/event?within=1&_limit=3000")
+        except IntegrationError:
+            return []
+        self._events_ok = True
+        out = []
+        for e in rows:
+            kind = event_kind(e.get("key"), e.get("msg"))
+            if kind:
+                out.append({"kind": kind, "site": site, "ssid": e.get("ssid"), "mac": e.get("user") or e.get("guest"),
+                            "ap": names.get(e.get("ap") or e.get("ap_to")) or e.get("ap_name"), "time": e.get("time")})
+        return out
 
     @staticmethod
     def _ssid_key(name: str, site: str, multi: bool) -> str:
@@ -306,12 +332,28 @@ class UniFi(Integration):
     @staticmethod
     def _radios(d: dict) -> list[dict]:
         stats = {r.get("name"): r for r in d.get("radio_table_stats") or []}
+        # drops and retries per radio come from the SSIDs (VAPs) on it
+        vaps: dict[str, dict[str, float]] = {}
+        for v in d.get("vap_table") or []:
+            agg = vaps.setdefault(v.get("radio") or "", {"tx_dropped": 0.0, "rx_dropped": 0.0, "found": 0.0})
+            for k in ("tx_dropped", "rx_dropped"):
+                agg[k] += _num(v.get(k)) or 0
+            agg["found"] = 1.0
         out = []
         for r in d.get("radio_table") or []:
             st = stats.get(r.get("name"), {})
-            out.append({"band": BAND.get(r.get("radio"), r.get("radio")), "channel": st.get("channel") or r.get("channel"),
-                        "width": r.get("ht"), "tx_power": st.get("tx_power"), "clients": st.get("num_sta"),
-                        "utilization": _num(st.get("cu_total")), "satisfaction": st.get("satisfaction")})
+            total, rx, tx = _num(st.get("cu_total")), _num(st.get("cu_self_rx")), _num(st.get("cu_self_tx"))
+            interference = max(0.0, round(total - (rx or 0) - (tx or 0), 1)) if total is not None and (rx is not None or tx is not None) else None
+            vap = vaps.get(r.get("radio") or "", {})
+            out.append({"band": BAND.get(r.get("radio"), r.get("radio")), "radio": r.get("radio"), "name": r.get("name"),
+                        "channel": st.get("channel") or r.get("channel"),
+                        "width": r.get("ht"), "tx_power": _num(st.get("tx_power")), "clients": st.get("num_sta"),
+                        "utilization": total, "self_rx": rx, "self_tx": tx, "interference": interference,
+                        "noise": _num(st.get("noise") if st.get("noise") is not None else r.get("noise")),
+                        "tx_packets": _num(st.get("tx_packets")), "tx_retries": _num(st.get("tx_retries")),
+                        "tx_dropped": vap.get("tx_dropped") if vap.get("found") else None,
+                        "rx_dropped": vap.get("rx_dropped") if vap.get("found") else None,
+                        "satisfaction": st.get("satisfaction")})
         return out
 
     @staticmethod
@@ -328,6 +370,7 @@ class UniFi(Integration):
                 "status": STATE.get(int(d.get("state") or 0), "unknown"), "ip": d.get("ip"),
                 "clients": int(d.get("num_sta") or 0), "satisfaction": d.get("satisfaction"),
                 "radios": self._radios(d), "down_bps": 0.0, "up_bps": 0.0,
+                "uptime_s": int(d["uptime"]) if d.get("uptime") else None,
                 "ssids": sorted({v.get("essid") for v in d.get("vap_table") or [] if v.get("essid")})}
 
     @staticmethod
@@ -352,7 +395,53 @@ class UniFi(Integration):
             "down_bytes": _num(c.get("wired-tx_bytes") if wired else c.get("tx_bytes")),
             "up_bytes": _num(c.get("wired-rx_bytes") if wired else c.get("rx_bytes")),
             "uptime_s": c.get("uptime"),
+            **({} if wired else _wifi_detail(c)),
         }
+
+
+def _wifi_detail(c: dict) -> dict:
+    """Wireless counters and quality figures for one client (rates are worked out by the server between polls)."""
+    signal, noise = _num(c.get("signal")), _num(c.get("noise"))
+    out = {"snr": round(signal - noise, 1) if signal is not None and noise is not None else None,
+           "bssid": c.get("bssid"), "tx_retries": _num(c.get("tx_retries")), "tx_packets": _num(c.get("tx_packets")),
+           "tx_attempts": _num(c.get("wifi_tx_attempts")), "roam_count": _num(c.get("roam_count")),
+           "idle_s": _num(c.get("idletime")), "retry_pct": None}
+    pct = _num(c.get("wifi_tx_retries_percentage"))
+    if pct is not None:
+        out["retry_pct"] = round(pct, 1)
+    return out
+
+
+EVENT_KINDS = (
+    ("auth_fail", re.compile(r"auth.{0,24}fail|fail.{0,24}auth|wpa.{0,24}fail|radius.{0,24}(reject|fail)|eap.{0,24}fail|wrong.?(password|psk)", re.I)),
+    ("assoc_fail", re.compile(r"assoc.{0,24}(fail|reject)|fail.{0,24}assoc", re.I)),
+    ("dhcp_fail", re.compile(r"dhcp.{0,24}(fail|time)|fail.{0,24}dhcp|no ip address", re.I)),
+    ("roam", re.compile(r"^EVT_WU_Roam", re.I)),
+    ("connect", re.compile(r"^EVT_W[UG]_Connected", re.I)),
+    ("disconnect", re.compile(r"^EVT_W[UG]_Disconnected", re.I)),
+)
+
+
+def event_kind(key: Any, msg: Any = None) -> str | None:
+    """auth_fail, assoc_fail, dhcp_fail, roam, connect or disconnect for a UniFi event, else None."""
+    key, msg = str(key or ""), str(msg or "")
+    if not key.startswith(("EVT_WU", "EVT_WG", "EVT_AP")) and "fail" not in (key + msg).lower():
+        return None
+    for kind, rx in EVENT_KINDS:
+        if rx.search(key) or (kind.endswith("_fail") and rx.search(msg)):
+            return kind
+    return None
+
+
+def _count_events(ssids: dict[str, dict], events: list[dict], multi: bool) -> None:
+    for s in ssids.values():
+        s.setdefault("events", {k: 0 for k, _ in EVENT_KINDS})
+    for e in events:
+        if not e.get("ssid"):
+            continue
+        s = ssids.get(UniFi._ssid_key(e["ssid"], e["site"], multi))
+        if s is not None:
+            s["events"][e["kind"]] = s["events"].get(e["kind"], 0) + 1
 
 
 def _mac(v: Any) -> str:

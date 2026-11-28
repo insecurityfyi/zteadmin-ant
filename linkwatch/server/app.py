@@ -313,6 +313,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .snmp_views import router as snmp_router
     from .sso import router as sso_router
     from .unifi_views import router as unifi_router
+    from .wireless_views import router as wireless_router
     from .web import router as web_router
     app.include_router(api_router)
     app.include_router(dashboard_router)
@@ -320,6 +321,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(snmp_router)      # before web: /devices/add-snmp must not be read as /devices/{id}
     app.include_router(web_router)
     app.include_router(unifi_router)
+    app.include_router(wireless_router)
     app.include_router(sso_router)
     app.include_router(integration_views_router)
     app.include_router(nms_router)

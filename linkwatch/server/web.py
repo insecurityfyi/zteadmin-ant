@@ -54,7 +54,7 @@ def st(request: Request):
 
 SECTIONS = {"dashboard": "overview", "eventlog": "overview", "devices": "devices", "device": "devices", "discovery": "devices",
             "ports": "ports", "port": "ports", "probes": "paths", "probe": "paths", "health": "health", "alerts": "alerts", "map": "map",
-            "integrations": "integrations", "integration": "integrations", "unifi": "integrations",
+            "integrations": "integrations", "integration": "integrations", "unifi": "integrations", "wireless": "wireless",
             "hypervisors": "hypervisors", "hv": "hypervisors", "nas": "nas",
             "pollers": "admin", "settings": "admin", "admin": "admin", "account": "admin", "oids": "health", "oid": "health",
             "mib": "health", "logs": "logs"}
