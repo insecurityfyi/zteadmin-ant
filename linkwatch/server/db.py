@@ -26,6 +26,9 @@ DEFAULT_RULES = [
     ("poller_offline", "Poller offline", "A poller has not been heard from for three poll intervals", "crit", None, 1),
     ("path_loss", "Path loss", "Packet loss to a path probe's target above the threshold (%)", "warn", 20, 2),
     ("path_latency", "Path latency", "Average latency to a path probe's target above the threshold (ms)", "warn", 150, 3),
+    ("wifi_low_rssi", "Wi-Fi weak signal", "A wireless client's signal is below the threshold (dBm) for the poll count. -67 dBm or better is good", "warn", -75, 3),
+    ("wifi_retries", "Wi-Fi high retries", "A wireless client retries more than the threshold (%) of its frames for the poll count. Above 10-15% hurts", "warn", 15, 3),
+    ("wifi_congestion", "Wi-Fi channel congested", "A radio's channel utilization is above the threshold (%) for the poll count. Above 50-60% is congested", "warn", 60, 3),
     ("path_change", "Path changed networks", "A path probe's route now crosses different networks (ASNs). Clears once it holds for the poll count", "info", None, 3),
 ]
 
