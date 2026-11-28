@@ -122,6 +122,7 @@ fi
 
 echo "==> Building $IMAGE:$TAG"
 podman build --pull=newer -f Dockerfile.linkwatch -t "$IMAGE:$TAG" \
+  --build-arg "LW_BUILD=${COMMIT:0:12}" \
   --label "org.opencontainers.image.revision=$COMMIT" .
 
 echo "==> Copying unit files and deploy script"

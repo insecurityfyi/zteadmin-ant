@@ -8,8 +8,8 @@
 {{ head_icons(theme|default('auto')) }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
-<link rel="stylesheet" href="/static/vendor/xterm/xterm.css?v={{ version }}">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.css?v={{ asset_version }}">
 <style>
   html,body{height:100%}
   body{display:flex;flex-direction:column;overflow:hidden}
@@ -60,9 +60,9 @@
 {% if not error %}
 {{ footer() }}
 <script id="target" type="application/json">{{ target|tojson }}</script>
-<script src="/static/vendor/xterm/xterm.js?v={{ version }}"></script>
-<script src="/static/vendor/xterm/addon-fit.js?v={{ version }}"></script>
-<script src="/static/pveconsole.js?v={{ version }}"></script>
+<script src="/static/vendor/xterm/xterm.js?v={{ asset_version }}"></script>
+<script src="/static/vendor/xterm/addon-fit.js?v={{ asset_version }}"></script>
+<script src="/static/pveconsole.js?v={{ asset_version }}"></script>
 {% endif %}
 </body>
 </html>

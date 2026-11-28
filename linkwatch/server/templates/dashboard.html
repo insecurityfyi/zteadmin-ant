@@ -171,8 +171,8 @@
   <div class="p c12 empty-state"><h2>Your dashboard is empty</h2><p>{% if edit %}Pick a widget from "Add a widget" above.{% else %}<a href="/?edit=1">Customise</a> it to add widgets.{% endif %}</p></div>
 {% endfor %}
 </div>
-{% if widgets|selectattr('type','equalto','map')|list %}<script src="/static/map.js?v={{ version }}" defer></script>{% endif %}
-{% if edit %}<script src="/static/dashboard.js?v={{ version }}" defer></script>{% endif %}
+{% if widgets|selectattr('type','equalto','map')|list %}<script src="/static/map.js?v={{ asset_version }}" defer></script>{% endif %}
+{% if edit %}<script src="/static/dashboard.js?v={{ asset_version }}" defer></script>{% endif %}
 {% if widgets|selectattr('type','equalto','device_table')|list %}<script>
 document.querySelectorAll("[data-dtable]").forEach(box => {
   const rows = [...box.querySelectorAll("tbody tr[data-q]")], per = +box.dataset.per || 10, q = box.querySelector("input[type=search]");

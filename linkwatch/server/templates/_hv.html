@@ -17,7 +17,7 @@
   </form>
 </dialog>
 {% if task %}<div class="p hv-task" data-task="{{ task }}" data-iid="{{ c.id }}" role="status" aria-live="polite"><div class="ph"><h2>Task <span class="hv-task-state tag">running</span></h2><span class="sub mono" style="overflow-wrap:anywhere">{{ task }}</span></div><pre class="hv-log">Waiting for the task log…</pre></div>{% endif %}
-<script src="/static/hv.js?v={{ version }}" defer></script>
+<script src="/static/hv.js?v={{ asset_version }}" defer></script>
 {% endmacro %}
 
 {% macro power_dot(status) %}<span class="dot {{ {'running':'d-up','stopped':'d-off','paused':'d-warn','suspended':'d-warn'}.get(status, 'd-off') }}" title="{{ status }}"></span>{% endmacro %}
