@@ -219,3 +219,19 @@ def port_wan_toggle(request: Request, port_id: int):
                    "info", p.device_id, p, username=_who(request))
     nxt = str(request.query_params.get("next") or "")
     return RedirectResponse(nxt if nxt.startswith("/") and not nxt.startswith("//") else f"/ports/{port_id}", status_code=303)
+
+
+@router.get("/ui/map/l3", include_in_schema=False)
+def map_l3_data(request: Request, site: str = "", hosts: str = ""):
+    """Subnets and the routed interfaces on them, for the Layer 3 map under the network map (see layers.py)."""
+    from .layers import build_l3
+    with st(request).db.session() as s:
+        return build_l3(s, site=site, hosts=bool(hosts))
+
+
+@router.get("/ui/map/l2", include_in_schema=False)
+def map_l2_data(request: Request, site: str = "", clients: str = ""):
+    """VLANs and the devices on each, for the Layer 2 map under the network map (see layers.py)."""
+    from .layers import build_l2
+    with st(request).db.session() as s:
+        return build_l2(s, site=site, clients=bool(clients))

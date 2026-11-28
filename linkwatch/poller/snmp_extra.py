@@ -238,6 +238,107 @@ async def neighbours(s, ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out[:500]
 
 
+# ------------------------------------------------------------------ VLANs and IP addresses (for the Layer 2 and 3 maps)
+IP_ADDR = "1.3.6.1.2.1.4.20.1"            # ipAddrTable, index = the address: .2 ifIndex .3 netmask
+BRIDGE_PORT = "1.3.6.1.2.1.17.1.4.1.2"    # dot1dBasePortIfIndex: bridge port -> ifIndex
+QB_STATIC = "1.3.6.1.2.1.17.7.1.4.3.1"    # dot1qVlanStaticTable, index = VLAN: .1 name .2 egress ports .4 untagged ports
+QB_PVID = "1.3.6.1.2.1.17.7.1.4.5.1.1"    # dot1qPvid: bridge port -> its untagged VLAN
+CISCO_VTP_NAME = "1.3.6.1.4.1.9.9.46.1.3.1.1.4"     # vtpVlanName, index = <domain>.<vlan>
+CISCO_ACCESS_VLAN = "1.3.6.1.4.1.9.9.68.1.2.2.1.2"  # vmVlan: ifIndex -> access VLAN
+CISCO_TRUNKING = "1.3.6.1.4.1.9.9.46.1.6.1.1.14"    # vlanTrunkPortDynamicStatus: 1 = trunking
+CISCO_RESERVED = {1002, 1003, 1004, 1005}
+MAX_VLANS = 512
+
+
+def _octets(v) -> bytes:
+    """A PortList as bytes, whether it came back as "ff:00:.." hex or as (accidentally printable) text."""
+    if v is None:
+        return b""
+    t = str(v)
+    parts = t.split(":")
+    if all(len(x) == 2 for x in parts):
+        try:
+            return bytes(int(x, 16) for x in parts)
+        except ValueError:
+            pass
+    return t.encode("latin-1", "ignore")
+
+
+def portlist(v) -> list[int]:
+    """Bridge port numbers set in a Q-BRIDGE PortList (the first octet's top bit is port 1)."""
+    out = []
+    for i, byte in enumerate(_octets(v)):
+        for bit in range(8):
+            if byte & (0x80 >> bit):
+                out.append(i * 8 + bit + 1)
+    return out
+
+
+def _prefix(mask) -> int | None:
+    try:
+        return ipaddress.IPv4Network(f"0.0.0.0/{mask}").prefixlen
+    except ValueError:
+        return None
+
+
+async def ip_addresses(s) -> list[dict[str, Any]]:
+    rows = await _cols(s, IP_ADDR, {"ifindex": 2, "mask": 3})
+    out = []
+    for ip, r in rows.items():
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
+            continue
+        out.append({"ip": ip, "prefix": _prefix(r.get("mask")), "ifindex": _int(r.get("ifindex"))})
+    return out[:256]
+
+
+async def vlans(s) -> list[dict[str, Any]]:
+    """VLANs defined on the box, with the ports that carry each one untagged (access) or tagged (trunk)."""
+    found: dict[int, dict[str, Any]] = {}
+
+    def vlan(vid: int, name: Any = None) -> dict[str, Any]:
+        v = found.setdefault(vid, {"id": vid, "name": None, "untagged": set(), "tagged": set()})
+        if name and not v["name"]:
+            v["name"] = str(name)[:64]
+        return v
+
+    static = await _cols(s, QB_STATIC, {"name": 1, "egress": 2, "untagged": 4})
+    if static:
+        bport = {k: _int(v) for k, v in (await _walk(s, BRIDGE_PORT)).items()}
+        to_if = lambda n: bport.get(str(n)) or _int(n)   # noqa: E731 - many agents number bridge ports as ifIndex
+        for idx, r in static.items():
+            vid = _int(idx.split(".")[-1])
+            if vid is None:
+                continue
+            v = vlan(vid, r.get("name"))
+            untagged = {to_if(n) for n in portlist(r.get("untagged"))}
+            v["untagged"] |= untagged
+            v["tagged"] |= {to_if(n) for n in portlist(r.get("egress"))} - untagged
+        for idx, pv in (await _walk(s, QB_PVID)).items():
+            vid = _int(pv)
+            if vid is not None and vid in found:
+                found[vid]["untagged"].add(to_if(idx))
+    else:
+        for idx, name in (await _walk(s, CISCO_VTP_NAME)).items():
+            vid = _int(idx.split(".")[-1])
+            if vid is not None and vid not in CISCO_RESERVED:
+                vlan(vid, name)
+        if found:
+            for idx, vid in (await _walk(s, CISCO_ACCESS_VLAN)).items():
+                vid, ifx = _int(vid), _int(idx)
+                if vid in found and ifx is not None:
+                    found[vid]["untagged"].add(ifx)
+            trunks = [_int(i) for i, st in (await _walk(s, CISCO_TRUNKING)).items() if _int(st) == 1]
+            for v in found.values():
+                v["tagged"] |= {t for t in trunks if t is not None}
+    return [{"id": v["id"], "name": v["name"], "untagged": sorted(x for x in v["untagged"] if isinstance(x, int))[:256],
+             "tagged": sorted(x for x in v["tagged"] if isinstance(x, int))[:256]}
+            for v in sorted(found.values(), key=lambda v: v["id"])][:MAX_VLANS]
+
+
 # ------------------------------------------------------------------ system counters and disk I/O
 async def _get(s, oids: list[str]) -> dict[str, Any]:
     try:
@@ -336,7 +437,8 @@ async def custom_oids(s, defs: list[dict[str, Any]], sys_object_id: str = "") ->
 
 
 async def collect_extra(s, result: dict[str, Any], oids: list[dict[str, Any]] | None = None) -> None:
-    """Add sensors, inventory, storage, system and disk I/O counters, custom OIDs and neighbours to a poll result."""
+    """Add sensors, inventory, storage, system and disk I/O counters, custom OIDs, neighbours, IP addresses and VLANs
+    to a poll result."""
     oid = str((result.get("system") or {}).get("sys_object_id") or "")
     ents = await entities(s)
     result["inventory"] = inventory_from(ents)
@@ -347,3 +449,5 @@ async def collect_extra(s, result: dict[str, Any], oids: list[dict[str, Any]] | 
     if oids is not None:
         result["custom"] = await custom_oids(s, oids, oid)
     result["neighbors"] = await neighbours(s, result.get("ports") or [])
+    result["ip_addrs"] = await ip_addresses(s)
+    result["vlans"] = await vlans(s)

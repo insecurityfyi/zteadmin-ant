@@ -93,6 +93,10 @@ def ingest_device(s: Session, alerter: Alerter, poller_id: int, item: dict[str, 
                            float(item.get("ts") or ts.timestamp()))
         if item.get("neighbors") is not None:
             update_neighbors(s, dev, item["neighbors"])
+        # for the Layer 2 (VLAN) and Layer 3 (subnet) maps; see layers.py
+        l2l3 = {k: item[k] for k in ("vlans", "ip_addrs") if isinstance(item.get(k), list)}
+        if l2l3:
+            dev.extra = {**(dev.extra or {}), **l2l3}
 
     if (has_snmp and snmp_ok) or (not has_snmp and ping_ok):
         dev.fail_count = 0

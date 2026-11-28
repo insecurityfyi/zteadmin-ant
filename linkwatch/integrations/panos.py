@@ -144,7 +144,7 @@ class PanOS(Integration):
         if ifs is not None:
             for e in ifs.findall("./result/hw/entry"):
                 hw[txt(e, "name")] = {"state": txt(e, "state"), "speed": txt(e, "speed"), "mac": txt(e, "mac"), "id": txt(e, "id")}
-            d["interfaces"] = [{"name": txt(e, "name"), "zone": txt(e, "zone"), "ip": txt(e, "ip"), "vsys": txt(e, "vsys"),
+            d["interfaces"] = [{"name": txt(e, "name"), "zone": txt(e, "zone"), "ip": txt(e, "ip"), "vsys": txt(e, "vsys"), "tag": txt(e, "tag"),
                                 "state": hw.get(txt(e, "name").split(".")[0], {}).get("state"),
                                 "mac": hw.get(txt(e, "name").split(".")[0], {}).get("mac") or None}
                                for e in ifs.findall("./result/ifnet/entry")]
