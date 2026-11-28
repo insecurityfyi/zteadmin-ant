@@ -4,6 +4,14 @@
   const el = (t, a, parent) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (parent) parent.append(e); return e; };
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const STATUS = { up: "--up", warn: "--warn", down: "--down", external: "--off", unknown: "--off", off: "--off" };
+  // Dark NOC look: the map is always drawn on a dark wall-screen background, whatever the page theme.
+  const NOC = { bg: "#08111c", dot: "#14273a", panel: "#0d1b2a", ink: "#e3edf6", mute: "#7f93a6", pill: "#0b1826", pillLine: "#1c3247",
+                up: "#39e58c", warn: "#ffc23d", down: "#ff5a63", off: "#56677a", idle: "#2a3d50", wanLine: "#1e6f99", wanInk: "#bfe9ff" };
+  const RING = { up: NOC.up, warn: NOC.warn, down: NOC.down, external: NOC.off, unknown: NOC.off, off: NOC.off };
+  const ROLE = { Router: "#2f6fde", Firewall: "#d9483b", Switch: "#139a8c", Wireless: "#7c4dd8", Hypervisor: "#e07b16", NAS: "#3d8b3d",
+                 Storage: "#3d8b3d", Server: "#56677a" };
+  const ISP_RING = { fiber: ["#4c9bff", "#8dc0ff"], cable: ["#22d3c5", "#5ff0e3"], satellite: ["#8f7cff", "#b6a9ff"],
+                     cellular: ["#ff9d4c", "#ffc08d"], globe: ["#4cc3ff", "#a6e3ff"] };
   // Network-diagram style symbols, drawn here (no stencil artwork): line art in a 24 px box centred on 0,0.
   // Each is a list of [tag, attrs]; "fill" marks solid parts, everything else is stroked in the status colour.
   const P = d => ["path", { d }];
@@ -15,7 +23,8 @@
     // switch: a box with arrows running both ways
     Switch: [["rect", { x: -11, y: -8, width: 22, height: 16, rx: 2 }], arrow(-7, -3, 7, -3), arrow(7, 3, -7, 3)],
     // firewall: a brick wall
-    Firewall: [["rect", { x: -11, y: -9, width: 22, height: 18, rx: 1.5 }], P("M-11,-3H11M-11,3H11M-4,-9V-3M5,-9V-3M0,-3V3M-7,3V9M7,3V9M-8,-3V3M8,-3V3")],
+    // firewall: a shield
+    Firewall: [P("M0,-11L9.5,-7V0c0,6 -4.5,9.5 -9.5,11c-5,-1.5 -9.5,-5 -9.5,-11V-7Z"), P("M-4.5,0l3,3L5,-3.5")],
     // wireless access point: a puck sending waves
     Wireless: [P("M-8,-1.5a11.3,11.3 0 0 1 16,0"), P("M-4.6,2a6.5,6.5 0 0 1 9.2,0"), ["circle", { cx: 0, cy: 6, r: 1.8, fill: 1 }], P("M-12.5,-5a17,17 0 0 1 25,0")],
     // server: a tower with drive bays
@@ -62,7 +71,7 @@
       n.vx = 0; n.vy = 0;
     });
     // WAN uplinks get a longer spring so the Internet cloud sits clear of its gateway and the labels have room
-    const L = links.map(l => ({ a: byId.get(l.source), b: byId.get(l.target), len: l.protocol === "wan" ? 2.4 : 1 })).filter(l => l.a && l.b);
+    const L = links.map(l => ({ a: byId.get(l.source), b: byId.get(l.target), len: l.protocol === "wan" ? 2.4 : 1.35 })).filter(l => l.a && l.b);
     const k = Math.sqrt((W * H) / Math.max(1, nodes.length)) * 0.75;
     for (let it = 0; it < iterations; it++) {
       const t = 1 - it / iterations;
@@ -104,6 +113,14 @@
     const W = svg.clientWidth || 1000, H = svg.clientHeight || 700;
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     const view = { x: 0, y: 0, s: 1 };
+    const defs = el("defs", {}, svg);
+    const glow = el("filter", { id: "noc-glow", x: "-50%", y: "-50%", width: "200%", height: "200%" }, defs);
+    el("feGaussianBlur", { stdDeviation: 4, result: "b" }, glow);
+    const fm = el("feMerge", {}, glow); el("feMergeNode", { in: "b" }, fm); el("feMergeNode", { in: "SourceGraphic" }, fm);
+    const dots = el("pattern", { id: "noc-dots", width: 28, height: 28, patternUnits: "userSpaceOnUse" }, defs);
+    el("circle", { cx: 1, cy: 1, r: 1, fill: NOC.dot }, dots);
+    el("rect", { x: -W, y: -H, width: 3 * W, height: 3 * H, fill: NOC.bg }, svg);
+    el("rect", { x: -W, y: -H, width: 3 * W, height: 3 * H, fill: "url(#noc-dots)" }, svg);
     const root = el("g", {}, svg), gl = el("g", {}, root), gn = el("g", {}, root);
     const apply = () => root.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.s})`);
 
@@ -119,22 +136,30 @@
         const sib = pairs.get([String(l.source), String(l.target)].sort().join("|"));
         const i = sib.indexOf(l), bend = (i - (sib.length - 1) / 2) * 28 * (String(l.source) < String(l.target) ? 1 : -1);
         const u = l.util, wan = l.protocol === "wan", down = wan && l.up === false;
-        const color = down ? css("--down") : u == null ? css("--off") : u >= 80 ? css("--down") : u >= 50 ? css("--warn") : css("--up");
-        const w = l.speed >= 10000 ? 4 : l.speed >= 1000 ? 2.6 : 1.6;
+        const color = down ? NOC.down : u == null ? NOC.idle : u >= 80 ? NOC.down : u >= 50 ? NOC.warn : NOC.up;
+        const w = l.speed >= 10000 ? 3.6 : l.speed >= 1000 ? 2.4 : 1.6;
         const g = el("g", {}, gl);
-        const line = el("path", { fill: "none", stroke: l.mesh ? css("--mute") : color, "stroke-width": l.mesh ? 2 : w, "stroke-linecap": "round", opacity: 0.85,
-          "stroke-dasharray": l.mesh || down ? "6 5" : "" }, g);
-        const hit = el("path", { fill: "none", stroke: "transparent", "stroke-width": 12 }, g);
-        // the label: speed, and for a WAN its name and live throughput
-        let text = l.speed_label || "";
-        if (wan) text = [l.wan, l.speed_label, (l.down_bps != null || l.up_bps != null) ? "↓" + fmtBps(l.down_bps || 0) + " ↑" + fmtBps(l.up_bps || 0) : "", down ? "down" : ""].filter(Boolean).join(" · ");
+        // a soft halo under a glowing core; idle links stay dim
+        el("path", { fill: "none", stroke: l.mesh ? NOC.mute : color, "stroke-width": w + 5, opacity: u == null && !down ? 0.25 : 0.16, "stroke-linecap": "round", class: "halo" }, g);
+        const line = el("path", { fill: "none", stroke: l.mesh ? NOC.mute : color, "stroke-width": l.mesh ? 1.8 : w, "stroke-linecap": "round",
+          filter: u == null && !down ? "" : "url(#noc-glow)", "stroke-dasharray": l.mesh || down ? "6 6" : "" }, g);
+        const hit = el("path", { fill: "none", stroke: "transparent", "stroke-width": 14 }, g);
+        // the label: speed, and for a WAN its name and speed over its live throughput
+        // every link: its speed, and under it the live traffic each way. The arrows follow the drawing: ↑ is traffic
+        // towards the node higher up (for a WAN, upload to the ISP), ↓ towards the one lower down.
+        const ab = wan ? l.up_bps : l.ab_bps, ba = wan ? l.down_bps : l.ba_bps;
+        const tp = ab != null || ba != null ? { ab: fmtBps(ab || 0), ba: fmtBps(ba || 0) } : null;
+        const head = wan ? [l.wan, l.speed_label || "speed ?", down ? "down" : ""].filter(Boolean).join(" · ")
+                         : (l.mesh ? "mesh" + (l.speed_label ? " · " + l.speed_label : "") : (l.speed_label || "speed ?"));    // every link gets a label
+        const rows = [head, tp ? "↑" + tp.ab + " ↓" + tp.ba : ""].filter(Boolean);
         let tag = null;
-        if (text) {
+        if (rows.length) {
           tag = el("g", { "pointer-events": "none" }, g);
-          const bg = el("rect", { rx: 4, fill: css("--panel"), opacity: 0.92, stroke: wan ? color : "none", "stroke-width": wan ? 1 : 0 }, tag);
-          const tx = el("text", { "text-anchor": "middle", y: 3.5, "font-size": wan ? 10.5 : 9.5, fill: css(wan ? "--ink" : "--mute"), "font-family": css("--mono") }, tag);
-          tx.textContent = text;
-          tag._bg = bg; tag._tx = tx;
+          const bg = el("rect", { rx: 8, fill: NOC.pill, stroke: wan ? (down ? NOC.down : NOC.wanLine) : NOC.pillLine, "stroke-width": 1 }, tag);
+          const tx = el("text", { "text-anchor": "middle", "font-size": wan ? 10.5 : 9.5, "font-weight": 600, fill: wan ? NOC.wanInk : "#9fb6cb", "font-family": css("--mono") }, tag);
+          rows.forEach((r, k) => { const ts = el("tspan", { x: 0, dy: k ? 13 : 0 }, tx); ts.textContent = r; });
+          tx.setAttribute("y", rows.length > 1 ? -2 : 3.5);
+          tag._bg = bg; tag._tx = tx; tag._rows = rows; tag._tp = tp;
         }
         const t = el("title", {}, hit);
         const speed = l.speed ? (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : "speed unknown";
@@ -145,35 +170,37 @@
             `${l.down_bps != null ? "\n↓ " + fmtBps(l.down_bps) + "  ↑ " + fmtBps(l.up_bps || 0) : ""}${u != null ? " (" + Math.round(u) + "% used)" : ""}` +
             `${l.latency_ms != null ? "\nlatency " + l.latency_ms + " ms" : ""}${l.loss_pct != null ? ", loss " + l.loss_pct + "%" : ""}`
           : `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${l.mesh ? "Wireless mesh uplink" : how}, ${speed}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps != null ? " (" + fmtBps(l.bps) + ")" : ""}`;
-        return { a, b, line, hit, tag, bend };
+        return { a, b, line, hit, tag, bend, halo: g.querySelector(".halo") };
       }).filter(Boolean);
       const nodes = data.nodes.map(n => {
         const g = el("g", { style: "cursor:pointer" }, gn);
         const ext = n.status === "external";
-        const col = css(STATUS[n.status] || "--off");
-        let r, labelY = 33;
+        const col = RING[n.status] || NOC.off;
+        let r, labelY = 40;
         if (n.isp) {
-          // an ISP: a circle with how the line arrives (fibre, cable, satellite...) and its name under it
-          r = el("circle", { r: 24, fill: css("--panel"), stroke: n.status === "down" ? css("--down") : css("--accent"), "stroke-width": 2.5,
+          // an ISP: a glowing circle with how the line arrives (fibre, cable, satellite...) and its name under it
+          const [ring, ink] = ISP_RING[n.kind] || ISP_RING.globe;
+          r = el("circle", { r: 27, fill: NOC.pill, stroke: n.status === "down" ? NOC.down : ring, "stroke-width": 2.5, filter: "url(#noc-glow)",
             "stroke-dasharray": n.named ? "" : "4 3" }, g);
-          glyph(g, ISP_GLYPH[n.kind] || ISP_GLYPH.globe, css("--accent"), 1.15);
-          labelY = 39;
+          glyph(g, ISP_GLYPH[n.kind] || ISP_GLYPH.globe, ink, 1.25);
+          labelY = 45;
         } else {
-          r = el("rect", { x: -18, y: -18, width: 36, height: 36, rx: ext || n.ap ? 18 : 8, fill: css("--panel"), stroke: col,
-            "stroke-width": 2.5, "stroke-dasharray": ext ? "4 3" : "" }, g);
+          r = el("circle", { r: 23, fill: NOC.panel, stroke: col, "stroke-width": 2.5, filter: ext ? "" : "url(#noc-glow)",
+            "stroke-dasharray": ext ? "4 3" : "" }, g);
+          el("circle", { r: 18, fill: ROLE[n.ap ? "Wireless" : n.type] || "#56677a", opacity: 0.2 }, g);
           if (ext) {
-            const q = el("text", { "text-anchor": "middle", y: 5, "font-size": 14, "font-weight": 600, fill: col, "font-family": css("--mono") }, g);
+            const q = el("text", { "text-anchor": "middle", y: 5, "font-size": 14, "font-weight": 600, fill: NOC.mute, "font-family": css("--mono") }, g);
             q.textContent = "?";
           } else {
-            glyph(g, GLYPH[n.ap ? "Wireless" : n.type] || GLYPH.Network, col, 1.05);
+            glyph(g, GLYPH[n.ap ? "Wireless" : n.type] || GLYPH.Network, NOC.ink, 1.05);
           }
         }
-        const lbl = el("text", { "text-anchor": "middle", y: labelY, "font-size": 11.5, fill: css("--ink"), "font-family": css("--body"),
-          "font-weight": n.isp ? 600 : 400 }, g);
+        const lbl = el("text", { "text-anchor": "middle", y: labelY, "font-size": 12, fill: NOC.ink, "font-family": css("--body"), "font-weight": 600 }, g);
         lbl.textContent = n.name.length > 24 ? n.name.slice(0, 23) + "…" : n.name;
-        if (n.ap && n.clients != null) {
-          const c = el("text", { "text-anchor": "middle", y: labelY + 13, "font-size": 10.5, fill: css("--mute"), "font-family": css("--body") }, g);
-          c.textContent = n.clients + (n.clients === 1 ? " client" : " clients");
+        const subText = n.ap && n.clients != null ? n.clients + (n.clients === 1 ? " client" : " clients") : (!n.isp && n.platform ? n.platform : "");
+        if (subText) {
+          const c = el("text", { "text-anchor": "middle", y: labelY + 14, "font-size": 10.5, fill: NOC.mute, "font-family": css("--body") }, g);
+          c.textContent = subText.length > 30 ? subText.slice(0, 29) + "…" : subText;
         }
         const t = el("title", {}, g); t.textContent = n.isp ? `${n.name}\nInternet provider${n.named ? "" : " (name it under the map)"}` : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
           (n.merged && n.merged.length ? "\nSeen as: " + n.merged.map(m => m.name + " (" + m.source + ")").join(", ") : "");
@@ -181,17 +208,22 @@
         return { n, g };
       });
       const place = () => {
-        lines.forEach(({ a, b, line, hit, tag, bend }) => {
+        lines.forEach(({ a, b, line, hit, tag, bend, halo }) => {
           const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
           const cx = (a.x + b.x) / 2 - dy / len * bend * 2, cy = (a.y + b.y) / 2 + dx / len * bend * 2;
           const d = `M${a.x},${a.y}Q${cx},${cy} ${b.x},${b.y}`;
-          line.setAttribute("d", d); hit.setAttribute("d", d);
+          line.setAttribute("d", d); hit.setAttribute("d", d); if (halo) halo.setAttribute("d", d);
           if (tag) {
             const mx = (a.x + 2 * cx + b.x) / 4, my = (a.y + 2 * cy + b.y) / 4;     // the curve's midpoint
             tag.setAttribute("transform", `translate(${mx},${my})`);
-            if (!tag._w) { try { tag._w = tag._tx.getComputedTextLength(); } catch (e) { tag._w = tag._tx.textContent.length * 6; } }
-            const w = (tag._w || tag._tx.textContent.length * 6) + 8;
-            tag._bg.setAttribute("x", -w / 2); tag._bg.setAttribute("y", -7.5); tag._bg.setAttribute("width", w); tag._bg.setAttribute("height", 14);
+            if (tag._tp) {          // keep ↑ pointing at whichever end is higher on screen
+              const up = a.y >= b.y ? tag._tp.ab : tag._tp.ba, dn = a.y >= b.y ? tag._tp.ba : tag._tp.ab;
+              const last = tag._tx.lastChild, txt = "↑" + up + " ↓" + dn;
+              if (last.textContent !== txt) last.textContent = txt;
+            }
+            if (!tag._w) { try { tag._w = Math.max(...[...tag._tx.children].map(c => c.getComputedTextLength())); } catch (e) { tag._w = 0; } }
+            const w = (tag._w || Math.max(...tag._rows.map(r => r.length)) * 6.3) + 12, h = tag._rows.length > 1 ? 31 : 15;
+            tag._bg.setAttribute("x", -w / 2); tag._bg.setAttribute("y", tag._rows.length > 1 ? -14 : -7.5); tag._bg.setAttribute("width", w); tag._bg.setAttribute("height", h);
           }
         });
         nodes.forEach(({ n, g }) => g.setAttribute("transform", `translate(${n.x},${n.y})`));

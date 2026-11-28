@@ -9,20 +9,20 @@
     <label class="chk"><input type="checkbox" name="all" value="1" {% if request.query_params.get('all') %}checked{% endif %} onchange="this.form.submit()"> Other devices without links</label>
     {% if focus %}<input type="hidden" name="focus" value="{{ focus }}">{% endif %}
   </form></div>
-<div class="p" style="padding:0;overflow:hidden;position:relative">
-  <div class="legend" style="position:absolute;left:14px;top:12px;z-index:2;background:var(--panel);padding:4px 8px;border-radius:6px">
-    <span><i style="background:var(--up)"></i>under 50%</span><span><i style="background:var(--warn)"></i>50–80%</span><span><i style="background:var(--down)"></i>over 80%</span><span><i style="background:var(--off)"></i>no traffic data</span><span><i style="background:repeating-linear-gradient(90deg,var(--mute) 0 4px,transparent 4px 7px)"></i>wireless mesh</span><span><i style="background:repeating-linear-gradient(90deg,var(--down) 0 4px,transparent 4px 7px)"></i>WAN down</span></div>
+<div class="p" style="padding:0;overflow:hidden;position:relative;background:#08111c;border-color:#1c3247">
+  <div class="legend" style="position:absolute;left:14px;top:12px;z-index:2;background:#0d1b2acc;color:#a9bccd;border:1px solid #1c3247;padding:4px 10px;border-radius:8px">
+    <span><i style="background:#39e58c"></i>under 50%</span><span><i style="background:#ffc23d"></i>50–80%</span><span><i style="background:#ff5a63"></i>over 80%</span><span><i style="background:#2a3d50"></i>no traffic data</span><span><i style="background:repeating-linear-gradient(90deg,#7f93a6 0 4px,transparent 4px 7px)"></i>wireless mesh</span><span><i style="background:repeating-linear-gradient(90deg,#ff5a63 0 4px,transparent 4px 7px)"></i>down</span></div>
   <div class="actions" style="position:absolute;right:12px;top:10px;z-index:2"><button class="btn sm" type="button" id="map-fit">Fit</button><button class="btn sm" type="button" id="map-relayout">Re-arrange</button></div>
   <svg id="netmap" data-src="/ui/map?site={{ site|urlencode }}&external={{ external }}&all={{ request.query_params.get('all', '') }}&hide_aps={{ request.query_params.get('hide_aps', '') }}" data-focus="{{ focus }}" style="display:block;width:100%;height:min(74vh,820px);cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
   <div id="map-empty" class="empty-state" hidden><h2>Nothing to draw yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. VisCon1 reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
 </div>
 <div class="p" id="wan-isps"><div class="ph"><h2>Internet uplinks and ISPs</h2></div>
-  <p class="sub">Each WAN is drawn to a circle for its ISP, with its speed and live throughput. Type the ISP for each WAN; WANs with the same name share a circle. Leave it empty to use what the gateway reports. To add a WAN that is not listed, open its port and turn on <b>Internet uplink</b>.</p>
-  {% if wans %}<form method="post" action="/map/isps"><div class="scroll"><table><thead><tr><th>Gateway</th><th>WAN</th><th>Speed</th><th>Now</th><th>Reported ISP</th><th>ISP on the map</th></tr></thead><tbody>
+  <p class="sub">Each WAN is drawn to a circle for its ISP, with its speed and live throughput. Type the ISP for each WAN; WANs with the same name share a circle. Leave it empty to use the ISP found automatically: an IP range under <a href="/settings#isps">Settings</a>, what the gateway reports, or an online lookup of the WAN's public address. To add a WAN that is not listed, open its port and turn on <b>Internet uplink</b>.</p>
+  {% if wans %}<form method="post" action="/map/isps"><div class="scroll"><table><thead><tr><th>Gateway</th><th>WAN</th><th>Speed</th><th>Now</th><th>Detected ISP</th><th>ISP on the map</th></tr></thead><tbody>
   {% for w in wans %}<tr><td><a href="/devices/{{ w.source }}">{{ w.gateway }}</a></td><td>{{ w.wan or w.a_port }}{% if w.up == false %} <span class="pill down">down</span>{% endif %}</td>
     <td class="mono">{{ w.speed_label or '—' }}</td><td class="mono">{% if w.down_bps is not none or w.up_bps is not none %}↓{{ w.down_bps|bps }} ↑{{ w.up_bps|bps }}{% else %}—{% endif %}</td>
-    <td>{{ w.isp_detected or '—' }}</td>
-    <td><input type="hidden" name="key" value="{{ w.wan_key }}"><input name="isp" value="{{ w.isp if w.isp and w.isp != w.isp_detected else '' }}" placeholder="{{ w.isp_detected or 'e.g. Brightspeed Fiber' }}" aria-label="ISP for {{ w.gateway }} {{ w.wan }}" list="isp-names" style="width:220px"></td></tr>{% endfor %}
+    <td>{{ w.isp_detected or '—' }}{% if w.isp_detected %} <span class="sub">({{ {'range': 'IP range', 'gateway': 'from the gateway', 'lookup': 'lookup of ' ~ (w.wan_ip or '')}.get(w.detected_source, 'found automatically') }})</span>{% endif %}</td>
+    <td><input type="hidden" name="key" value="{{ w.wan_key }}"><input name="isp" value="{{ w.isp if w.isp_source == 'manual' else '' }}" placeholder="{{ w.isp_detected or 'e.g. Brightspeed Fiber' }}" aria-label="ISP for {{ w.gateway }} {{ w.wan }}" list="isp-names" style="width:220px"></td></tr>{% endfor %}
   </tbody></table></div>
   <datalist id="isp-names"><option>Brightspeed Fiber</option><option>Spectrum Business</option><option>Starlink Satellite</option>{% for w in wans if w.isp %}<option>{{ w.isp }}</option>{% endfor %}</datalist>
   <div class="actions" style="margin-top:10px"><button class="btn" type="submit">Save ISP names</button></div></form>

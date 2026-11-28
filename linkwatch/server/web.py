@@ -16,7 +16,7 @@ from .discovery import AUTO_ADD, DEVICE_TYPES, PING_ONLY, ping_only_mode, SCHEDU
 from ..integrations import REGISTRY, IntegrationError, build
 from .app import flash
 from .db import get_setting, set_setting
-from . import poller_cmds
+from . import isp, poller_cmds
 from .models import (
     Alert,
     AlertRule,
@@ -982,7 +982,9 @@ def settings(request: Request):
         interval = st(request).hub.interval(s)
         base_name = (get_setting(s, "poller_base_name", "") or "").strip()
         next_name = poller_cmds.next_poller_name(s, base_name) if base_name else None
+        isp_ranges, isp_lookup = isp.ranges_text(isp.ranges(s)), isp.lookup_enabled(s)
     return render(request, "settings.html", {
+        "isp_ranges": isp_ranges, "isp_lookup": isp_lookup,
         "profiles": profiles, "usage": usage, "transports": transports, "keys": keys, "interval": interval,
         "base_name": base_name, "next_name": next_name,
         "transport_kinds": TRANSPORT_KINDS, "auth_protocols": SNMP_AUTH, "priv_protocols": SNMP_PRIV,
@@ -999,6 +1001,19 @@ def settings_interval(request: Request, interval: int = Form(...)):
         push_poller(request, pid)
     flash(request, f"Polling every {interval} seconds.")
     return back("/settings")
+
+
+@router.post("/settings/isps")
+def settings_isps(request: Request, ranges: str = Form(""), lookup: str = Form("")):
+    rows, bad = isp.parse_ranges(ranges)
+    if bad:
+        flash(request, "Could not read: " + "; ".join(bad[:5]) + ". Write one CIDR = ISP name per line.", "warn")
+        return back("/settings#isps")
+    with st(request).db.session() as s:
+        isp.set_ranges(s, rows)
+        set_setting(s, isp.LOOKUP_SETTING, "on" if lookup else "off")
+    flash(request, f"Saved {len(rows)} ISP range{'s' if len(rows) != 1 else ''}; online lookup {'on' if lookup else 'off'}.")
+    return back("/settings#isps")
 
 
 @router.post("/settings/pollers")

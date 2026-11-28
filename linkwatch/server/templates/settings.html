@@ -37,6 +37,12 @@
       {% if next_name %}<p class="help" style="margin:0">The next poller will be <b class="mono">{{ next_name }}</b>.</p>{% endif %}
       <div><button class="btn" type="submit">Save</button></div></form></div>
 
+  <div class="p c5" id="isps"><div class="ph"><h2>Internet providers</h2></div>
+    <form method="post" action="/settings/isps" class="stack">
+      <label class="f">IP ranges<textarea name="ranges" id="isp_ranges" rows="5" spellcheck="false" class="mono" placeholder="100.64.0.0/10 = Starlink Satellite&#10;203.0.113.0/24 = Brightspeed Fiber&#10;192.168.100.0/24 = Spectrum Business">{{ isp_ranges }}</textarea><small>One <code>CIDR = ISP name</code> per line. A WAN whose address falls in a range is drawn to that ISP on the network map. Ranges win over what the gateway reports and the online lookup; a name typed for one WAN under the map wins over all of them. Use this for CGNAT or modem hand-off addresses that no lookup can place.</small></label>
+      <label class="chk"><input type="checkbox" name="lookup" value="on" {% if isp_lookup %}checked{% endif %}> Look up public WAN addresses online (RDAP, cached for a week)</label>
+      <div><button class="btn" type="submit">Save</button></div></form></div>
+
   <div class="p c7" id="transports"><div class="ph"><h2>Where alerts are sent</h2></div>
     {% if transports %}<div class="scroll"><table><thead><tr><th>Name</th><th>Type</th><th>Minimum severity</th><th>Last result</th><th></th></tr></thead><tbody>
     {% for t in transports %}<tr><td><b>{{ t.name }}</b></td><td>{{ transport_kinds[t.kind][0] }}</td><td>{{ {'crit':'Critical','warn':'Warning','info':'Info'}[t.min_severity] }}</td><td class="dim">{{ t.last_result or '–' }}</td>
