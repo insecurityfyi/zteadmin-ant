@@ -146,14 +146,16 @@ def network_map(request: Request, site: str = "", focus: str = "", external: str
 
 
 @router.get("/ui/map", include_in_schema=False)
-def map_data(request: Request, site: str = "", external: str = "", all: str = "", hide_aps: str = ""):
+def map_data(request: Request, site: str = "", external: str = "", all: str = "", hide_aps: str = "", clients: str = ""):
     """Nodes and links for the network map (see topology.py): duplicates grouped into one node, links from LLDP/CDP,
     integration uplinks, UniFi switch ports and links drawn by hand, and an Internet cloud for gateways' WAN uplinks.
 
     Wireless access points are always drawn (on their uplink when it is known) unless ``hide_aps`` is set.
+    ``clients`` adds UniFi clients on their AP (with signal and band) or switch port.
     """
     with st(request).db.session() as s:
-        return build_map(s, site=site, external=bool(external), show_all=bool(all), hide_aps=bool(hide_aps))
+        return build_map(s, site=site, external=bool(external), show_all=bool(all), hide_aps=bool(hide_aps),
+                         clients=bool(clients))
 
 
 @router.post("/map/links")

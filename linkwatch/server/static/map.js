@@ -41,6 +41,11 @@
     Network: [["rect", { x: -11, y: -6, width: 22, height: 12, rx: 2 }], P("M-7,1v2M-3,1v2M1,1v2M5,1v2"), ["circle", { cx: 7.5, cy: -2, r: 1, fill: 1 }]],
   };
   GLYPH.NAS = GLYPH.Storage;
+  // clients: a laptop for Wi-Fi, a desktop for wired
+  GLYPH.WifiClient = [["rect", { x: -8, y: -7, width: 16, height: 10, rx: 1.5 }], P("M-11,6H11")];
+  GLYPH.WiredClient = [["rect", { x: -9, y: -9, width: 18, height: 12, rx: 1.5 }], P("M0,3V8M-5,8H5")];
+  const BAND_SHORT = { "2.4 GHz": "2.4G", "5 GHz": "5G", "6 GHz": "6G", "60 GHz": "60G" };
+  const rssiColor = v => v == null ? NOC.mute : v >= -67 ? NOC.up : v >= -75 ? NOC.warn : NOC.down;
   // ISP circles: a glyph for how the line arrives
   const ISP_GLYPH = {
     satellite: [["rect", { x: -3.5, y: -3.5, width: 7, height: 7, rx: 1, transform: "rotate(-45)" }],
@@ -59,7 +64,36 @@
   const fmtBps = v => { const u = ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]; let i = 0; while (v >= 1000 && i < 4) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + " " + u[i]; };
   const KEY = "lw-map-pos";
 
-  function layout(nodes, links, W, H, iterations, keep) {
+  // Clients ("Show clients") are not part of the force layout: they sit in rings around their AP or switch and move with it.
+  function placeClients(all, links) {
+    const byId = new Map(all.map(n => [n.id, n]));
+    const kids = new Map();
+    links.forEach(l => { if (!l.client) return; const p = byId.get(l.source), c = byId.get(l.target); if (p && c) (kids.get(p) || kids.set(p, []).get(p)).push(c); });
+    const infra = all.filter(n => !n.client), cx = infra.reduce((t, n) => t + n.x, 0) / (infra.length || 1), cy = infra.reduce((t, n) => t + n.y, 0) / (infra.length || 1);
+    kids.forEach((cs, p) => {
+      cs.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const a0 = Math.atan2(p.y - cy, p.x - cx);
+      let i = 0, ring = 0;
+      while (i < cs.length) {
+        const R = 74 + ring * 46, cap = Math.max(6, Math.floor(2 * Math.PI * R / 58)), n = Math.min(cap, cs.length - i);
+        for (let j = 0; j < n; j++, i++) {
+          const step = n < 6 && ring === 0 ? 0.62 : 2 * Math.PI / n;      // a few clients fan out away from the map; more go all round
+          const a = a0 + (j - (n - 1) / 2) * step + ring * 0.3;
+          const c = cs[i]; c._parent = p; c._dx = Math.cos(a) * R; c._dy = Math.sin(a) * R; c.x = p.x + c._dx; c.y = p.y + c._dy; c.fixed = true;
+        }
+        ring++;
+      }
+    });
+  }
+
+  function layout(all, links, W, H, iterations, keep) {
+    const nodes = all.filter(n => !n.client);
+    // room for the ring of clients round each AP or switch (see placeClients)
+    const kidCount = {};
+    links.forEach(l => { if (l.client) kidCount[l.source] = (kidCount[l.source] || 0) + 1; });
+    const rad = n => { let c = kidCount[n.id] || 0, R = 74, r = 0; if (!c) return 0; while (c > 0) { r = R; c -= Math.max(6, Math.floor(2 * Math.PI * R / 58)); R += 46; } return r + 34; };
+    nodes.forEach(n => { n._rad = rad(n); });
+    links = links.filter(l => !l.client);
     const byId = new Map(nodes.map(n => [n.id, n]));
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { saved = {}; }
@@ -73,6 +107,7 @@
     // WAN uplinks get a longer spring so the Internet cloud sits clear of its gateway and the labels have room
     const L = links.map(l => ({ a: byId.get(l.source), b: byId.get(l.target), len: l.protocol === "wan" ? 2.4 : 1.35 })).filter(l => l.a && l.b);
     const k = Math.sqrt((W * H) / Math.max(1, nodes.length)) * 0.75;
+    L.forEach(l => { l.rest = Math.max(k * l.len, l.a._rad + l.b._rad + 30); });
     for (let it = 0; it < iterations; it++) {
       const t = 1 - it / iterations;
       for (let i = 0; i < nodes.length; i++) {
@@ -82,8 +117,8 @@
           const f = (k * k) / d2; a.vx += dx * f * 0.05; a.vy += dy * f * 0.05; b.vx -= dx * f * 0.05; b.vy -= dy * f * 0.05;
         }
       }
-      L.forEach(({ a, b, len }) => {
-        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01, f = (d - k * len) / d * 0.08;
+      L.forEach(({ a, b, rest }) => {
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01, f = (d - rest) / d * 0.08;
         a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
       });
       nodes.forEach(n => {
@@ -99,6 +134,20 @@
       const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
       const f = Math.min(1, (W - 160) / Math.max(1, x1 - x0), (H - 120) / Math.max(1, y1 - y0));
       if (f < 1) free.forEach(n => { n.x = W / 2 + (n.x - (x0 + x1) / 2) * f; n.y = H / 2 + (n.y - (y0 + y1) / 2) * f; });
+    }
+    // keep client rings from overlapping each other
+    for (let pass = 0; pass < 60 && nodes.some(n => n._rad); pass++) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j], need = Math.max(a._rad + b._rad, a._rad + 40, b._rad + 40) + 10;
+        if (need <= 50) continue;
+        let dx = b.x - a.x, dy = b.y - a.y; const d = Math.hypot(dx, dy) || 0.01;
+        if (d >= need) continue;
+        const push = (need - d) / 2; dx /= d; dy /= d; moved = true;
+        if (!a.fixed) { a.x -= dx * push * (b.fixed ? 2 : 1); a.y -= dy * push * (b.fixed ? 2 : 1); }
+        if (!b.fixed) { b.x += dx * push * (a.fixed ? 2 : 1); b.y += dy * push * (a.fixed ? 2 : 1); }
+      }
+      if (!moved) break;
     }
     return L;
   }
@@ -127,6 +176,7 @@
     function draw(keep) {
       gl.replaceChildren(); gn.replaceChildren();
       const L = layout(data.nodes, data.links, W, H, keep ? 120 : 400, keep);
+      placeClients(data.nodes, data.links);
       const byId = new Map(data.nodes.map(n => [n.id, n]));
       // links between the same two nodes (three WANs to the Internet, a LAG) fan out as curves
       const pairs = new Map();
@@ -135,14 +185,14 @@
         const a = byId.get(l.source), b = byId.get(l.target); if (!a || !b) return null;
         const sib = pairs.get([String(l.source), String(l.target)].sort().join("|"));
         const i = sib.indexOf(l), bend = (i - (sib.length - 1) / 2) * 28 * (String(l.source) < String(l.target) ? 1 : -1);
-        const u = l.util, wan = l.protocol === "wan", down = wan && l.up === false;
-        const color = down ? NOC.down : u == null ? NOC.idle : u >= 80 ? NOC.down : u >= 50 ? NOC.warn : NOC.up;
-        const w = l.speed >= 10000 ? 3.6 : l.speed >= 1000 ? 2.4 : 1.6;
+        const u = l.util, wan = l.protocol === "wan", down = wan && l.up === false, wifi = l.client && !l.wired;
+        const color = l.client ? (wifi ? rssiColor(l.rssi) : NOC.wanLine) : down ? NOC.down : u == null ? NOC.idle : u >= 80 ? NOC.down : u >= 50 ? NOC.warn : NOC.up;
+        const w = l.client ? 1.3 : l.speed >= 10000 ? 3.6 : l.speed >= 1000 ? 2.4 : 1.6;
         const g = el("g", {}, gl);
         // a soft halo under a glowing core; idle links stay dim
         el("path", { fill: "none", stroke: l.mesh ? NOC.mute : color, "stroke-width": w + 5, opacity: u == null && !down ? 0.25 : 0.16, "stroke-linecap": "round", class: "halo" }, g);
         const line = el("path", { fill: "none", stroke: l.mesh ? NOC.mute : color, "stroke-width": l.mesh ? 1.8 : w, "stroke-linecap": "round",
-          filter: u == null && !down ? "" : "url(#noc-glow)", "stroke-dasharray": l.mesh || down ? "6 6" : "" }, g);
+          filter: l.client || (u == null && !down) ? "" : "url(#noc-glow)", "stroke-dasharray": wifi ? "2 4" : l.mesh || down ? "6 6" : "" }, g);
         const hit = el("path", { fill: "none", stroke: "transparent", "stroke-width": 14 }, g);
         // the label: speed, and for a WAN its name and speed over its live throughput
         // every link: its speed, and under it the live traffic each way. The arrows follow the drawing: ↑ is traffic
@@ -151,21 +201,25 @@
         const tp = ab != null || ba != null ? { ab: fmtBps(ab || 0), ba: fmtBps(ba || 0) } : null;
         const head = wan ? [l.wan, l.speed_label || "speed ?", down ? "down" : ""].filter(Boolean).join(" · ")
                          : (l.mesh ? "mesh" + (l.speed_label ? " · " + l.speed_label : "") : (l.speed_label || "speed ?"));    // every link gets a label
-        const rows = [head, tp ? "↑" + tp.ab + " ↓" + tp.ba : ""].filter(Boolean);
+        const rows = l.client ? []      // a client's signal and band are written under the client itself, so rings of clients stay legible
+                              : [head, tp ? "↑" + tp.ab + " ↓" + tp.ba : ""].filter(Boolean);
         let tag = null;
         if (rows.length) {
           tag = el("g", { "pointer-events": "none" }, g);
-          const bg = el("rect", { rx: 8, fill: NOC.pill, stroke: wan ? (down ? NOC.down : NOC.wanLine) : NOC.pillLine, "stroke-width": 1 }, tag);
-          const tx = el("text", { "text-anchor": "middle", "font-size": wan ? 10.5 : 9.5, "font-weight": 600, fill: wan ? NOC.wanInk : "#9fb6cb", "font-family": css("--mono") }, tag);
+          const bg = el("rect", { rx: 8, fill: NOC.pill, stroke: wifi ? color : wan ? (down ? NOC.down : NOC.wanLine) : NOC.pillLine, "stroke-width": 1, "stroke-opacity": wifi ? 0.6 : 1 }, tag);
+          const tx = el("text", { "text-anchor": "middle", "font-size": wan ? 10.5 : l.client ? 8.5 : 9.5, "font-weight": 600, fill: wifi ? color : wan ? NOC.wanInk : "#9fb6cb", "font-family": css("--mono") }, tag);
           rows.forEach((r, k) => { const ts = el("tspan", { x: 0, dy: k ? 13 : 0 }, tx); ts.textContent = r; });
           tx.setAttribute("y", rows.length > 1 ? -2 : 3.5);
-          tag._bg = bg; tag._tx = tx; tag._rows = rows; tag._tp = tp;
+          tag._bg = bg; tag._tx = tx; tag._rows = rows; tag._tp = l.client ? null : tp;
         }
         const t = el("title", {}, hit);
         const speed = l.speed ? (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : "speed unknown";
         const via = { lldp: "LLDP", cdp: "CDP", manual: "drawn by hand", "unifi-port": "seen on a UniFi switch port", wan: "WAN uplink" };
         const how = (l.sources || [l.protocol]).map(p => via[p] || (p || "").toUpperCase()).join(", ");
-        t.textContent = wan
+        t.textContent = l.client
+          ? (wifi ? `${b.name} on ${a.name}\n${l.ssid || "Wi-Fi"} · ${l.band || ""}${l.channel ? " ch " + l.channel : ""}\nsignal ${l.rssi != null ? Math.round(l.rssi) + " dBm" : "?"}${l.snr != null ? ", SNR " + Math.round(l.snr) + " dB" : ""}${l.retry_pct != null ? ", retries " + l.retry_pct + "%" : ""}${l.tx_rate_mbps ? "\nlink " + Math.round(l.tx_rate_mbps) + " Mb/s" : ""}`
+                  : `${b.name} on ${a.name} ${l.a_port || ""}\nwired client`) + (tp ? `\n↓ ${tp.ab}  ↑ ${tp.ba}` : "")
+          : wan
           ? `${a.name} ${l.wan || ""} → ${b.name}\n${down ? "DOWN · " : ""}${speed}${l.wan_ip ? " · " + l.wan_ip : ""}` +
             `${l.down_bps != null ? "\n↓ " + fmtBps(l.down_bps) + "  ↑ " + fmtBps(l.up_bps || 0) : ""}${u != null ? " (" + Math.round(u) + "% used)" : ""}` +
             `${l.latency_ms != null ? "\nlatency " + l.latency_ms + " ms" : ""}${l.loss_pct != null ? ", loss " + l.loss_pct + "%" : ""}`
@@ -177,7 +231,11 @@
         const ext = n.status === "external";
         const col = RING[n.status] || NOC.off;
         let r, labelY = 40;
-        if (n.isp) {
+        if (n.client) {
+          r = el("circle", { r: 11, fill: NOC.panel, stroke: NOC.mute, "stroke-width": 1.5 }, g);
+          glyph(g, GLYPH[n.wired ? "WiredClient" : "WifiClient"], "#b9c8d6", 0.62);
+          labelY = 22;
+        } else if (n.isp) {
           // an ISP: a glowing circle with how the line arrives (fibre, cable, satellite...) and its name under it
           const [ring, ink] = ISP_RING[n.kind] || ISP_RING.globe;
           r = el("circle", { r: 27, fill: NOC.pill, stroke: n.status === "down" ? NOC.down : ring, "stroke-width": 2.5, filter: "url(#noc-glow)",
@@ -195,14 +253,22 @@
             glyph(g, GLYPH[n.ap ? "Wireless" : n.type] || GLYPH.Network, NOC.ink, 1.05);
           }
         }
-        const lbl = el("text", { "text-anchor": "middle", y: labelY, "font-size": 12, fill: NOC.ink, "font-family": css("--body"), "font-weight": 600 }, g);
-        lbl.textContent = n.name.length > 24 ? n.name.slice(0, 23) + "…" : n.name;
-        const subText = n.ap && n.clients != null ? n.clients + (n.clients === 1 ? " client" : " clients") : (!n.isp && n.platform ? n.platform : "");
+        const lbl = el("text", { "text-anchor": "middle", y: labelY, "font-size": n.client ? 9.5 : 12, fill: n.client ? "#a9bccd" : NOC.ink, "font-family": css("--body"), "font-weight": n.client ? 500 : 600 }, g);
+        const maxLen = n.client ? 13 : 24;
+        lbl.textContent = n.name.length > maxLen ? n.name.slice(0, maxLen - 1) + "…" : n.name;
+        if (n.client) {
+          const lk = data.links.find(l => l.target === n.id);
+          const txt = lk && !lk.wired ? [lk.rssi != null ? Math.round(lk.rssi) + " dBm" : "", BAND_SHORT[lk.band] || lk.band || ""].filter(Boolean).join(" · ") : (lk && lk.a_port) || "wired";
+          const st = el("text", { "text-anchor": "middle", y: labelY + 11, "font-size": 9, "font-weight": 600, fill: lk && !lk.wired ? rssiColor(lk.rssi) : NOC.mute, "font-family": css("--mono") }, g);
+          st.textContent = txt;
+          r.setAttribute("stroke", lk && !lk.wired ? rssiColor(lk.rssi) : NOC.mute);
+        }
+        const subText = n.client ? "" : n.ap && n.clients != null ? n.clients + (n.clients === 1 ? " client" : " clients") : (!n.isp && n.platform ? n.platform : "");
         if (subText) {
           const c = el("text", { "text-anchor": "middle", y: labelY + 14, "font-size": 10.5, fill: NOC.mute, "font-family": css("--body") }, g);
           c.textContent = subText.length > 30 ? subText.slice(0, 29) + "…" : subText;
         }
-        const t = el("title", {}, g); t.textContent = n.isp ? `${n.name}\nInternet provider${n.named ? "" : " (name it under the map)"}` : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
+        const t = el("title", {}, g); t.textContent = n.client ? `${n.name}\n${n.wired ? "Wired" : "Wi-Fi"} client${n.ip ? " · " + n.ip : ""}${n.platform ? "\n" + n.platform : ""}` : n.isp ? `${n.name}\nInternet provider${n.named ? "" : " (name it under the map)"}` : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
           (n.merged && n.merged.length ? "\nSeen as: " + n.merged.map(m => m.name + " (" + m.source + ")").join(", ") : "");
         if (String(n.id) === svg.dataset.focus) r.setAttribute("stroke-width", 5);
         return { n, g };
@@ -235,15 +301,19 @@
           ev.stopPropagation(); g.setPointerCapture(ev.pointerId); moved = false;
           const start = { x: ev.clientX, y: ev.clientY, nx: n.x, ny: n.y };
           const move = e => { const dx = (e.clientX - start.x) / view.s * (W / svg.clientWidth), dy = (e.clientY - start.y) / view.s * (H / svg.clientHeight);
-            if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; n.x = start.nx + dx; n.y = start.ny + dy; n.fixed = true; place(); };
+            if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; n.x = start.nx + dx; n.y = start.ny + dy; n.fixed = true;
+            if (n.client && n._parent) { n._dx = n.x - n._parent.x; n._dy = n.y - n._parent.y; }
+            else data.nodes.forEach(c => { if (c._parent === n) { c.x = n.x + c._dx; c.y = n.y + c._dy; } });
+            place(); };
           const up = () => { g.removeEventListener("pointermove", move); g.removeEventListener("pointerup", up); save();
-            if (!moved && typeof n.id === "number") location.href = "/devices/" + n.id + "?tab=neighbours"; };
+            if (!moved && typeof n.id === "number") location.href = "/devices/" + n.id + "?tab=neighbours";
+            else if (!moved && n.href) location.href = n.href; };
           g.addEventListener("pointermove", move); g.addEventListener("pointerup", up);
         });
       });
       save();
     }
-    function save() { try { const pos = {}; data.nodes.forEach(n => { pos[n.id] = [Math.round(n.x), Math.round(n.y)]; }); localStorage.setItem(KEY, JSON.stringify(pos)); } catch (e) { /* storage blocked */ } }
+    function save() { try { const pos = {}; data.nodes.forEach(n => { if (!n.client) pos[n.id] = [Math.round(n.x), Math.round(n.y)]; }); localStorage.setItem(KEY, JSON.stringify(pos)); } catch (e) { /* storage blocked */ } }
     function fit() {
       const xs = data.nodes.map(n => n.x), ys = data.nodes.map(n => n.y);
       const minX = Math.min(...xs) - 60, maxX = Math.max(...xs) + 60, minY = Math.min(...ys) - 50, maxY = Math.max(...ys) + 60;

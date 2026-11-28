@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% from "_unifi_macros.html" import ranges %}
+{% block title %}Wireless{% endblock %}
+{% macro rssi(v) %}{% if v is none %}<span class="dim">–</span>{% else %}<span class="{{ 'okc' if v >= T.rssi_good else ('wa' if v >= T.rssi_weak else 'bad') }}">{{ v|int }} dBm</span>{% endif %}{% endmacro %}
+{% macro snr(v) %}{% if v is none %}<span class="dim">–</span>{% else %}<span class="{{ 'okc' if v >= T.snr_good else ('wa' if v >= T.snr_poor else 'bad') }}">{{ v|round|int }} dB</span>{% endif %}{% endmacro %}
+{% macro retry(v) %}{% if v is none %}<span class="dim">–</span>{% else %}<span class="{{ 'bad' if v > T.retry_bad else ('wa' if v > T.retry_warn else '') }}">{{ '%.1f'|format(v) if v < 10 else v|round|int }}%</span>{% endif %}{% endmacro %}
+{% macro util(v) %}{% if v is none %}<span class="dim">–</span>{% else %}<span class="meter"><b style="width:{{ [v, 100]|min }}%;{% if v >= T.util_bad %}background:var(--down){% elif v >= T.util_warn %}background:var(--warn){% endif %}"></b></span><span class="{{ 'bad' if v >= T.util_bad else ('wa' if v >= T.util_warn else '') }}">{{ v|round|int }}%</span>{% endif %}{% endmacro %}
+{% set FLAG = {'weak': ('weak signal', 'wa'), 'low_snr': ('low SNR', 'wa'), 'retries': ('retries', 'wa'), 'sticky': ('sticky', 'bad')} %}
+{% block content %}
+{% if not integ %}
+<div class="head"><div><h1>Wireless</h1></div></div>
+<div class="p empty-state"><h2>No wireless source yet</h2><p>Add a UniFi Network integration to see every access point radio, SSID and Wi-Fi client here, with signal, retries and channel use.</p>
+  <p class="actions" style="justify-content:center"><a class="btn pri" href="/integrations/new?kind=unifi">Add UniFi</a></p></div>
+{% else %}
+<div class="head"><div><div class="crumb"><a href="/unifi?i={{ integ.id }}">Wi-Fi &amp; clients</a> · <a href="/integrations/{{ integ.id }}">{{ integ.name }}</a></div>
+  <h1>Wireless</h1>
+  <p>{% if data_ts %}From UniFi {{ data_ts|ago }}. Good is signal {{ T.rssi_good|int }} dBm or better, SNR {{ T.snr_good|int }} dB or more, retries under {{ T.retry_warn|int }}%, and channel use under {{ T.util_warn|int }}%.{% else %}Waiting for the first sync from the poller.{% endif %}</p></div>
+  <div class="actions">{% if others|length > 1 %}{% for o in others %}<a class="fbtn" href="/wireless?i={{ o.id }}" aria-pressed="{{ 'true' if o.id == integ.id else 'false' }}">{{ o.name }}</a>{% endfor %}{% endif %}{{ ranges() }}</div></div>
+{% if integ.status == 'error' %}<div class="flash bad" role="alert">Last sync failed: {{ integ.last_error }}{% if data_ts %} The figures below are from the last good sync.{% endif %}</div>{% endif %}
+{% if not data_ts %}
+<div class="p empty-state"><h2>No wireless data yet</h2><p>The poller reads UniFi once per poll interval. Open the <a href="/integrations/{{ integ.id }}">integration</a> and press Sync now, or check it for an error.</p></div>
+{% else %}
+<div id="wl" data-iid="{{ integ.id }}">
+<div class="p wl-bar" role="search" aria-label="Filter wireless">
+  <div class="filters">
+    {% if f_sites|length > 1 %}<select data-f="site" aria-label="Site"><option value="">All sites</option>{% for x in f_sites %}<option>{{ x }}</option>{% endfor %}</select>{% endif %}
+    <select data-f="ssid" aria-label="SSID"><option value="">All SSIDs</option>{% for x in f_ssids %}<option>{{ x }}</option>{% endfor %}</select>
+    <select data-f="band" aria-label="Band"><option value="">All bands</option>{% for x in f_bands %}<option>{{ x }}</option>{% endfor %}</select>
+    <select data-f="ch" aria-label="Channel"><option value="">All channels</option>{% for b, chs in f_channels %}<optgroup label="{{ b }}">{% for c in chs %}<option value="{{ b }}/{{ c }}">{{ c }} ({{ b }})</option>{% endfor %}</optgroup>{% endfor %}</select>
+    <select data-f="ap" aria-label="Access point"><option value="">All access points</option>{% for mac, name in f_aps %}<option value="{{ mac }}">{{ name }}</option>{% endfor %}</select>
+    <input type="search" data-f="q" placeholder="Client, IP, MAC, vendor" aria-label="Search clients">
+    <label class="chk"><input type="checkbox" data-f="problems"> Problems only</label>
+    <button class="fbtn" type="button" data-f-clear hidden>Clear filters</button>
+  </div>
+  <p class="dim wl-scope" style="font-size:12px;margin:8px 0 0">Showing everything. Graphs follow the most specific filter: access point, then channel, SSID or band.</p>
+</div>
+
+<div class="kpis" style="margin-top:16px">
+  <div class="kpi"><span>Wi-Fi clients</span><b data-k="clients">{{ w.clients }}</b><em data-k="bands">{% for b, n in (w.by_band or {}).items() %}{{ n }} on {{ b }}{{ ' · ' if not loop.last }}{% endfor %}</em></div>
+  <div class="kpi"><span>Average signal</span><b data-k="signal">{{ (w.avg_signal|round|int ~ ' dBm') if w.avg_signal is not none else '–' }}</b><em data-k="good">{% if w.good_signal_pct is not none %}{{ w.good_signal_pct|round|int }}% at {{ T.rssi_good|int }} dBm or better{% endif %}</em></div>
+  <div class="kpi"><span>Average SNR</span><b data-k="snr">{{ (w.avg_snr|round|int ~ ' dB') if w.avg_snr is not none else '–' }}</b><em>{{ T.snr_good|int }} dB or more is good</em></div>
+  <div class="kpi"><span>Average retries</span><b data-k="retry">{{ (w.avg_retry|round(1) ~ '%') if w.avg_retry is not none else '–' }}</b><em data-k="hiretry">{{ w.high_retry or 0 }} client{{ '' if w.high_retry == 1 else 's' }} above {{ T.retry_bad|int }}%</em></div>
+  <div class="kpi"><span>Weak signal</span><b data-k="weak" class="{{ 'wa' if w.weak else '' }}">{{ w.weak or 0 }}</b><em>clients below {{ T.rssi_good|int }} dBm</em></div>
+  <div class="kpi"><span>Congested radios</span><b data-k="cong" class="{{ 'bad' if w.congested else '' }}">{{ w.congested or 0 }} / {{ w.radios or 0 }}</b><em data-k="util">{% if w.avg_util is not none %}average {{ w.avg_util|round|int }}% busy, busiest {{ w.max_util|round|int }}%{% endif %}</em></div>
+  <div class="kpi"><span>Sticky clients</span><b data-k="sticky" class="{{ 'wa' if w.sticky else '' }}">{{ w.sticky or 0 }}</b><em>weak for {{ 3 }}+ polls with a better AP nearby</em></div>
+  <div class="kpi"><span>Access points up</span><b data-k="aps">{{ w.aps_up }} / {{ w.aps }}</b>{% if w.aps_up < w.aps %}<em class="bad">{{ w.aps - w.aps_up }} not up</em>{% else %}<em class="okc">all up</em>{% endif %}</div>
+  <div class="kpi"><span>AP reboots</span><b class="{{ 'wa' if w.reboots_24h else '' }}">{{ w.reboots_24h or 0 }}</b><em>last 24 hours · {{ reboots|length }} in 7 days</em></div>
+  {% set ev = namespace(a=0, s=0, d=0, r=0) %}{% for s in wssids %}{% if s.events %}{% set ev.a = ev.a + s.events.auth_fail %}{% set ev.s = ev.s + s.events.assoc_fail %}{% set ev.d = ev.d + s.events.dhcp_fail %}{% set ev.r = ev.r + s.events.roam %}{% endif %}{% endfor %}
+  <div class="kpi"><span>Connection failures</span>{% if events_ok %}<b data-k="fails" class="{{ 'wa' if ev.a + ev.s + ev.d else '' }}">{{ ev.a + ev.s + ev.d }}</b><em data-k="failsub">last hour: {{ ev.a }} auth · {{ ev.s }} assoc · {{ ev.d }} DHCP · {{ ev.r }} roams</em>{% else %}<b class="dim">–</b><em>this controller does not share its event log</em>{% endif %}</div>
+</div>
+
+{% if alerts %}
+<div class="p" style="margin-top:16px"><div class="ph"><h2>Open wireless alerts <span class="sub">{{ alerts|length }}</span></h2><a class="sub" href="/alerts#rules">Thresholds</a></div>
+  <div class="scroll" style="max-height:260px;overflow:auto"><table><tbody>{% for a in alerts %}<tr><td class="nw"><span class="sev {{ a.severity }}">{{ {'crit':'Critical','warn':'Warning','info':'Info'}.get(a.severity, a.severity) }}</span></td><td><a href="/alerts?state={{ a.state }}">{{ a.title }}</a><div class="dim" style="font-size:12px">{{ a.detail or '' }}</div></td><td class="nw dim">{{ a.opened_at|ago }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+
+<div class="grid" style="margin-top:16px">
+  <div class="p c4"><div class="ph"><h2>Signal</h2><span class="sub">average dBm</span></div>
+    <div class="fig" data-wkey="wq" data-src="/ui/metrics/integration/{{ integ.id }}/wq%3Aall" data-unit="dbm" data-min="-90" data-max="-30" data-h="170" data-label="Average signal" data-series='[{"key":"a","color":"var(--s1)","area":false}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>Retries</h2><span class="sub">average % of frames retried</span></div>
+    <div class="fig" data-wkey="wq" data-src="/ui/metrics/integration/{{ integ.id }}/wq%3Aall" data-unit="pct" data-h="170" data-label="Average retries" data-series='[{"key":"b","color":"var(--warn)"}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>Channel utilization</h2></div>
+    <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Average</span><span><i style="background:var(--down)"></i>Busiest radio</span><span><i style="background:var(--s2)"></i>Interference</span></div>
+    <div class="fig" data-wkey="wu" data-src="/ui/metrics/integration/{{ integ.id }}/wu%3Aall" data-unit="pct" data-max="100" data-h="150" data-label="Channel utilization" data-series='[{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--down)","area":false},{"key":"c","color":"var(--s2)","area":false,"dash":true}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>Clients</h2></div>
+    <div class="legend" style="margin-bottom:8px"><span><i style="background:var(--s1)"></i>Connected</span><span><i style="background:var(--down)"></i>Sticky</span></div>
+    <div class="fig" data-wkey="wn" data-src="/ui/metrics/integration/{{ integ.id }}/wn%3Aall" data-unit="num" data-h="150" data-label="Clients" data-series='[{"key":"a","color":"var(--s1)"},{"key":"c","color":"var(--down)","area":false}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>SNR</h2><span class="sub">average dB</span></div>
+    <div class="fig" data-wkey="wn" data-src="/ui/metrics/integration/{{ integ.id }}/wn%3Aall" data-unit="num" data-suffix="dB" data-h="170" data-label="Average SNR" data-series='[{"key":"b","color":"var(--s1)","area":false}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>Connection failures</h2><span class="sub">per hour</span></div>
+    {% if events_ok %}<div class="legend" style="margin-bottom:8px"><span><i style="background:var(--down)"></i>Auth</span><span><i style="background:var(--warn)"></i>Association</span><span><i style="background:var(--s2)"></i>DHCP</span></div>
+    <div class="fig" data-wkey="wev" data-src="/ui/metrics/integration/{{ integ.id }}/wev%3Aall" data-unit="num" data-h="150" data-label="Connection failures" data-series='[{"key":"a","color":"var(--down)","area":false},{"key":"b","color":"var(--warn)","area":false},{"key":"c","color":"var(--s2)","area":false}]'></div>
+    {% else %}<p class="dim" style="font-size:13px">This UniFi controller returns no event log over its local API (newer Network releases moved it), so auth, association and DHCP failures can't be counted. Signal, retries and roams still work.</p>{% endif %}</div>
+
+  {% if channel_bands %}
+  <div class="p"><div class="ph"><h2>Channels</h2><span class="sub">busiest radio on each channel; click one to filter</span></div>
+    <div class="wl-chans">{% for b, chs in channel_bands %}<div class="wl-band"><h3>{{ b }}</h3><div class="wl-bars">
+      {% for c in chs %}{% set u = c.util or 0 %}<button type="button" class="wl-ch" data-ch-pick="{{ b }}/{{ c.channel }}" title="Channel {{ c.channel }}: {{ (c.util|round|int ~ '% busy') if c.util is not none else 'utilization unknown' }}, {{ c.clients }} client{{ '' if c.clients == 1 else 's' }}, {{ c.aps|length }} radio{{ '' if c.aps|length == 1 else 's' }} ({{ c.aps|join(', ') }})">
+        <span class="wl-col"><i style="height:{{ [u, 100]|min }}%;background:{{ 'var(--down)' if u >= T.util_bad else ('var(--warn)' if u >= T.util_warn else 'var(--s1)') }}"></i></span>
+        <b>{{ c.channel }}</b><em>{{ c.clients }}</em></button>{% endfor %}
+    </div></div>{% endfor %}</div>
+    <p class="dim" style="font-size:12px;margin:8px 0 0">Bar height is channel utilization; the number under each channel is its client count. Above {{ T.util_warn|int }}% is amber, above {{ T.util_bad|int }}% is red.</p></div>
+  {% endif %}
+
+  <div class="p" data-wtable="radios"><div class="ph"><h2>Radios <span class="sub" data-count>{{ radios|length }}</span></h2><span class="sub">one row per access point radio</span></div>
+    <div class="scroll"><table><thead><tr><th></th><th data-sort="text">Access point</th><th data-sort="text">Band</th><th class="n" data-sort="num">Channel</th><th class="n" data-sort="num">Clients</th><th data-sort="num">Utilization</th><th class="n" data-sort="num">Interference</th><th class="n" data-sort="num">Noise floor</th><th class="n" data-sort="num">TX power</th><th class="n" data-sort="num">Retries</th><th class="n" data-sort="num">Drops / poll</th><th class="n" data-sort="num">Avg signal</th><th class="n" data-sort="num">Uptime</th></tr></thead><tbody>
+    {% for r in radios %}{% set apx = aps|selectattr('mac', 'equalto', r.ap_mac)|first %}
+      <tr data-site="{{ r.site or '' }}" data-ssids="{{ r.ssids|join('|') }}" data-band="{{ r.band or '' }}" data-ch="{{ r.band }}/{{ r.channel }}" data-ap="{{ r.ap_mac or '' }}" data-util="{{ r.utilization if r.utilization is not none else '' }}" data-problem="{{ '1' if (r.utilization or 0) >= T.util_bad or (r.retry_pct or 0) > T.retry_bad else '' }}">
+        <td><span class="dot d-{{ r.ap_status or 'unknown' }}"></span></td>
+        <td>{% if device_ids.get(r.ap_mac) %}<a class="row nw" href="/devices/{{ device_ids[r.ap_mac] }}">{{ r.ap }}</a>{% else %}<b class="nw">{{ r.ap }}</b>{% endif %}<div class="dim" style="font-size:12px">{{ r.model or '' }}</div></td>
+        <td class="nw">{{ r.band or '' }}{% if r.width %} <span class="dim">{{ r.width }}</span>{% endif %}</td>
+        <td class="n" data-v="{{ r.channel or 0 }}">{{ r.channel or '–' }}</td>
+        <td class="n" data-v="{{ r.clients or 0 }}">{{ r.clients if r.clients is not none else '–' }}</td>
+        <td class="nw" data-v="{{ r.utilization if r.utilization is not none else -1 }}" title="{% if r.self_tx is not none %}own traffic {{ (r.self_tx or 0)|round|int }}% sent, {{ (r.self_rx or 0)|round|int }}% received{% endif %}">{{ util(r.utilization) }}</td>
+        <td class="n" data-v="{{ r.interference if r.interference is not none else -1 }}">{% if r.interference is not none %}<span class="{{ 'wa' if r.interference >= 25 else '' }}">{{ r.interference|round|int }}%</span>{% else %}<span class="dim">–</span>{% endif %}</td>
+        <td class="n" data-v="{{ r.noise if r.noise is not none else -999 }}">{% if r.noise is not none %}<span class="{{ 'wa' if r.noise > -85 else '' }}">{{ r.noise|int }} dBm</span>{% else %}<span class="dim">–</span>{% endif %}</td>
+        <td class="n" data-v="{{ r.tx_power or 0 }}">{{ (r.tx_power|int ~ ' dBm') if r.tx_power is not none else '–' }}</td>
+        <td class="n" data-v="{{ r.retry_pct if r.retry_pct is not none else -1 }}">{{ retry(r.retry_pct) }}</td>
+        <td class="n" data-v="{{ r.drops if r.drops is not none else -1 }}">{{ r.drops|int if r.drops is not none else '–' }}</td>
+        <td class="n" data-v="{{ r.avg_signal if r.avg_signal is not none else -999 }}">{{ rssi(r.avg_signal) }}</td>
+        <td class="n" data-v="{{ apx.uptime_s if apx and apx.uptime_s else 0 }}">{{ (apx.uptime_s|duration) if apx and apx.uptime_s else '–' }}{% if apx and apx.reboots_7d %} <span class="tag" title="Reboots in the last 7 days">{{ apx.reboots_7d }} reboot{{ '' if apx.reboots_7d == 1 else 's' }}</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="13" class="dim">No radios reported.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="p" data-wtable="ssids"><div class="ph"><h2>SSIDs <span class="sub" data-count>{{ wssids|length }}</span></h2><span class="sub">bandwidth is the sum of the clients on each{% if events_ok %}; failures, connects and roams are for the last hour{% endif %}</span></div>
+    <div class="scroll"><table><thead><tr><th data-sort="text">SSID</th><th class="n" data-sort="num">Clients</th><th class="n" data-sort="num">Down</th><th class="n" data-sort="num">Up</th><th class="n" data-sort="num">Avg signal</th><th class="n" data-sort="num">Avg retries</th><th class="n" data-sort="num">Weak</th>{% if events_ok %}<th class="n" data-sort="num">Auth fail</th><th class="n" data-sort="num">Assoc fail</th><th class="n" data-sort="num">DHCP fail</th><th class="n" data-sort="num">Connects</th><th class="n" data-sort="num">Roams</th>{% endif %}<th>Band</th><th>Security</th></tr></thead><tbody>
+    {% for x in wssids %}{% set e = x.events or {} %}
+      <tr data-site="{{ x.site or '' }}" data-ssid="{{ x.name }}" data-aps="{{ (x.aps or [])|join('|') }}" data-problem="{{ '1' if (e.auth_fail or 0) + (e.assoc_fail or 0) + (e.dhcp_fail or 0) or (x.avg_retry or 0) > T.retry_bad or (x.weak or 0) else '' }}">
+        <td>{% if x.series %}<a class="row" href="/unifi/{{ integ.id }}/ssids/{{ x.series[5:]|urlencode }}">{{ x.name }}</a>{% else %}{{ x.name }}{% endif %}{% if not x.enabled %} <span class="tag">off</span>{% endif %}{% if x.guest %} <span class="tag">guest</span>{% endif %}{% if f_sites|length > 1 %}<div class="dim" style="font-size:12px">{{ x.site }}</div>{% endif %}</td>
+        <td class="n" data-v="{{ x.clients or 0 }}">{{ x.clients or 0 }}</td>
+        <td class="n mono" data-v="{{ x.down_bps or 0 }}">{{ x.down_bps|bps }}</td><td class="n mono" data-v="{{ x.up_bps or 0 }}">{{ x.up_bps|bps }}</td>
+        <td class="n" data-v="{{ x.avg_signal if x.avg_signal is not none else -999 }}">{{ rssi(x.avg_signal) }}</td>
+        <td class="n" data-v="{{ x.avg_retry if x.avg_retry is not none else -1 }}">{{ retry(x.avg_retry) }}</td>
+        <td class="n" data-v="{{ x.weak or 0 }}">{% if x.weak %}<span class="wa">{{ x.weak }}</span>{% else %}0{% endif %}</td>
+        {% if events_ok %}{% for k in ('auth_fail', 'assoc_fail', 'dhcp_fail') %}<td class="n" data-v="{{ e[k] or 0 }}">{% if e[k] %}<span class="bad">{{ e[k] }}</span>{% else %}0{% endif %}</td>{% endfor %}
+        <td class="n" data-v="{{ e.connect or 0 }}">{{ e.connect or 0 }}</td><td class="n" data-v="{{ e.roam or 0 }}">{{ e.roam or 0 }}</td>{% endif %}
+        <td class="dim nw">{{ {'both': '2.4 + 5 GHz', '2g': '2.4 GHz', '5g': '5 GHz'}.get(x.band, x.band or '') }}</td><td class="dim">{{ x.security or '' }}</td></tr>
+    {% else %}<tr><td colspan="14" class="dim">No SSIDs reported.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="p" data-wtable="clients"><div class="ph"><h2>Wi-Fi clients <span class="sub" data-count>{{ wclients|length }}</span></h2><span class="sub">retries are worked out between polls; roams count this session</span></div>
+    <div class="scroll" style="max-height:720px;overflow:auto"><table><thead><tr><th data-sort="text">Client</th><th data-sort="text">SSID</th><th data-sort="text">Access point</th><th data-sort="text">Band</th><th class="n" data-sort="num">Ch</th><th class="n" data-sort="num">Signal</th><th class="n" data-sort="num">SNR</th><th class="n" data-sort="num">TX / RX rate</th><th class="n" data-sort="num">Retries</th><th class="n" data-sort="num">Roams</th><th class="n" data-sort="num">Down</th><th class="n" data-sort="num">Up</th><th class="n" data-sort="num">Connected</th><th class="n" data-sort="num">Experience</th></tr></thead><tbody>
+    {% for c in wclients %}
+      <tr data-site="{{ c.site or '' }}" data-ssid="{{ c.ssid or '' }}" data-band="{{ c.band or '' }}" data-ch="{{ c.band }}/{{ c.channel }}" data-ap="{{ c.ap_mac or '' }}" data-q="{{ [c.name, c.hostname, c.ip, c.mac, c.vendor]|select|join(' ')|lower }}"
+          data-rssi="{{ c.signal if c.signal is not none else '' }}" data-snr="{{ c.snr if c.snr is not none else '' }}" data-retry="{{ c.retry_pct if c.retry_pct is not none else '' }}" data-sticky="{{ '1' if c.sticky else '' }}" data-problem="{{ '1' if c.flags else '' }}">
+        <td><a class="row" href="/unifi/{{ integ.id }}/clients/{{ c.mac }}">{{ c.name }}</a>{% if c.guest %} <span class="tag">guest</span>{% endif %}{% for f in c.flags or [] %} <span class="tag {{ FLAG[f][1] }}" {% if f == 'sticky' %}title="Weak signal on the same AP for {{ c.weak_polls }} polls while another AP serves this SSID"{% endif %}>{{ FLAG[f][0] }}</span>{% endfor %}{% if c.roamed %} <span class="tag" title="Moved to this AP since the last poll">roamed</span>{% endif %}<div class="dim" style="font-size:12px">{{ c.vendor or '' }}{% if c.ip %} · <span class="mono">{{ c.ip }}</span>{% endif %}</div></td>
+        <td>{{ c.ssid or '–' }}</td>
+        <td class="nw">{% if device_ids.get(c.ap_mac) %}<a href="/devices/{{ device_ids[c.ap_mac] }}">{{ c.ap }}</a>{% else %}{{ c.ap or '–' }}{% endif %}</td>
+        <td class="nw">{{ c.band or '' }}{% if c.proto %} <span class="dim">{{ c.proto }}</span>{% endif %}</td>
+        <td class="n" data-v="{{ c.channel or 0 }}">{{ c.channel or '' }}</td>
+        <td class="n" data-v="{{ c.signal if c.signal is not none else -999 }}">{{ rssi(c.signal) }}</td>
+        <td class="n" data-v="{{ c.snr if c.snr is not none else -1 }}">{{ snr(c.snr) }}</td>
+        <td class="n nw" data-v="{{ c.tx_rate_mbps or 0 }}">{% if c.tx_rate_mbps %}{{ c.tx_rate_mbps|round|int }} / {{ (c.rx_rate_mbps or 0)|round|int }} Mb/s{% else %}<span class="dim">–</span>{% endif %}</td>
+        <td class="n" data-v="{{ c.retry_pct if c.retry_pct is not none else -1 }}">{{ retry(c.retry_pct) }}</td>
+        <td class="n" data-v="{{ c.roam_count or 0 }}">{{ c.roam_count|int if c.roam_count is not none else '–' }}</td>
+        <td class="n mono" data-v="{{ c.down_bps or 0 }}">{{ c.down_bps|bps }}</td><td class="n mono" data-v="{{ c.up_bps or 0 }}">{{ c.up_bps|bps }}</td>
+        <td class="n" data-v="{{ c.uptime_s or 0 }}">{{ c.uptime_s|duration }}</td>
+        <td class="n" data-v="{{ c.satisfaction if c.satisfaction is not none else -1 }}">{{ c.satisfaction|pct }}</td></tr>
+    {% else %}<tr><td colspan="14" class="dim">No Wi-Fi clients connected.</td></tr>{% endfor %}
+    </tbody></table></div></div>
+
+  <div class="p c6"><div class="ph"><h2>Sticky clients</h2><span class="sub">holding on to a weak AP</span></div>
+    {% if sticky %}<div class="scroll"><table><thead><tr><th>Client</th><th>On</th><th class="n">Signal</th><th class="n">Polls</th></tr></thead><tbody>
+    {% for c in sticky %}<tr data-ssid="{{ c.ssid or '' }}" data-ap="{{ c.ap_mac or '' }}"><td><a href="/unifi/{{ integ.id }}/clients/{{ c.mac }}">{{ c.name }}</a></td><td>{{ c.ap }} <span class="dim">{{ c.band }} ch {{ c.channel }}</span></td><td class="n">{{ rssi(c.signal) }}</td><td class="n">{{ c.weak_polls }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="font-size:13px">None. A client counts as sticky when its signal stays below {{ T.rssi_weak|int }} dBm on the same AP for 3 polls while another AP serves its SSID.</p>{% endif %}</div>
+
+  <div class="p c6"><div class="ph"><h2>AP reboots</h2><span class="sub">last 7 days, seen when uptime goes back to zero</span></div>
+    {% if reboots %}<div class="scroll" style="max-height:300px;overflow:auto"><table><thead><tr><th>When</th><th>Access point</th></tr></thead><tbody>
+    {% for r in reboots %}<tr data-ap="{{ r.mac or '' }}"><td class="nw dim mono">{{ r.at[:16]|replace('T', ' ') }} UTC</td><td>{% if device_ids.get(r.mac) %}<a href="/devices/{{ device_ids[r.mac] }}">{{ r.ap }}</a>{% else %}{{ r.ap }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<p class="dim" style="font-size:13px">No reboots seen.</p>{% endif %}</div>
+</div>
+</div>
+<script src="/static/wireless.js?v={{ asset_version }}" defer></script>
+{% endif %}
+{% endif %}
+{% endblock %}

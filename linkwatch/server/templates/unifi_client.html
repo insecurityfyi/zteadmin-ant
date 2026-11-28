@@ -18,6 +18,10 @@
       <dt>Access point</dt><dd>{% if device_ids.get(c.ap_mac) %}<a href="/devices/{{ device_ids[c.ap_mac] }}">{{ c.ap }}</a>{% else %}{{ c.ap or '–' }}{% endif %}</dd>
       <dt>Radio</dt><dd>{{ c.band or '' }}{% if c.channel %} channel {{ c.channel }}{% endif %}{% if c.proto %} · 802.11{{ c.proto }}{% endif %}</dd>
       <dt>Signal</dt><dd>{{ signal(c.signal) }}{% if c.noise is not none %} <span class="dim">noise {{ c.noise|int }} dBm</span>{% endif %}</dd>
+      {% if c.snr is not none %}<dt>SNR</dt><dd class="{{ 'okc' if c.snr >= 25 else ('wa' if c.snr >= 15 else 'bad') }}">{{ c.snr|round|int }} dB</dd>{% endif %}
+      {% if c.retry_pct is not none %}<dt>Retries</dt><dd class="{{ 'bad' if c.retry_pct > 15 else ('wa' if c.retry_pct > 10 else '') }}">{{ c.retry_pct }}% of frames</dd>{% endif %}
+      {% if c.roam_count is not none %}<dt>Roams</dt><dd>{{ c.roam_count|int }} this session{% if c.roamed %} <span class="tag">just roamed</span>{% endif %}</dd>{% endif %}
+      {% if c.sticky %}<dt>Sticky</dt><dd class="bad">Weak on this AP for {{ c.weak_polls }} polls while another AP serves {{ c.ssid }}</dd>{% endif %}
     {% else %}
       <dt>Switch</dt><dd>{{ c.switch or '–' }}{% if c.switch_port %} port {{ c.switch_port }}{% endif %}</dd>
       {% if c.direct is defined %}<dt>Attachment</dt><dd>{% if c.direct %}<span class="okc">Directly attached</span>{% else %}Not direct: {{ c.attach_note }}{% endif %}</dd>{% endif %}
@@ -32,7 +36,10 @@
   <div class="p {{ 'c8' if c else '' }}">
     <div class="ph"><h2>Bandwidth</h2><span class="sub">b/s</span></div>{{ bw_chart(integ, series, 200, 'Client bandwidth') }}
     {% if not c or not c.wired %}<div class="ph" style="margin:18px 0 4px"><h3>Signal</h3><span class="sub">dBm, higher is better; below -70 is weak</span></div>
-    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ series|urlencode }}" data-unit="dbm" data-min="-100" data-max="-20" data-h="150" data-label="Signal" data-series='[{"key":"c","color":"var(--s1)","area":false}]'></div>{% endif %}
+    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ series|urlencode }}" data-unit="dbm" data-min="-100" data-max="-20" data-h="150" data-label="Signal" data-series='[{"key":"c","color":"var(--s1)","area":false}]'></div>
+    <div class="ph" style="margin:18px 0 4px"><h3>SNR and retries</h3><span class="sub"><span style="color:var(--s1)">SNR dB</span> (25 or more is good) · <span style="color:var(--warn)">retries %</span> (above 10–15 hurts)</span></div>
+    <div class="fig" data-src="/ui/metrics/integration/{{ integ.id }}/{{ ('w' ~ series)|urlencode }}" data-unit="num" data-h="150" data-label="SNR and retries" data-series='[{"key":"b","color":"var(--s1)","area":false},{"key":"c","color":"var(--warn)","area":false}]'></div>
+    <p class="dim" style="font-size:12px;margin:8px 0 0"><a href="/wireless?i={{ integ.id }}{% if c and c.ap_mac %}&amp;ap={{ c.ap_mac|urlencode }}{% endif %}">Open the Wireless dashboard{% if c and c.ap %} for {{ c.ap }}{% endif %}</a></p>{% endif %}
   </div>
 </div>
 {% endblock %}

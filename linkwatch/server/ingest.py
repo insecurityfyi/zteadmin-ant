@@ -325,7 +325,7 @@ def ingest_integration(s: Session, alerter: Alerter, integ: Integration, item: d
     s.add(IntegrationMetric(integration_id=integ.id, key="objects", ts=ts, a=counts["up"], b=len(records),
                             c=counts["warn"] + counts["down"]))
     if item.get("data"):
-        ingest_integration_data(s, integ, item["data"], ts)
+        ingest_integration_data(s, integ, item["data"], ts, alerter)
 
 
 MAX_CLIENT_SERIES = 1000
@@ -525,10 +525,20 @@ SERIES = {"zscaler": _zscaler_series, "meraki": _meraki_series, "panos": _panos_
           "sonicwall": _sonicwall_series, "pfsense": _router_series, "vyos": _router_series, "proxmox": _proxmox_series, "synology": _synology_series, "unifi": _unifi_series}
 
 
-def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:
+def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime,
+                            alerter: Alerter | None = None) -> None:
     if not isinstance(data, dict):
         return
+    wifi = integ.kind == "unifi" and data.get("type") == "unifi"
+    if wifi:
+        from . import wireless
+        wireless.enrich(integ.data, data, ts)      # rates between this poll and the last one
     points = integration_series(data)      # also tags each item with its series key
+    if wifi:
+        points += wireless.series(data, MAX_CLIENT_SERIES)
+        if alerter is not None:
+            devs = {str((d.extra or {}).get("mac") or ""): d for d in s.scalars(select(Device).where(Device.integration_id == integ.id))}
+            wireless.evaluate(alerter, integ, data, devs)
     integ.data = {**data, "ts": ts.isoformat() + "Z"}
     for key, a, b, c in points:
         s.add(IntegrationMetric(integration_id=integ.id, key=key[:160], ts=ts, a=a, b=b, c=c))
