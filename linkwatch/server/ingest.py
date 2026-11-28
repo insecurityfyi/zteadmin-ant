@@ -478,6 +478,17 @@ def _proxmox_series(d: dict[str, Any]) -> list[Point]:
     return out
 
 
+def _synology_series(d: dict[str, Any]) -> list[Point]:
+    u = d.get("util") or {}
+    out: list[Point] = [("load", _num(u.get("cpu")), _num(u.get("mem")), _num((d.get("system") or {}).get("temp_c"))),
+                        ("net", _num(u.get("rx_bps")), _num(u.get("tx_bps")), None)]
+    for v in d.get("volumes") or []:
+        if v.get("total"):
+            v["series"] = f"vol:{v.get('id')}"
+            out.append((v["series"], _num(v.get("pct")), _num(v.get("used")), _num(v.get("total"))))
+    return out
+
+
 def _unifi_series(data: dict[str, Any]) -> list[Point]:
     out: list[Point] = []
     summ = data.get("summary") or {}
@@ -504,7 +515,7 @@ def _unifi_series(data: dict[str, Any]) -> list[Point]:
 
 
 SERIES = {"zscaler": _zscaler_series, "meraki": _meraki_series, "panos": _panos_series, "fortigate": _fortigate_series,
-          "sonicwall": _sonicwall_series, "pfsense": _router_series, "vyos": _router_series, "proxmox": _proxmox_series, "unifi": _unifi_series}
+          "sonicwall": _sonicwall_series, "pfsense": _router_series, "vyos": _router_series, "proxmox": _proxmox_series, "synology": _synology_series, "unifi": _unifi_series}
 
 
 def ingest_integration_data(s: Session, integ: Integration, data: dict[str, Any], ts: datetime) -> None:

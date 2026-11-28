@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_iv.html" import meter %}
+{% import "_nas.html" as nas with context %}
+{% block title %}NAS{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb">NAS</div><h1>Synology NAS</h1><p>{{ boxes|length }} connected</p></div></div>
+{% if not boxes %}<div class="p empty-state"><h2>No NAS connected</h2><p>Connect a Synology NAS under <a href="/integrations/new?kind=synology">Integrations</a> to see its storage, apps and backups here, and control it if you allow that.</p></div>
+{% else %}
+<div class="p"><div class="scroll"><table><thead><tr><th></th><th>NAS</th><th>Model</th><th>DSM</th><th>CPU</th><th>Memory</th><th>Problems</th><th>Last sync</th></tr></thead><tbody>
+{% for n in boxes %}{% set s = n.system %}{% set u = n.data.util or {} %}<tr><td><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(n.status, 'd-off') }}"></span></td>
+  <td><a class="row" href="/nas/{{ n.id }}">{{ n.name }}</a>{% if s.hostname and s.hostname != n.name %}<div class="dim" style="font-size:12px">{{ s.hostname }}</div>{% endif %}</td>
+  <td>{{ s.model or '–' }}</td><td>{{ s.version or '–' }}</td><td class="nw">{{ meter(u.cpu) }}</td><td class="nw">{{ meter(u.mem) }}</td>
+  <td>{% if n.data.problems %}<span class="wa">{{ n.data.problems[0] }}</span>{% if n.data.problems|length > 1 %} <span class="dim">+{{ n.data.problems|length - 1 }}</span>{% endif %}{% else %}<span class="okc">none</span>{% endif %}</td>
+  <td class="nw">{{ n.last_sync|ago }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+{% from "_iv.html" import chart, legend, meter %}
+{% set s = data.system or {} %}{% set u = data.util or {} %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>CPU / memory</span><b>{{ u.cpu|pct }} / {{ u.mem|pct }}</b><em>{{ s.model or '' }} · {{ s.version or '' }}</em></div>
+  <div class="kpi"><span>Volumes</span><b>{{ (data.volumes or [])|length }}</b><em>{% set bad = (data.volumes or [])|rejectattr('status', 'in', ['normal', 'healthy'])|list %}{% if bad %}<span class="wa">{{ bad|length }} not healthy</span>{% else %}all healthy{% endif %}</em></div>
+  <div class="kpi"><span>Disks</span><b>{{ (data.disks or [])|length }}</b><em>{% set hot = (data.disks or [])|selectattr('temp_c')|map(attribute='temp_c')|list %}{% if hot %}hottest {{ hot|max|round|int }} °C{% else %}&nbsp;{% endif %}</em></div>
+  <div class="kpi"><span>Needs attention</span><b class="{{ 'wa' if data.problems else 'okc' }}">{{ (data.problems or [])|length }}</b><em>{{ (data.problems or ['nothing'])[0] }}</em></div>
+</div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>CPU and memory</h2><a class="btn sm" href="/nas/{{ integ.id }}">Storage, apps, backups and controls</a></div>{{ legend([('CPU', 'var(--s1)'), ('Memory', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'load', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)","area":false}], 'pct', 160, 'CPU and memory', 100) }}</div>
+  <div class="p c6"><div class="ph"><h2>Network</h2></div>{{ legend([('In', 'var(--s1)'), ('Out', 'var(--s2)')]) }}
+    {{ chart(integ.id, 'net', [{"key":"a","color":"var(--s1)"},{"key":"b","color":"var(--s2)","area":false}], 'bps', 160, 'Network') }}</div>
+</div>
