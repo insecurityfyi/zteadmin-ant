@@ -141,6 +141,7 @@ async def background(app_state) -> None:
     """Runs for the life of the web process."""
     last_sync: dict[int, float] = {}
     last_rollup = 0.0
+    last_isp = -1e9
     loop = asyncio.get_running_loop()
     while True:
         try:
@@ -155,6 +156,10 @@ async def background(app_state) -> None:
                 await asyncio.to_thread(run_server_integration, app_state, iid)
             await asyncio.to_thread(check_pollers, app_state)
             await asyncio.to_thread(run_scheduled_discovery, app_state)
+            if now - last_isp >= 600:       # WAN public addresses -> ISP names, cached (see isp.py)
+                last_isp = now
+                from .isp import refresh_job
+                await asyncio.to_thread(refresh_job, app_state)
             if now - last_rollup >= 3600:
                 last_rollup = now
                 await asyncio.to_thread(rollup_and_prune, app_state)

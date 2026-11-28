@@ -337,7 +337,8 @@ def build_map(s: Session, site: str = "", external: bool = False, show_all: bool
             ghosts.setdefault(b, {"id": b, "name": label, "status": "external", "type": (n.remote_platform or "")[:40],
                                   "ip": n.remote_ip, "site": devs[a].site.name if devs[a].site else None})
         st = _port_stats(n.port)
-        add(a, b, n.local_port, n.remote_port, n.protocol, mesh=n.protocol.endswith("-mesh"), **st)
+        add(a, b, n.local_port, n.remote_port, n.protocol, mesh=n.protocol.endswith("-mesh"), **st,
+            ab_bps=n.port.out_bps if n.port is not None else None, ba_bps=n.port.in_bps if n.port is not None else None)
 
     # 2. UniFi switch ports: a monitored box seen on a port (as its client or LLDP neighbour) hangs off that port
     integs = s.scalars(select(Integration).where(Integration.enabled.is_(True))).all()
@@ -383,6 +384,9 @@ def build_map(s: Session, site: str = "", external: bool = False, show_all: bool
         for end, port in ((l["source"], l["a_port"]), (l["target"], l["b_port"])):
             p = ports.get(end, {}).get(norm_port(port)) if isinstance(end, int) and port else None
             st = _port_stats(p)
+            if p is not None and l.get("ab_bps") is None and l.get("ba_bps") is None and (p.in_bps is not None or p.out_bps is not None):
+                # a port's out is traffic leaving its own end
+                l["ab_bps"], l["ba_bps"] = (p.out_bps, p.in_bps) if end == l["source"] else (p.in_bps, p.out_bps)
             if st.get("speed") and not l.get("speed"):
                 l["speed"] = st["speed"]
             if st.get("util") is not None and (l.get("util") is None or st["util"] > l["util"]):
@@ -436,6 +440,10 @@ def _merge_link(cur: dict, new: dict, ends: dict) -> None:
     for k in ("speed", "bps"):
         if cur.get(k) is None and new.get(k) is not None:
             cur[k] = new[k]
+    same = str(new["source"]) == str(cur["source"])          # traffic each way, turned round if seen from the far end
+    ab, ba = (new.get("ab_bps"), new.get("ba_bps")) if same else (new.get("ba_bps"), new.get("ab_bps"))
+    if cur.get("ab_bps") is None and cur.get("ba_bps") is None and (ab is not None or ba is not None):
+        cur["ab_bps"], cur["ba_bps"] = ab, ba
     if new.get("util") is not None and (cur.get("util") is None or new["util"] > cur["util"]):
         cur.update(util=new["util"], bps=new.get("bps"), speed=new.get("speed") or cur.get("speed"))
     cur["mesh"] = cur["mesh"] and new["mesh"]
@@ -540,7 +548,8 @@ def _wan_links(s: Session, devs: dict[int, Device], rep: dict[int, int], idx: _I
                                               "ip": (iface or {}).get("ip") or gw.get("source"),
                                               "latency_ms": gw.get("delay_ms"), "loss_pct": gw.get("loss_pct")})
 
-    names = isp_names(s)
+    from . import isp as ispmod
+    names, ranges, lookups = isp_names(s), ispmod.ranges(s), ispmod.cache(s)
     out: list[dict] = []
     for g in set(marked) | set(api) | set(auto):
         if g not in in_view:
@@ -556,12 +565,18 @@ def _wan_links(s: Session, devs: dict[int, Device], rep: dict[int, int], idx: _I
             busiest = max(w.get("down_bps") or 0, w.get("up_bps") or 0) if (w.get("down_bps") is not None or w.get("up_bps") is not None) else None
             util = round(busiest / (speed * 1e6) * 100, 1) if busiest is not None and speed else None
             key = wan_key(devs[g].hostname, w.get("name"))
-            isp = names.get(key) or (str(w["isp"]).strip() if w.get("isp") else "")
+            # the ISP: typed for this WAN > an IP range under Settings > what the gateway reports > an RDAP lookup
+            ip = w.get("ip")
+            found = [("manual", names.get(key, "")), ("range", ispmod.by_range(ranges, ip)),
+                     ("gateway", ispmod.tidy(w.get("isp")) if w.get("isp") else ""),
+                     ("lookup", str((lookups.get(str(ip or "")) or {}).get("isp") or ""))]
+            how, isp = next(((h, n) for h, n in found if n), ("", ""))
+            dsrc, detected = next(((h, n) for h, n in found[1:] if n), ("", ""))
             label = isp or f"{w.get('name') or 'WAN'} ISP"
             target = _isp_id(isp) if isp else _isp_id(f"unnamed {devs[g].hostname} {w.get('name')}")
             out.append({"source": g, "target": target, "a_port": w.get("port") or w.get("name"), "b_port": None, "protocol": "wan",
                         "sources": ["wan"], "mesh": False, "wan": w.get("name"), "isp": isp or None, "isp_label": label,
-                        "isp_detected": w.get("isp"), "wan_key": key, "gateway": devs[g].hostname, "wan_ip": w.get("ip"),
+                        "isp_detected": detected, "isp_source": how, "detected_source": dsrc, "wan_key": key, "gateway": devs[g].hostname, "wan_ip": w.get("ip"),
                         "up": w.get("up"), "speed": speed, "speed_label": speed_label(speed), "util": util, "bps": busiest,
                         "down_bps": w.get("down_bps"), "up_bps": w.get("up_bps"),
                         "latency_ms": w.get("latency_ms"), "loss_pct": w.get("loss_pct")})
