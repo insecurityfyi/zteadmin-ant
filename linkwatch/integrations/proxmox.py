@@ -210,6 +210,8 @@ class Proxmox(Integration):
         for r in resources:
             t = r.get("type")
             if t == "node":
+                ips = self._node_ips(r.get("node")) if r.get("status") == "online" else []
+                node_ips.setdefault(r.get("node"), ips[0] if ips else None)
                 out.append(Record(
                     external_id=f"node-{r.get('node')}", hostname=r.get("node"), ip=node_ips.get(r.get("node")),
                     type="Hypervisor", platform="Proxmox VE", site=None,
@@ -217,7 +219,8 @@ class Proxmox(Integration):
                     cpu=round(100.0 * float(r.get("cpu") or 0), 1), mem=pct(r.get("mem"), r.get("maxmem")),
                     uptime_s=r.get("uptime"),
                     detail=f"{r.get('maxcpu', '?')} vCPU, {round((r.get('maxmem') or 0) / 2**30)} GiB RAM",
-                    extra={"maxcpu": r.get("maxcpu"), "maxmem": r.get("maxmem"), "disk": r.get("disk"), "maxdisk": r.get("maxdisk")},
+                    extra={"maxcpu": r.get("maxcpu"), "maxmem": r.get("maxmem"), "disk": r.get("disk"), "maxdisk": r.get("maxdisk"),
+                           **({"ips": ips} if ips else {})},
                 ))
             elif t in GUEST_TYPES and include_guests and not r.get("template"):
                 running = r.get("status") == "running"
@@ -230,6 +233,17 @@ class Proxmox(Integration):
                     detail=f"On node {r.get('node')}, {r.get('maxcpu', '?')} vCPU", extra={"node": r.get("node"), "vmid": r.get("vmid")},
                 ))
         return out
+
+    def _node_ips(self, node: str | None) -> list[str]:
+        """The node's own addresses (bridges, bonds, NICs), so the map can find it in switch tables. Best effort."""
+        if not node or not NODE_RE.match(str(node)):
+            return []
+        try:
+            rows = self._get(f"{self.base}/api2/json/nodes/{node}/network", headers=self.auth).json().get("data", [])
+        except Exception:  # noqa: BLE001 - a missing permission only costs the map a link
+            return []
+        ips = [str(n.get("address")).strip() for n in rows if isinstance(n, dict) and n.get("address")]
+        return [ip for ip in dict.fromkeys(ips) if ip and not ip.startswith("127.")]
 
     @staticmethod
     def _guest_row(g: dict) -> dict:

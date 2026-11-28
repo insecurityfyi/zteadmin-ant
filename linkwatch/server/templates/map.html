@@ -1,20 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Network map{% endblock %}
 {% block content %}
-<div class="head"><div><h1>Network map</h1><p>Built from LLDP and CDP neighbours polled over SNMP, plus UniFi and Meraki uplinks. Wireless access points show their client count; a dashed link is a wireless mesh uplink. Drag to arrange, scroll to zoom, click a device to open it. Link colour shows the busier direction's utilisation.</p></div>
+<div class="head"><div><h1>Network map</h1><p>Built from LLDP and CDP neighbours polled over SNMP, integration uplinks (UniFi, Meraki), boxes seen on UniFi switch ports, and links drawn by hand. A box seen by more than one source (SNMP and an API, or under two names) is drawn once. Each link shows its speed; colour shows the busier direction's utilisation. Gateways connect to the Internet cloud, one line per WAN uplink. Drag to arrange, scroll to zoom, click a device to open it.</p></div>
   <form class="filters" method="get">
     <select name="site" aria-label="Site" onchange="this.form.submit()" style="width:auto"><option value="">All sites</option>{% for n in sites %}<option {% if n == site %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
     <label class="chk"><input type="checkbox" name="external" value="1" {% if external %}checked{% endif %} onchange="this.form.submit()"> Unmonitored neighbours</label>
     <label class="chk"><input type="checkbox" name="hide_aps" value="1" {% if request.query_params.get('hide_aps') %}checked{% endif %} onchange="this.form.submit()"> Hide access points</label>
-    <label class="chk"><input type="checkbox" name="all" value="1" {% if request.query_params.get('all') %}checked{% endif %} onchange="this.form.submit()"> Devices without links</label>
+    <label class="chk"><input type="checkbox" name="all" value="1" {% if request.query_params.get('all') %}checked{% endif %} onchange="this.form.submit()"> Other devices without links</label>
     {% if focus %}<input type="hidden" name="focus" value="{{ focus }}">{% endif %}
   </form></div>
 <div class="p" style="padding:0;overflow:hidden;position:relative">
   <div class="legend" style="position:absolute;left:14px;top:12px;z-index:2;background:var(--panel);padding:4px 8px;border-radius:6px">
-    <span><i style="background:var(--up)"></i>under 50%</span><span><i style="background:var(--warn)"></i>50–80%</span><span><i style="background:var(--down)"></i>over 80%</span><span><i style="background:var(--off)"></i>no traffic data</span><span><i style="background:repeating-linear-gradient(90deg,var(--mute) 0 4px,transparent 4px 7px)"></i>wireless mesh</span></div>
+    <span><i style="background:var(--up)"></i>under 50%</span><span><i style="background:var(--warn)"></i>50–80%</span><span><i style="background:var(--down)"></i>over 80%</span><span><i style="background:var(--off)"></i>no traffic data</span><span><i style="background:repeating-linear-gradient(90deg,var(--mute) 0 4px,transparent 4px 7px)"></i>wireless mesh</span><span><i style="background:repeating-linear-gradient(90deg,var(--down) 0 4px,transparent 4px 7px)"></i>WAN down</span></div>
   <div class="actions" style="position:absolute;right:12px;top:10px;z-index:2"><button class="btn sm" type="button" id="map-fit">Fit</button><button class="btn sm" type="button" id="map-relayout">Re-arrange</button></div>
   <svg id="netmap" data-src="/ui/map?site={{ site|urlencode }}&external={{ external }}&all={{ request.query_params.get('all', '') }}&hide_aps={{ request.query_params.get('hide_aps', '') }}" data-focus="{{ focus }}" style="display:block;width:100%;height:min(74vh,820px);cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
-  <div id="map-empty" class="empty-state" hidden><h2>No links yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. VisCon1 reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
+  <div id="map-empty" class="empty-state" hidden><h2>Nothing to draw yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. VisCon1 reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
+</div>
+<div class="p" id="manual-links"><div class="ph"><h2>Links drawn by hand</h2></div>
+  <p class="sub">For boxes that send no LLDP and that no integration can place, such as a firewall or a hypervisor on a non-UniFi switch. To send a port to the Internet cloud, open the port and turn on <b>Internet uplink</b>.</p>
+  {% if manual %}<div class="scroll"><table><thead><tr><th>From</th><th>Port</th><th>To</th><th>Port</th><th></th></tr></thead><tbody>
+  {% for n in manual %}<tr><td><a href="/devices/{{ n.device_id }}">{{ n.device.hostname if n.device else n.device_id }}</a></td><td class="mono">{{ n.local_port or '' }}</td>
+    <td>{% if n.remote_device_id %}<a href="/devices/{{ n.remote_device_id }}">{{ n.remote_device.hostname if n.remote_device else n.remote_name }}</a>{% else %}{{ n.remote_name }}{% endif %}</td><td class="mono">{{ n.remote_port or '' }}</td>
+    <td><form class="inline" method="post" action="/map/links/{{ n.id }}/delete"><button class="btn sm" type="submit">Remove</button></form></td></tr>{% endfor %}
+  </tbody></table></div>{% endif %}
+  <form class="filters" method="post" action="/map/links" style="margin-top:10px;flex-wrap:wrap">
+    <select name="a" aria-label="From device" required style="width:auto"><option value="">From device…</option>{% for i, h in devices %}<option value="{{ i }}">{{ h }}</option>{% endfor %}</select>
+    <input name="a_port" placeholder="its port (optional)" aria-label="From port" style="width:150px">
+    <select name="b" aria-label="To device" required style="width:auto"><option value="">To device…</option>{% for i, h in devices %}<option value="{{ i }}">{{ h }}</option>{% endfor %}</select>
+    <input name="b_port" placeholder="its port (optional)" aria-label="To port" style="width:150px">
+    <button class="btn" type="submit">Add link</button>
+  </form>
 </div>
 <script src="/static/map.js?v={{ version }}" defer></script>
 {% endblock %}

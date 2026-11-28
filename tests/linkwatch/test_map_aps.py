@@ -59,5 +59,5 @@ def test_map_shows_access_points_with_mesh_links(logged_in, app):
     assert not links[(ids["lobby-ap"], ids["core-usw"])]["mesh"] and links[(ids["lobby-ap"], ids["core-usw"])]["b_port"] == "port 5"
     assert links[(ids["yard-ap"], ids["lobby-ap"])]["mesh"]
     m = logged_in.get("/ui/map?hide_aps=1").json()
-    assert m["nodes"] == [] and m["links"] == []
+    assert [n["name"] for n in m["nodes"]] == ["core-usw"] and m["links"] == []     # switches draw even with no links
     assert "Hide access points" in logged_in.get("/map").text

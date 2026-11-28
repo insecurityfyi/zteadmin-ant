@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from . import events
+from .app import flash
 from .models import Device, Event, Neighbor, Port, Sensor
-from .web import render, st
+from .topology import build_map, norm_port, set_wan_port, wan_port_ids
+from .web import _who, render, st
 
 router = APIRouter(include_in_schema=False)
 PAGE = 200
@@ -69,7 +72,8 @@ def port_page(request: Request, port_id: int):
             raise HTTPException(404, "No such port")
         events = s.scalars(select(Event).where(Event.port_id == p.id).order_by(Event.id.desc()).limit(50)).all()
         siblings = s.scalars(select(Port).where(Port.device_id == p.device_id).order_by(Port.ifindex)).all()
-    return render(request, "port.html", {"p": p, "d": p.device, "events": events, "siblings": siblings})
+        is_wan = p.id in wan_port_ids(s)
+    return render(request, "port.html", {"p": p, "d": p.device, "events": events, "siblings": siblings, "is_wan": is_wan})
 
 
 @router.get("/health", response_class=HTMLResponse)
@@ -132,58 +136,71 @@ def network_map(request: Request, site: str = "", focus: str = "", external: str
         from .models import Site
         sites = sorted(s.scalars(select(Site.name)))
         links = s.scalar(select(func.count(Neighbor.id))) or 0
-    return render(request, "map.html", {"sites": sites, "site": site, "focus": focus, "external": external, "link_count": links})
-
-
-def _clients(d: Device) -> int | None:
-    ex = d.extra or {}
-    v = ex.get("clients", (ex.get("api") or {}).get("clients"))
-    try:
-        return int(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
+        manual = s.scalars(select(Neighbor).options(selectinload(Neighbor.device), selectinload(Neighbor.remote_device))
+                           .where(Neighbor.protocol == "manual").order_by(Neighbor.id)).all()
+        devices = s.execute(select(Device.id, Device.hostname).where(Device.disabled.is_(False))
+                            .where(Device.type.not_in(("VM", "Container"))).order_by(func.lower(Device.hostname))).all()
+    return render(request, "map.html", {"sites": sites, "site": site, "focus": focus, "external": external, "link_count": links,
+                                        "manual": manual, "devices": devices})
 
 
 @router.get("/ui/map", include_in_schema=False)
 def map_data(request: Request, site: str = "", external: str = "", all: str = "", hide_aps: str = ""):
-    """Nodes and links for the network map. Links come from LLDP/CDP neighbours and integration uplinks.
+    """Nodes and links for the network map (see topology.py): duplicates grouped into one node, links from LLDP/CDP,
+    integration uplinks, UniFi switch ports and links drawn by hand, and an Internet cloud for gateways' WAN uplinks.
 
     Wireless access points are always drawn (on their uplink when it is known) unless ``hide_aps`` is set.
     """
     with st(request).db.session() as s:
-        devs = {d.id: d for d in s.scalars(select(Device).options(selectinload(Device.site)).where(Device.disabled.is_(False)))}
-        if site:
-            devs = {i: d for i, d in devs.items() if d.site and d.site.name == site}
-        if hide_aps:
-            devs = {i: d for i, d in devs.items() if d.type != "Wireless"}
-        rows = s.scalars(select(Neighbor).options(selectinload(Neighbor.port)).where(Neighbor.device_id.in_(list(devs) or [0]))).all()
-        links: dict[tuple, dict] = {}
-        ghosts: dict[str, dict] = {}
-        for n in rows:
-            if n.remote_device_id in devs:
-                b = n.remote_device_id
-            elif external and (n.remote_name or n.remote_chassis):
-                gid = "x:" + (n.remote_name or n.remote_chassis).lower()
-                ghosts.setdefault(gid, {"id": gid, "name": n.remote_name or n.remote_chassis, "status": "external",
-                                        "type": (n.remote_platform or "")[:40], "ip": n.remote_ip})
-                b = gid
-            else:
-                continue
-            a = n.device_id
-            key = tuple(sorted([str(a), str(b)])) + tuple(sorted([str(n.local_port or ""), str(n.remote_port or "")]))
-            p = n.port
-            util = p.util_pct if p is not None else None
-            cur = links.get(key)
-            if cur is None:
-                links[key] = {"source": a, "target": b, "protocol": n.protocol, "a_port": n.local_port, "b_port": n.remote_port,
-                              "mesh": n.protocol.endswith("-mesh"),
-                              "speed": p.speed_mbps if p is not None else None, "util": util,
-                              "bps": max(p.in_bps or 0, p.out_bps or 0) if p is not None else None}
-            elif util is not None and (cur["util"] is None or util > cur["util"]):
-                cur.update(util=util, speed=p.speed_mbps, bps=max(p.in_bps or 0, p.out_bps or 0))
-        linked = {x for k in links.values() for x in (k["source"], k["target"])}
-        nodes = [{"id": d.id, "name": d.hostname, "status": d.status, "type": d.type, "ip": d.ip,
-                  "site": d.site.name if d.site else None, "platform": d.platform, "ap": d.type == "Wireless",
-                  "clients": _clients(d) if d.type == "Wireless" else None}
-                 for d in devs.values() if all or d.id in linked or d.type == "Wireless"]
-    return {"nodes": nodes + list(ghosts.values()), "links": list(links.values())}
+        return build_map(s, site=site, external=bool(external), show_all=bool(all), hide_aps=bool(hide_aps))
+
+
+@router.post("/map/links")
+async def map_link_add(request: Request):
+    """A link drawn by hand, for boxes that send no LLDP and no integration can place (a firewall, a hypervisor)."""
+    form = await request.form()
+    try:
+        a, b = int(form.get("a") or 0), int(form.get("b") or 0)
+    except ValueError:
+        a = b = 0
+    with st(request).db.session() as s:
+        da, db_ = s.get(Device, a), s.get(Device, b)
+        if da is None or db_ is None or a == b:
+            flash(request, "Pick two different devices to link.", "warn")
+            return RedirectResponse("/map#manual-links", status_code=303)
+        a_port = str(form.get("a_port") or "").strip()[:255] or None
+        b_port = str(form.get("b_port") or "").strip()[:255] or None
+        port = next((p for p in da.ports if a_port and norm_port(a_port) in (norm_port(p.name), norm_port(p.alias))), None)
+        s.add(Neighbor(device_id=a, port_id=port.id if port else None, protocol="manual", local_port=a_port,
+                       remote_name=db_.hostname, remote_port=b_port, remote_ip=db_.ip if db_.ip and len(db_.ip) <= 64 else None,
+                       remote_device_id=b))
+        events.log(s, "config", f"Map link to {db_.hostname} added by {_who(request)}", "info", da, username=_who(request))
+    flash(request, f"Linked {da.hostname} to {db_.hostname}.", "ok")
+    return RedirectResponse("/map#manual-links", status_code=303)
+
+
+@router.post("/map/links/{link_id}/delete")
+def map_link_delete(request: Request, link_id: int):
+    with st(request).db.session() as s:
+        n = s.get(Neighbor, link_id)
+        if n is None or n.protocol != "manual":
+            raise HTTPException(404)
+        events.log(s, "config", f"Map link to {n.remote_name} removed by {_who(request)}", "info", n.device_id, username=_who(request))
+        s.delete(n)
+    flash(request, "Link removed.", "ok")
+    return RedirectResponse("/map#manual-links", status_code=303)
+
+
+@router.post("/ports/{port_id}/wan")
+def port_wan_toggle(request: Request, port_id: int):
+    """Mark a port as an Internet uplink: the map draws it to the Internet cloud with its speed and traffic."""
+    with st(request).db.session() as s:
+        p = s.get(Port, port_id)
+        if p is None:
+            raise HTTPException(404)
+        on = p.id not in wan_port_ids(s)
+        set_wan_port(s, p.id, on)
+        events.log(s, "config", f"Port {p.name}: Internet uplink on the map turned {'on' if on else 'off'} by {_who(request)}",
+                   "info", p.device_id, p, username=_who(request))
+    nxt = str(request.query_params.get("next") or "")
+    return RedirectResponse(nxt if nxt.startswith("/") and not nxt.startswith("//") else f"/ports/{port_id}", status_code=303)
