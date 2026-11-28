@@ -335,3 +335,10 @@ pre.cmd{background:var(--rail);color:#d6e3ea;border-radius:8px;padding:12px 14px
 .copyright{margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line);color:var(--mute);font-size:12px;text-align:center}
 .login .copyright{border-top:0;padding-top:4px}
 body > .copyright{margin:0;padding:4px 12px;font-size:11px;flex:none}
+/* Install app (pwa.js shows it when this browser can install VisCon1 and it isn't installed yet) */
+[data-install-app][hidden]{display:none!important}
+.topbar .install-chip,[data-layout=sidebar] .topbar .search .install-chip{border-color:var(--accent);color:var(--accent);cursor:pointer}
+.topbar .install-chip:hover,[data-layout=sidebar] .topbar .search .install-chip:hover{background:var(--accent);color:var(--onAccent)}
+@media (max-width:760px){.topbar .search{min-width:0;flex:1 1 auto}.topbar .search form{flex:1 1 auto;min-width:0}.topbar .search input[type=search]{width:100%;min-width:60px}}
+.install-steps{margin:10px 0 14px;padding-left:20px;line-height:1.7}
+.install-steps svg{vertical-align:-3px}

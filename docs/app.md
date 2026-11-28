@@ -11,8 +11,9 @@ installs it from the portal itself, and it updates whenever the server does.
 | Android | Chrome or Edge offers **Install app**; otherwise menu › **Add to Home screen**. |
 | Windows, macOS, Linux, ChromeOS | Chrome or Edge: the install icon at the right of the address bar, or menu › **Install VisCon1**. Safari on macOS: **File › Add to Dock**. |
 
-**Your account › App and alert notifications** shows an **Install VisCon1** button where the browser allows it,
-and the steps for the others. The installed app opens in its own window with the VisCon1 icon for the site
+Press **Install app** in the top bar (next to the pollers chip; just a download arrow on a phone) or in your
+user menu. In Chrome, Edge and Android it installs in one step; elsewhere it shows the steps for that browser.
+Both disappear once VisCon1 is installed. The same button is under **Your account › App and alert notifications**. The installed app opens in its own window with the VisCon1 icon for the site
 theme. Long-pressing (or right-clicking) the icon offers shortcuts to the dashboard, open alerts, the network
 map and devices. SSH and remote desktop pop-outs open as their own windows as before.
 
