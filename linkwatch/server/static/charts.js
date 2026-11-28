@@ -57,7 +57,7 @@
     const series = JSON.parse(host.dataset.series);
     const rng = host.dataset.range || "24h";
     try {
-      const r = await fetch(host.dataset.src + "?range=" + encodeURIComponent(rng), { credentials: "same-origin" });
+      const r = await fetch(host.dataset.src + (host.dataset.src.includes("?") ? "&" : "?") + "range=" + encodeURIComponent(rng), { credentials: "same-origin" });
       if (!r.ok) throw new Error(r.status);
       host._data = await r.json();
       draw(host, host._data, series, host.dataset);

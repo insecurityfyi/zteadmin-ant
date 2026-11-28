@@ -1,0 +1,4 @@
+# Zscaler Cloud NSS log segments. VisCon1 keeps this under its size cap (120 GB by default),
+# deleting the oldest logs first; see docs/zscaler-cloud-nss.md.
+[Volume]
+VolumeName=linkwatch-nss

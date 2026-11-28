@@ -57,7 +57,7 @@ SECTIONS = {"dashboard": "overview", "eventlog": "overview", "devices": "devices
             "integrations": "integrations", "integration": "integrations", "unifi": "integrations",
             "hypervisors": "hypervisors", "hv": "hypervisors", "nas": "nas",
             "pollers": "admin", "settings": "admin", "admin": "admin", "account": "admin", "oids": "health", "oid": "health",
-            "mib": "health"}
+            "mib": "health", "logs": "logs"}
 
 
 def render(request: Request, name: str, ctx: dict[str, Any] | None = None, status_code: int = 200) -> HTMLResponse:

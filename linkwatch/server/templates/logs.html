@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_logs.html" import ulink, uname, range_pick, rank, storage_note with context %}
+{% from "_iv.html" import legend, meter %}
+{% block title %}User activity{% endblock %}
+{% block content %}
+{% set admin = me and me.role == 'admin' %}
+<div class="head"><div><h1>User activity</h1><p>Web, firewall and DNS logs that Zscaler Internet Access pushes to {{ app_name }} through Cloud NSS feeds: who is using what, and what was blocked.</p></div>
+  <div class="actions">{{ range_pick('/logs', range, ranges) }}<a class="btn" href="/logs/events?range={{ range }}">Search events</a>{% if admin %}<a class="btn" href="/admin/nss">Feeds and storage</a>{% endif %}</div></div>
+{% if info.error %}<div class="flash bad" role="status">Log storage is not writable: {{ info.error }}</div>{% endif %}
+{% if not d.events and not info.newest %}
+<div class="p empty-state"><h2>No Zscaler logs yet</h2>
+  <p>Create a feed token under <b>Feeds and storage</b>, then add a Cloud NSS feed in the ZIA admin portal (Administration › Nanolog Streaming Service › Cloud NSS Feeds) that posts JSON to this server. The step-by-step guide is <code>docs/zscaler-cloud-nss.md</code>.</p>
+  {% if admin %}<p><a class="btn pri" href="/admin/nss">{{ 'Feeds and storage' if has_tokens else 'Create a feed token' }}</a></p>{% endif %}</div>
+{% else %}
+<div class="kpis">
+  <div class="kpi"><span>Events</span><b>{{ d.events|num }}</b><em>{% for f, n in d.feeds %}{{ feeds.get(f, f) }} {{ n|num }}{{ ' · ' if not loop.last }}{% else %}none in this range{% endfor %}</em></div>
+  <div class="kpi"><span>Users</span><b>{{ d.users|num }}</b><em>seen in this range</em></div>
+  <div class="kpi"><span>Apps and categories</span><b>{{ d.apps|num }}</b><em>distinct</em></div>
+  <div class="kpi"><span>Blocked</span><b class="{{ 'bad' if d.blocked }}">{{ d.blocked|num }}</b><em>{{ '%.1f'|format(100 * d.blocked / d.events) if d.events else 0 }}% of events</em></div>
+  <div class="kpi"><span>Traffic</span><b>{{ d.bytes|bytes }}</b><em>{{ d.threats|num }} threat{{ '' if d.threats == 1 else 's' }}</em></div>
+</div>
+<div class="grid" style="margin-top:14px">
+  <div class="p c12"><div class="ph"><h2>Events per hour</h2><span class="sub">all feeds, with blocked</span></div>
+    {{ legend([('Events', 'var(--s1)'), ('Blocked', 'var(--down)')]) }}
+    <div class="fig" data-src="/ui/logs/series" data-range="{{ {'1h': '6h', 'all': '30d'}.get(range, range) }}" data-unit="num" data-h="170" data-label="Events per hour" data-series='[{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)"}]'></div>
+    {{ storage_note(info, dt) }}</div>
+  <div class="p c4"><div class="ph"><h2>Top users</h2><span class="sub">by events</span></div>{{ rank(d.top_users, 1, range) }}</div>
+  <div class="p c4"><div class="ph"><h2>Top users by traffic</h2></div>{{ rank(d.top_users_bytes, 2, range, 'user', 'var(--s2)', 'bytes') }}</div>
+  <div class="p c4"><div class="ph"><h2>Most blocked users</h2></div>{{ rank(d.top_blocked_users, 3, range, 'user', 'var(--down)', empty='Nothing blocked in this range.') }}</div>
+  <div class="p c4"><div class="ph"><h2>Top apps and categories</h2><span class="sub">by events</span></div>{{ rank(d.top_apps, 1, range, 'app') }}</div>
+  <div class="p c4"><div class="ph"><h2>Top apps by traffic</h2></div>{{ rank(d.top_apps_bytes, 2, range, 'app', 'var(--s2)', 'bytes') }}</div>
+  <div class="p c4"><div class="ph"><h2>Most blocked apps</h2></div>{{ rank(d.top_blocked_apps, 3, range, 'app', 'var(--down)', empty='Nothing blocked in this range.') }}</div>
+  <div class="p c8"><div class="ph"><h2>Blocked activity</h2><a class="sub" href="/logs/events?blocked=1&range={{ range }}">all blocked events</a></div>
+    <table><thead><tr><th>User</th><th>App or category</th><th class="n">Blocked</th></tr></thead><tbody>
+    {% for u, a, n in d.blocked_pairs %}<tr><td>{{ ulink(u, range) }}</td><td>{{ a or '–' }}</td><td class="n bad">{{ n|num }}</td></tr>
+    {% else %}<tr><td colspan="3" class="dim">Nothing blocked in this range.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c4"><div class="ph"><h2>Users with threats</h2></div>{{ rank(d.top_threat_users, 4, range, 'user', 'var(--down)', empty='No threats in this range.') }}</div>
+</div>
+{% endif %}
+{% endblock %}

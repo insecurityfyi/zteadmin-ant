@@ -2,7 +2,7 @@
 {% block title %}Administration{% endblock %}
 {% block content %}
 <div class="head"><div><h1>Administration</h1><p>Users and roles, the audit log, and system details. Admins can change anything; read-only users can see everything but change nothing.</p></div>
-  <div class="actions"><a class="btn" href="/admin/sso">Single sign-on</a></div></div>
+  <div class="actions"><a class="btn" href="/admin/sso">Single sign-on</a><a class="btn" href="/admin/nss">Zscaler log feeds</a></div></div>
 <div class="grid">
   <div class="p c8" id="users"><div class="ph"><h2>Users</h2><span class="sub">{{ users|length }} account{{ '' if users|length == 1 else 's' }}</span></div>
     <div class="scroll"><table><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>

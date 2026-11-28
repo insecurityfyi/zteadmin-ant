@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_logs.html" import uname, events_table, storage_note with context %}
+{% block title %}Event search · User activity{% endblock %}
+{% block content %}
+<div class="crumb"><a href="/logs?range={{ range }}">User activity</a> › Event search</div>
+<div class="head"><div><h1>{{ 'Blocked activity' if blocked == '1' else 'Event search' }}</h1><p>Individual Zscaler log records, newest first.{% if u is not none %} User: <b>{{ uname(u) }}</b>.{% endif %}</p></div></div>
+<form method="get" action="/logs/events" class="p filters" style="margin-bottom:14px">
+  {% if u is not none %}<input type="hidden" name="u" value="{{ u }}">{% endif %}
+  <input type="search" name="q" value="{{ q }}" placeholder="Host, app, category, user, IP, threat" aria-label="Search" style="min-width:260px">
+  <select name="feed" aria-label="Log type"><option value="">All logs</option>{% for k, v in feeds.items() %}<option value="{{ k }}" {% if feed == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+  <select name="range" aria-label="Time range">{% for r in ranges %}<option value="{{ r }}" {% if r == range %}selected{% endif %}>{{ 'All stored' if r == 'all' else 'Last ' ~ r }}</option>{% endfor %}</select>
+  <label class="chk"><input type="checkbox" name="blocked" value="1" {% if blocked == '1' %}checked{% endif %}> Blocked only</label>
+  <button class="btn pri" type="submit">Search</button>
+  {% if u is not none %}<a class="btn" href="/logs/events?range={{ range }}{{ '&blocked=1' if blocked == '1' }}">All users</a>{% endif %}
+</form>
+<div class="p">{{ events_table(rows, range, feeds, dt, u is none) }}
+  {% if more %}<div class="pager"><span>Showing the newest {{ rows|length }}.</span><a class="btn" href="/logs/events?{% if u is not none %}u={{ u|urlencode }}&{% endif %}q={{ q|urlencode }}&feed={{ feed }}&blocked={{ blocked }}&range={{ range }}&before={{ more }}">Older</a></div>{% endif %}
+  {{ storage_note(info, dt) }}</div>
+{% endblock %}
