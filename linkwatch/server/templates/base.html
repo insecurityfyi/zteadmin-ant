@@ -27,6 +27,7 @@
   'integrations': '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
   'hypervisors': '<rect x="3" y="3" width="18" height="7" rx="1.5"/><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 6.5h4M7 17.5h4M16 6.5h1M16 17.5h1"/>',
   'nas': '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M8 6h.01M8 12h.01M8 18h.01M12 6h4M12 12h4M12 18h4"/>',
+  'logs': '<path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h8M8 18h5"/>',
   'pollers': '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
   'settings': '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 }[name]|safe }}</svg>{% endmacro %}
@@ -98,6 +99,13 @@
       <a href="{{ '/unifi?i=' ~ i.id if i.kind == 'unifi' else '/integrations/' ~ i.id ~ '/overview' }}" {% if cur %}aria-current="page"{% endif %}><span class="dot {{ {'ok':'d-up','partial':'d-warn','error':'d-down'}.get(i.status, 'd-off') if i.enabled else 'd-off' }}"></span>{{ i.name }}</a>
       {% endfor %}{% if nav_integrations %}<hr>{% endif %}
       <a href="/integrations">{{ 'Manage integrations' if nav_integrations else 'Connect an integration' }}</a>
+    </div></details>
+    <details class="menu {{ 'cur' if sec == 'logs' }}"{% if side and sec == 'logs' %} open{% endif %}><summary>{{ ic('logs') }}<span class="lb">Logs</span></summary><div class="dd">
+      <div class="lbl">Zscaler Cloud NSS</div>
+      <a href="/logs" {% if nav == 'logs' and request.url.path == '/logs' %}aria-current="page"{% endif %}>User activity</a>
+      <a href="/logs/events" {% if request.url.path == '/logs/events' %}aria-current="page"{% endif %}>Event search</a>
+      <a href="/logs/events?blocked=1">Blocked activity</a>
+      {% if admin %}<hr><a href="/admin/nss">Feeds and storage</a>{% endif %}
     </div></details>
     {% if side %}<hr class="side-only">
     <a class="m side-only {{ 'cur' if nav == 'pollers' }}" href="/pollers">{{ ic('pollers') }}<span class="lb">Pollers</span></a>

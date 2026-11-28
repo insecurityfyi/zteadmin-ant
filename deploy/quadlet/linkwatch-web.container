@@ -13,6 +13,8 @@ Image=ghcr.io/insecurityfyi/linkwatch:current
 Network=linkwatch.network
 PublishPort=127.0.0.1:8080:8080
 EnvironmentFile=%h/.config/linkwatch/linkwatch.env
+# Zscaler Cloud NSS logs, capped at 120 GB by default (Administration > Zscaler log feeds)
+Volume=linkwatch-nss.volume:/var/lib/linkwatch/nss
 
 [Service]
 Restart=always

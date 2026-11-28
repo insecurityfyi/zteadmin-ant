@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_iv.html" import meter %}
+{% block title %}Zscaler log feeds{% endblock %}
+{% block content %}
+{% set st = info.stats %}
+<div class="crumb"><a href="/admin">Administration</a> › Zscaler log feeds</div>
+<div class="head"><div><h1>Zscaler log feeds and storage</h1><p>Zscaler Internet Access pushes web, firewall and DNS logs here through Cloud NSS feeds. Logs are kept until the size cap is reached; after that the oldest are removed to make room.</p></div>
+  <div class="actions"><a class="btn" href="/logs">User activity</a></div></div>
+{% if info.error %}<div class="flash bad" role="status">{{ info.error }}. Set <code>LW_NSS_DIR</code> to a writable folder (the container image uses <code>/var/lib/linkwatch/nss</code> on the <code>linkwatch-nss</code> volume).</div>{% endif %}
+<div class="grid">
+  <div class="p c7"><div class="ph"><h2>Feed endpoint</h2></div>
+    <dl class="kv">
+      <dt>API URL</dt><dd class="mono">{{ endpoint }}</dd>
+      <dt>Per log type</dt><dd class="mono" style="font-size:12px">{% for k in ['web', 'fw', 'dns'] %}{{ endpoint }}/{{ k }}<br>{% endfor %}</dd>
+      <dt>HTTP header</dt><dd class="mono">Authorization: Bearer &lt;feed token&gt;</dd>
+      <dt>Feed output type</dt><dd>JSON (newline-separated or JSON array; gzip accepted)</dd></dl>
+    <p class="help" style="margin-bottom:0">The plain URL works for every log type: {{ app_name }} reads the type from the record's <code>sourcetype</code> or its fields. The per-type URLs force it. See <code>docs/zscaler-cloud-nss.md</code> for the ZIA side.</p></div>
+  <div class="p c5"><div class="ph"><h2>Receiving</h2><span class="sub">since the server started</span></div>
+    <dl class="kv"><dt>Records accepted</dt><dd>{{ st.accepted|num }} in {{ st.batches|num }} batch{{ '' if st.batches == 1 else 'es' }}</dd>
+      <dt>By log type</dt><dd>{% for f, n in st.by_feed.most_common() %}{{ feeds.get(f, f) }} {{ n|num }}{{ ', ' if not loop.last }}{% else %}–{% endfor %}</dd>
+      <dt>Last batch</dt><dd>{{ dt(st.last_batch|int).strftime('%d %b %H:%M:%S UTC') if st.last_batch else 'none yet' }}</dd>
+      <dt>Rejected batches</dt><dd class="{{ 'bad' if st.rejected }}">{{ st.rejected|num }}</dd>
+      {% if st.last_error %}<dt>Last problem</dt><dd class="bad">{{ st.last_error }}</dd>{% endif %}</dl></div>
+
+  <div class="p c7" id="tokens"><div class="ph"><h2>Feed tokens</h2><span class="sub">one per Cloud NSS feed is easiest to revoke</span></div>
+    {% if new_token %}<p style="margin-top:0">Copy this token now; it is not shown again. In ZIA, add an HTTP header with key <code>Authorization</code> and this value:</p><div class="secret">Bearer {{ new_token }}</div>{% endif %}
+    <div class="scroll"><table><thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th class="n">Records</th><th></th></tr></thead><tbody>
+    {% for t in tokens %}<tr><td><b>{{ t.name }}</b></td><td class="mono" style="font-size:12px">{{ t.prefix }}…</td><td class="nw dim">{{ t.created_at|ago }}</td>
+      <td class="nw">{{ t.last_used|ago }}{% if t.last_ip %}<div class="dim mono" style="font-size:12px">{{ t.last_ip }}</div>{% endif %}</td><td class="n">{{ (t.events or 0)|num }}</td>
+      <td><form method="post" action="/admin/nss/tokens/{{ t.id }}/delete" onsubmit="return confirm('Delete this token? Feeds using it will stop delivering.')"><button class="btn sm" type="submit">Delete</button></form></td></tr>
+    {% else %}<tr><td colspan="6" class="dim">No tokens yet. Create one for each Cloud NSS feed.</td></tr>{% endfor %}</tbody></table></div>
+    <form method="post" action="/admin/nss/tokens" class="filters" style="margin-top:12px" autocomplete="off">
+      <input type="text" name="name" placeholder="Feed name, e.g. ZIA web logs" aria-label="Token name" maxlength="120" style="min-width:240px">
+      <button class="btn pri" type="submit">Create token</button></form></div>
+
+  <div class="p c5" id="storage"><div class="ph"><h2>Storage</h2></div>
+    <dl class="kv"><dt>Used</dt><dd>{{ meter(info.pct, 95, 100) }} {{ info.used|bytes }} of {{ info.max|bytes }}</dd>
+      <dt>Oldest log</dt><dd>{{ dt(info.oldest).strftime('%d %b %Y %H:%M UTC') if info.oldest else '–' }}</dd>
+      <dt>Newest log</dt><dd>{{ dt(info.newest).strftime('%d %b %Y %H:%M UTC') if info.newest else '–' }}</dd>
+      <dt>Disk free</dt><dd>{{ info.free|bytes if info.free is not none else '–' }}</dd>
+      <dt>Segments</dt><dd>{{ info.segments }} of about {{ info.segment_bytes|bytes }} each</dd>
+      <dt>Folder</dt><dd class="mono" style="font-size:12px">{{ info.dir }}</dd>
+      {% if st.pruned_segments %}<dt>Rolled off</dt><dd>{{ st.pruned_segments }} segment{{ '' if st.pruned_segments == 1 else 's' }}, {{ st.pruned_bytes|bytes }} since start</dd>{% endif %}</dl>
+    <form method="post" action="/admin/nss/storage" class="stack" style="margin-top:14px">
+      <div class="row2"><label class="f">Size cap (GB)<input type="number" name="max_gb" value="{{ max_gb|round(1) }}" min="1" step="any" required><small>Hard limit for all stored logs. When it is reached the oldest logs are deleted.</small></label>
+        <label class="f">Keep free (GB)<input type="number" name="min_free_gb" value="{{ min_free_gb|round(1) }}" min="0" step="any" required><small>Also roll off old logs if the disk's free space falls below this.</small></label></div>
+      <div><button class="btn pri" type="submit">Save storage limits</button></div></form>
+    <details style="margin-top:14px"><summary class="btn" style="display:inline-flex">Delete all stored logs</summary>
+      <form method="post" action="/admin/nss/clear" class="filters" style="margin-top:10px"><input type="text" name="confirm" placeholder="Type DELETE" aria-label="Type DELETE to confirm" required><button class="btn" type="submit">Delete all logs</button></form></details></div>
+</div>
+{% endblock %}

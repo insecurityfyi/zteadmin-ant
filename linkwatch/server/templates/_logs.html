@@ -1,0 +1,24 @@
+{# Shared bits for the Zscaler Cloud NSS pages (logs*.html). #}
+{% macro uname(u) %}{{ u if u else '(no user)' }}{% endmacro %}
+{% macro ulink(u, range) %}<a href="/logs/user?u={{ u|urlencode }}&range={{ range }}">{{ uname(u) }}</a>{% endmacro %}
+{% macro range_pick(path, current, ranges, extra='') %}<div class="ranges">{% for r in ranges %}<a class="fbtn" href="{{ path }}?range={{ r }}{{ extra }}" aria-pressed="{{ 'true' if r == current else 'false' }}" style="text-decoration:none">{{ 'all stored' if r == 'all' else r }}</a>{% endfor %}</div>{% endmacro %}
+{% macro rank(rows, idx, range, kind='user', color='var(--s1)', fmt='num', empty='Nothing yet.') %}
+{% set top = (rows[0][idx] if rows else 0) or 1 %}
+<div class="bars">{% for r in rows %}<div class="bar"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{% if kind == 'user' %}{{ ulink(r[0], range) }}{% else %}<a href="/logs/events?q={{ r[0]|urlencode }}&range={{ range }}">{{ r[0] or '(unknown app)' }}</a>{% endif %}</span>
+  <span class="v">{{ r[idx]|bytes if fmt == 'bytes' else r[idx]|num }}</span><div class="tr"><b style="width:{{ (100 * r[idx] / top)|round(1) }}%;background:{{ color }}"></b></div></div>
+{% else %}<p class="dim" style="margin:0">{{ empty }}</p>{% endfor %}</div>{% endmacro %}
+{% macro act(e) %}{% if e.blocked %}<span class="bad">{{ e.action or 'Blocked' }}</span>{% else %}<span class="dim">{{ e.action or '–' }}</span>{% endif %}{% endmacro %}
+{% macro events_table(rows, range, feeds, dt, show_user=true) %}
+<div class="scroll"><table><thead><tr><th>Time (UTC)</th><th>Log</th>{% if show_user %}<th>User</th>{% endif %}<th>App / category</th><th>Destination</th><th>Action</th><th class="n">Bytes</th><th></th></tr></thead><tbody>
+{% for e in rows %}<tr>
+  <td class="nw mono" style="font-size:12px">{{ dt(e.ts).strftime('%d %b %H:%M:%S') }}</td>
+  <td><span class="tag">{{ feeds.get(e.feed, e.feed) }}</span></td>
+  {% if show_user %}<td class="nw">{{ ulink(e.user, range) }}{% if e.dept %}<div class="dim" style="font-size:12px">{{ e.dept }}</div>{% endif %}</td>{% endif %}
+  <td>{{ e.app or '–' }}{% if e.cat and e.cat != e.app %}<div class="dim" style="font-size:12px">{{ e.cat }}</div>{% endif %}</td>
+  <td class="mono" style="font-size:12px;word-break:break-all;max-width:360px">{{ e.host or e.sip or '–' }}</td>
+  <td class="nw">{{ act(e) }}{% if e.threat %}<div class="bad" style="font-size:12px">{{ e.threat }}</div>{% endif %}</td>
+  <td class="n">{{ e.bytes|bytes if e.bytes else '–' }}</td>
+  <td><a class="btn sm" href="/logs/events/{{ e.seg }}/{{ e.id }}">Details</a></td>
+</tr>{% else %}<tr><td colspan="8" class="dim">No events match.</td></tr>{% endfor %}
+</tbody></table></div>{% endmacro %}
+{% macro storage_note(info, dt) %}<p class="dim" style="font-size:12.5px;margin:8px 0 0">Stored: {{ info.used|bytes }} of the {{ info.max|bytes }} cap ({{ info.pct }}%){% if info.oldest %}, back to {{ dt(info.oldest).strftime('%d %b %Y %H:%M') }} UTC{% endif %}. The oldest logs are removed first once the cap is reached.</p>{% endmacro %}

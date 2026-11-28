@@ -15,6 +15,7 @@ class Config:
     raw_days: int
     hourly_days: int
     background: bool = True    # run sync/rollup loops (off in tests)
+    nss_dir: str = ""          # Zscaler Cloud NSS log segments; empty: next to a SQLite database, else ./data/nss
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -31,4 +32,5 @@ class Config:
             poll_interval=max(60, int(os.environ.get("LW_POLL_INTERVAL", "300"))),
             raw_days=max(1, int(os.environ.get("LW_RAW_DAYS", "7"))),
             hourly_days=max(7, int(os.environ.get("LW_HOURLY_DAYS", "365"))),
+            nss_dir=os.environ.get("LW_NSS_DIR", ""),
         )

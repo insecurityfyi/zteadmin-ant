@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_logs.html" import uname, range_pick, rank, events_table with context %}
+{% from "_iv.html" import legend %}
+{% block title %}{{ uname(u) }} · User activity{% endblock %}
+{% block content %}
+<div class="crumb"><a href="/logs?range={{ range }}">User activity</a> › {{ uname(u) }}</div>
+<div class="head"><div><h1>{{ uname(u) }}</h1><p>{% if recent %}{% set e = recent[0] %}{% if e.dept %}{{ e.dept }} · {% endif %}{% if e.loc %}{{ e.loc }} · {% endif %}last seen {{ dt(e.ts).strftime('%d %b %Y %H:%M') }} UTC{% else %}No events for this user in this range.{% endif %}</p></div>
+  <div class="actions">{{ range_pick('/logs/user', range, ranges, '&u=' ~ (u|urlencode)) }}<a class="btn" href="/logs/events?u={{ u|urlencode }}&range={{ range }}">All events</a></div></div>
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Events</span><b>{{ d.events|num }}</b><em>{% for f, n in d.feeds %}{{ feeds.get(f, f) }} {{ n|num }}{{ ' · ' if not loop.last }}{% else %}–{% endfor %}</em></div>
+  <div class="kpi"><span>Apps and categories</span><b>{{ d.apps|num }}</b><em>distinct</em></div>
+  <div class="kpi"><span>Blocked</span><b class="{{ 'bad' if d.blocked }}">{{ d.blocked|num }}</b><em>{{ '%.1f'|format(100 * d.blocked / d.events) if d.events else 0 }}% of events</em></div>
+  <div class="kpi"><span>Traffic</span><b>{{ d.bytes|bytes }}</b><em>{{ d.threats|num }} threat{{ '' if d.threats == 1 else 's' }}</em></div>
+</div>
+<div class="grid" style="margin-top:14px">
+  <div class="p c12"><div class="ph"><h2>Events per hour</h2></div>
+    {{ legend([('Events', 'var(--s1)'), ('Blocked', 'var(--down)')]) }}
+    <div class="fig" data-src="/ui/logs/series?u={{ u|urlencode }}" data-range="{{ {'1h': '6h', 'all': '30d'}.get(range, range) }}" data-unit="num" data-h="150" data-label="Events per hour" data-series='[{"key":"a","color":"var(--s1)","area":false},{"key":"b","color":"var(--down)"}]'></div></div>
+  <div class="p c4"><div class="ph"><h2>Top apps</h2><span class="sub">by events</span></div>{{ rank(d.top_apps, 1, range, 'app') }}</div>
+  <div class="p c4"><div class="ph"><h2>Top apps by traffic</h2></div>{{ rank(d.top_apps_bytes, 2, range, 'app', 'var(--s2)', 'bytes') }}</div>
+  <div class="p c4"><div class="ph"><h2>Blocked apps</h2></div>{{ rank(d.top_blocked_apps, 3, range, 'app', 'var(--down)', empty='Nothing blocked in this range.') }}</div>
+</div>
+<div class="p" style="margin-top:14px"><div class="ph"><h2>Recently blocked</h2><a class="sub" href="/logs/events?u={{ u|urlencode }}&blocked=1&range={{ range }}">all blocked</a></div>{{ events_table(blocked_events, range, feeds, dt, false) }}</div>
+<div class="p" style="margin-top:14px"><div class="ph"><h2>Recent activity</h2><a class="sub" href="/logs/events?u={{ u|urlencode }}&range={{ range }}">all events</a></div>{{ events_table(recent, range, feeds, dt, false) }}</div>
+{% endblock %}
