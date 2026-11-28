@@ -15,6 +15,9 @@ PublishPort=127.0.0.1:8080:8080
 EnvironmentFile=%h/.config/linkwatch/linkwatch.env
 # Zscaler Cloud NSS logs, capped at 120 GB by default (Administration > Zscaler log feeds)
 Volume=linkwatch-nss.volume:/var/lib/linkwatch/nss
+# The app runs as an unprivileged user and needs no Linux capabilities; this keeps it that way.
+NoNewPrivileges=true
+DropCapability=ALL
 
 [Service]
 Restart=always
