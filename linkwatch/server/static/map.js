@@ -4,7 +4,7 @@
   const el = (t, a, parent) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (parent) parent.append(e); return e; };
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const STATUS = { up: "--up", warn: "--warn", down: "--down", external: "--off", unknown: "--off", off: "--off" };
-  const ICON = { Switch: "S", Router: "R", Firewall: "F", Wireless: "W", Server: "Sv", Hypervisor: "H", Storage: "St", Power: "P", Printer: "Pr", Camera: "C" };
+  const ICON = { Switch: "S", Router: "R", Firewall: "F", Wireless: "W", Server: "Sv", Hypervisor: "H", Storage: "St", NAS: "N", Power: "P", Printer: "Pr", Camera: "C" };
   const fmtBps = v => { const u = ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]; let i = 0; while (v >= 1000 && i < 4) { v /= 1000; i++; } return (v < 10 && i ? v.toFixed(1) : Math.round(v)) + " " + u[i]; };
   const KEY = "lw-map-pos";
 
@@ -15,10 +15,12 @@
     nodes.forEach((n, i) => {
       const s = keep && saved[n.id];
       if (s) { n.x = s[0]; n.y = s[1]; n.fixed = true; }
+      else if (n.internet) { n.x = W / 2; n.y = 50; }
       else { const a = 2 * Math.PI * i / Math.max(1, nodes.length); n.x = W / 2 + Math.cos(a) * W / 3 + Math.random() * 20; n.y = H / 2 + Math.sin(a) * H / 3 + Math.random() * 20; }
       n.vx = 0; n.vy = 0;
     });
-    const L = links.map(l => ({ a: byId.get(l.source), b: byId.get(l.target) })).filter(l => l.a && l.b);
+    // WAN uplinks get a longer spring so the Internet cloud sits clear of its gateway and the labels have room
+    const L = links.map(l => ({ a: byId.get(l.source), b: byId.get(l.target), len: l.protocol === "wan" ? 2.4 : 1 })).filter(l => l.a && l.b);
     const k = Math.sqrt((W * H) / Math.max(1, nodes.length)) * 0.75;
     for (let it = 0; it < iterations; it++) {
       const t = 1 - it / iterations;
@@ -29,8 +31,8 @@
           const f = (k * k) / d2; a.vx += dx * f * 0.05; a.vy += dy * f * 0.05; b.vx -= dx * f * 0.05; b.vy -= dy * f * 0.05;
         }
       }
-      L.forEach(({ a, b }) => {
-        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01, f = (d - k) / d * 0.08;
+      L.forEach(({ a, b, len }) => {
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01, f = (d - k * len) / d * 0.08;
         a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
       });
       nodes.forEach(n => {
@@ -67,18 +69,41 @@
       gl.replaceChildren(); gn.replaceChildren();
       const L = layout(data.nodes, data.links, W, H, keep ? 120 : 400, keep);
       const byId = new Map(data.nodes.map(n => [n.id, n]));
+      // links between the same two nodes (three WANs to the Internet, a LAG) fan out as curves
+      const pairs = new Map();
+      data.links.forEach(l => { const k = [String(l.source), String(l.target)].sort().join("|"); (pairs.get(k) || pairs.set(k, []).get(k)).push(l); });
       const lines = data.links.map(l => {
         const a = byId.get(l.source), b = byId.get(l.target); if (!a || !b) return null;
-        const u = l.util;
-        const color = u == null ? css("--off") : u >= 80 ? css("--down") : u >= 50 ? css("--warn") : css("--up");
+        const sib = pairs.get([String(l.source), String(l.target)].sort().join("|"));
+        const i = sib.indexOf(l), bend = (i - (sib.length - 1) / 2) * 28 * (String(l.source) < String(l.target) ? 1 : -1);
+        const u = l.util, wan = l.protocol === "wan", down = wan && l.up === false;
+        const color = down ? css("--down") : u == null ? css("--off") : u >= 80 ? css("--down") : u >= 50 ? css("--warn") : css("--up");
         const w = l.speed >= 10000 ? 4 : l.speed >= 1000 ? 2.6 : 1.6;
         const g = el("g", {}, gl);
-        const line = el("line", { stroke: l.mesh ? css("--mute") : color, "stroke-width": l.mesh ? 2 : w, "stroke-linecap": "round", opacity: 0.85,
-          "stroke-dasharray": l.mesh ? "6 5" : "" }, g);
-        const hit = el("line", { stroke: "transparent", "stroke-width": 12 }, g);
+        const line = el("path", { fill: "none", stroke: l.mesh ? css("--mute") : color, "stroke-width": l.mesh ? 2 : w, "stroke-linecap": "round", opacity: 0.85,
+          "stroke-dasharray": l.mesh || down ? "6 5" : "" }, g);
+        const hit = el("path", { fill: "none", stroke: "transparent", "stroke-width": 12 }, g);
+        // the label: speed, and for a WAN its name and live throughput
+        let text = l.speed_label || "";
+        if (wan) text = [l.wan, l.speed_label, (l.down_bps != null || l.up_bps != null) ? "↓" + fmtBps(l.down_bps || 0) + " ↑" + fmtBps(l.up_bps || 0) : "", down ? "down" : ""].filter(Boolean).join(" · ");
+        let tag = null;
+        if (text) {
+          tag = el("g", { "pointer-events": "none" }, g);
+          const bg = el("rect", { rx: 4, fill: css("--panel"), opacity: 0.92, stroke: wan ? color : "none", "stroke-width": wan ? 1 : 0 }, tag);
+          const tx = el("text", { "text-anchor": "middle", y: 3.5, "font-size": wan ? 10.5 : 9.5, fill: css(wan ? "--ink" : "--mute"), "font-family": css("--mono") }, tag);
+          tx.textContent = text;
+          tag._bg = bg; tag._tx = tx;
+        }
         const t = el("title", {}, hit);
-        t.textContent = `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${l.mesh ? "Wireless mesh uplink" : (l.protocol || "").toUpperCase()}${l.speed ? ", " + (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : ""}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps ? " (" + fmtBps(l.bps) + ")" : ""}`;
-        return { a, b, line, hit };
+        const speed = l.speed ? (l.speed >= 1000 ? l.speed / 1000 + " Gb/s" : l.speed + " Mb/s") : "speed unknown";
+        const via = { lldp: "LLDP", cdp: "CDP", manual: "drawn by hand", "unifi-port": "seen on a UniFi switch port", wan: "WAN uplink" };
+        const how = (l.sources || [l.protocol]).map(p => via[p] || (p || "").toUpperCase()).join(", ");
+        t.textContent = wan
+          ? `${a.name} ${l.wan || ""} → Internet${l.isp ? " (" + l.isp + ")" : ""}\n${down ? "DOWN · " : ""}${speed}${l.wan_ip ? " · " + l.wan_ip : ""}` +
+            `${l.down_bps != null ? "\n↓ " + fmtBps(l.down_bps) + "  ↑ " + fmtBps(l.up_bps || 0) : ""}${u != null ? " (" + Math.round(u) + "% used)" : ""}` +
+            `${l.latency_ms != null ? "\nlatency " + l.latency_ms + " ms" : ""}${l.loss_pct != null ? ", loss " + l.loss_pct + "%" : ""}`
+          : `${a.name} ${l.a_port || ""} ↔ ${b.name} ${l.b_port || ""}\n${l.mesh ? "Wireless mesh uplink" : how}, ${speed}${u != null ? ", " + Math.round(u) + "% used" : ""}${l.bps != null ? " (" + fmtBps(l.bps) + ")" : ""}`;
+        return { a, b, line, hit, tag, bend };
       }).filter(Boolean);
       const nodes = data.nodes.map(n => {
         const g = el("g", { style: "cursor:pointer" }, gn);
@@ -86,7 +111,10 @@
         const r = el("rect", { x: -15, y: -15, width: 30, height: 30, rx: ext ? 15 : 8, fill: css("--panel"), stroke: css(STATUS[n.status] || "--off"),
           "stroke-width": 2.5, "stroke-dasharray": ext ? "4 3" : "" }, g);
         const col = css(STATUS[n.status] || "--off");
-        if (n.ap) {
+        if (n.internet) {
+          r.setAttribute("opacity", 0);
+          el("path", { d: "M-16,9h31a8,8 0 0 0 0-16a11,11 0 0 0-21-3a8,8 0 0 0-10,6a7,7 0 0 0 0,13z", fill: css("--panel"), stroke: css("--accent") || col, "stroke-width": 2.2 }, g);
+        } else if (n.ap) {
           // an access point: round, with wifi arcs
           r.setAttribute("rx", 15);
           const ap = el("g", { fill: "none", stroke: col, "stroke-width": 1.8, "stroke-linecap": "round" }, g);
@@ -98,17 +126,31 @@
           ic.textContent = ext ? "?" : (ICON[n.type] || "•");
         }
         const lbl = el("text", { "text-anchor": "middle", y: 30, "font-size": 11.5, fill: css("--ink"), "font-family": css("--body") }, g);
+        lbl.setAttribute("y", n.internet ? 26 : 30);
         lbl.textContent = n.name.length > 22 ? n.name.slice(0, 21) + "…" : n.name;
         if (n.ap && n.clients != null) {
           const c = el("text", { "text-anchor": "middle", y: 43, "font-size": 10.5, fill: css("--mute"), "font-family": css("--body") }, g);
           c.textContent = n.clients + (n.clients === 1 ? " client" : " clients");
         }
-        const t = el("title", {}, g); t.textContent = `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}`;
+        const t = el("title", {}, g); t.textContent = n.internet ? "Internet" : `${n.name}\n${n.ap ? "Access point" : (n.type || "")}${n.ip ? " · " + n.ip : ""}${n.site ? " · " + n.site : ""}\n${n.status}${n.ap && n.clients != null ? " · " + n.clients + " clients" : ""}` +
+          (n.merged && n.merged.length ? "\nSeen as: " + n.merged.map(m => m.name + " (" + m.source + ")").join(", ") : "");
         if (String(n.id) === svg.dataset.focus) r.setAttribute("stroke-width", 5);
         return { n, g };
       });
       const place = () => {
-        lines.forEach(({ a, b, line, hit }) => { for (const e of [line, hit]) { e.setAttribute("x1", a.x); e.setAttribute("y1", a.y); e.setAttribute("x2", b.x); e.setAttribute("y2", b.y); } });
+        lines.forEach(({ a, b, line, hit, tag, bend }) => {
+          const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+          const cx = (a.x + b.x) / 2 - dy / len * bend * 2, cy = (a.y + b.y) / 2 + dx / len * bend * 2;
+          const d = `M${a.x},${a.y}Q${cx},${cy} ${b.x},${b.y}`;
+          line.setAttribute("d", d); hit.setAttribute("d", d);
+          if (tag) {
+            const mx = (a.x + 2 * cx + b.x) / 4, my = (a.y + 2 * cy + b.y) / 4;     // the curve's midpoint
+            tag.setAttribute("transform", `translate(${mx},${my})`);
+            if (!tag._w) { try { tag._w = tag._tx.getComputedTextLength(); } catch (e) { tag._w = tag._tx.textContent.length * 6; } }
+            const w = (tag._w || tag._tx.textContent.length * 6) + 8;
+            tag._bg.setAttribute("x", -w / 2); tag._bg.setAttribute("y", -7.5); tag._bg.setAttribute("width", w); tag._bg.setAttribute("height", 14);
+          }
+        });
         nodes.forEach(({ n, g }) => g.setAttribute("transform", `translate(${n.x},${n.y})`));
       };
       place();

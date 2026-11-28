@@ -588,6 +588,9 @@ def merge_into(s: Session, api_dev: Device, local: Device) -> None:
     from .models import Alert, Event
     for model in (DeviceMetric, Alert, Event):
         s.execute(update(model).where(model.device_id == api_dev.id).values(device_id=local.id))
+    # links drawn by hand on the map follow the box; polled ones are rebuilt on the next poll or sync
+    s.execute(update(Neighbor).where(Neighbor.device_id == api_dev.id, Neighbor.protocol == "manual").values(device_id=local.id))
+    s.execute(update(Neighbor).where(Neighbor.remote_device_id == api_dev.id).values(remote_device_id=local.id))
     if not local.site_id:
         local.site_id = api_dev.site_id
     s.delete(api_dev)

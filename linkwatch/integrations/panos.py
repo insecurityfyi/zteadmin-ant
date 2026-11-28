@@ -88,6 +88,14 @@ class PanOS(Integration):
             extra={"sessions": int(sessions) if sessions and sessions.isdigit() else None, "ha_state": ha,
                    "threat_version": g("threat-version"), "app_version": g("app-version")},
         )
+        # every interface address and MAC, so the map can find the firewall in switch tables and LLDP
+        ifs = self.data.get("interfaces") or []
+        ips = sorted({str(i["ip"]).split("/")[0] for i in ifs if re.match(r"^\d{1,3}(\.\d{1,3}){3}", str(i.get("ip") or ""))})
+        macs = sorted({str(i["mac"]).lower() for i in ifs if i.get("mac")})
+        if ips:
+            rec["extra"]["ips"] = ips
+        if macs:
+            rec["extra"]["macs"] = macs
         if ports:
             rec["ports"] = ports
         return [rec]
@@ -137,7 +145,8 @@ class PanOS(Integration):
             for e in ifs.findall("./result/hw/entry"):
                 hw[txt(e, "name")] = {"state": txt(e, "state"), "speed": txt(e, "speed"), "mac": txt(e, "mac"), "id": txt(e, "id")}
             d["interfaces"] = [{"name": txt(e, "name"), "zone": txt(e, "zone"), "ip": txt(e, "ip"), "vsys": txt(e, "vsys"),
-                                "state": hw.get(txt(e, "name").split(".")[0], {}).get("state")}
+                                "state": hw.get(txt(e, "name").split(".")[0], {}).get("state"),
+                                "mac": hw.get(txt(e, "name").split(".")[0], {}).get("mac") or None}
                                for e in ifs.findall("./result/ifnet/entry")]
         ports: list[dict] = []
         if counters is not None:
