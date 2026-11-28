@@ -32,6 +32,7 @@
   document.addEventListener("submit", function (ev) {
     const form = ev.target;
     if (!(form instanceof HTMLFormElement) || !form.dataset.confirm) return;
+    if (ev.submitter && ev.submitter.hasAttribute("formaction")) return;  // e.g. a read-only "Validate" button
     if (form.dataset.confirmed === "1") {
       delete form.dataset.confirmed;
       form.querySelectorAll("button[type=submit]").forEach(function (b) { b.disabled = true; });

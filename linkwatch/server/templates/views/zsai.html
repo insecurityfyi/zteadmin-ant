@@ -1,0 +1,117 @@
+{% from "_iv.html" import yesno, dot, filter_box %}
+{% import "_zai.html" as zai with context %}
+{% set fleet, act, ai, pol = data.fleet or {}, data.activity or {}, data.ai or {}, data.policy or {} %}
+{% set ctl = zs_admin and zs_control %}
+{% set A = zs_actions %}
+{% set E = 'zsai' %}
+{% if zs_admin and not zs_control and tab in ['devices', 'policy'] %}<div class="flash warn" role="status">Control actions are off for this integration, so this page is read-only. To revoke devices, manage enrollment tokens or change policies, tick <i>Allow control actions</i> in <a href="/integrations/{{ integ.id }}">the integration's settings</a> and give the API credential a role that can write (see the <a href="https://github.com/insecurityfyi/zteadmin-ant/blob/main/docs/zscaler-endpoint-ai.md" target="_blank" rel="noopener">Endpoint AI guide</a>).</div>{% endif %}
+{% if ctl %}{{ zai.dialog() }}{% endif %}
+
+{% if tab == 'overview' %}
+{% set summ = act.summary or {} %}
+{% set sev = dict(act.severities or []) %}
+<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+  <div class="kpi"><span>Devices online</span><b>{{ fleet.online|num if fleet.online is not none else '–' }}</b><em>of {{ fleet.total|num if fleet.total is not none else '?' }}{% if fleet.new_this_week %}, {{ fleet.new_this_week }} new this week{% endif %}</em></div>
+  <div class="kpi"><span>AI events, 24 hours</span><b>{{ summ.events|num if summ.events is not none else '–' }}</b><em>{{ summ.active_users|num if summ.active_users is not none else '?' }} users on {{ summ.active_hosts|num if summ.active_hosts is not none else '?' }} devices</em></div>
+  <div class="kpi"><span>High and critical</span><b class="{{ 'bad' if (sev.get('critical', 0) + sev.get('high', 0)) else '' }}">{{ (sev.get('critical', 0) + sev.get('high', 0))|num if act else '–' }}</b><em>{{ sev.get('critical', 0)|num }} critical</em></div>
+  <div class="kpi"><span>AI tools seen, 7 days</span><b>{{ ((ai.mcp_servers or [])|length)|num }}</b><em>MCP servers · {{ (ai.models or [])|length }} local models · {{ (ai.extensions or [])|length }} AI extensions</em></div>
+</div>
+<div class="grid">
+  <div class="p c4"><div class="ph"><h2>Fleet health</h2></div>
+    <table><tbody>{% for k, n in fleet.health or [] %}<tr><td>{{ k|capitalize }}</td><td class="n">{{ n|num }}</td></tr>{% else %}<tr><td class="dim">No devices yet.</td></tr>{% endfor %}</tbody></table>
+    {% if fleet.os %}<h3 style="margin:12px 0 4px">Operating systems</h3><table><tbody>{% for k, n in fleet.os %}<tr><td>{{ k }}</td><td class="n">{{ n|num }}</td></tr>{% endfor %}</tbody></table>{% endif %}</div>
+  <div class="p c4"><div class="ph"><h2>Events by severity</h2><span class="sub">last 24 hours</span></div>
+    <table><tbody>{% for k, n in act.severities or [] %}<tr><td class="{{ 'bad' if k in ['high', 'critical'] else '' }}">{{ k|capitalize }}</td><td class="n">{{ n|num }}</td></tr>{% else %}<tr><td class="dim">Activity isn't available (see above).</td></tr>{% endfor %}</tbody></table>
+    {% if summ.average_risk_score is not none and summ.average_risk_score is defined %}<p class="dim" style="font-size:12.5px;margin:8px 0 0">Average risk score {{ summ.average_risk_score|round(1) }} · {{ summ.sessions|num if summ.sessions is not none else '?' }} sessions</p>{% endif %}</div>
+  <div class="p c4"><div class="ph"><h2>Agent versions</h2></div>
+    <table><tbody>{% for k, n in fleet.agent_version or [] %}<tr><td class="mono" style="font-size:12.5px">{{ k }}</td><td class="n">{{ n|num }}</td></tr>{% else %}<tr><td class="dim">–</td></tr>{% endfor %}</tbody></table>
+    <p class="dim" style="font-size:12.5px;margin:8px 0 0"><a href="{{ data.console }}" target="_blank" rel="noopener">Open the Endpoint AI console</a> · region {{ data.region }}</p></div>
+</div>
+
+{% elif tab == 'devices' %}
+<div class="p"><div class="ph"><h2>Devices</h2><span class="sub">{{ (data.devices or [])|length|num }} enrolled</span>{{ filter_box('zs-devices', 'Host, user, OS, status') }}</div>
+  <div class="scroll" style="max-height:640px;overflow:auto"><table id="zs-devices"><thead><tr><th>Device</th><th>Status</th><th>User</th><th>OS</th><th>Agent</th><th>Last seen</th>{% if ctl %}<th aria-label="Actions"></th>{% endif %}</tr></thead><tbody>
+  {% for d in data.devices or [] %}<tr class="{{ 'dim' if d.status == 'revoked' else '' }}" data-q="{{ [d.hostname, d.status, d.os, d.serial, d.agent_version] |select|join(' ')|lower }} {{ d.users|join(' ')|lower }}">
+    <td><b>{{ d.hostname or d.id }}</b>{% if d.lab %} <span class="tag">lab</span>{% endif %}{% if d.zcc %} <span class="tag" title="Enrolled through Zscaler Client Connector">ZCC</span>{% endif %}<div class="dim mono" style="font-size:11.5px">{{ d.serial or '' }}</div></td>
+    <td class="{{ 'dim' if d.status == 'revoked' else 'okc' }}">{{ d.status or '–' }}</td>
+    <td style="font-size:13px">{{ d.users|join(', ') or '–' }}</td><td style="font-size:13px">{{ d.os or '' }} {{ d.arch or '' }}</td>
+    <td class="mono" style="font-size:12px">{{ d.agent_version or '' }}{% if d.agent_mode %}<div class="dim">{{ d.agent_mode }}</div>{% endif %}</td>
+    <td class="dim nw">{{ (d.last_seen or '')[:16]|replace('T', ' ') }}</td>
+    {% if ctl %}<td class="nw">{% if d.status != 'revoked' %}{% set w = d.hostname or d.id %}
+      {{ zai.form_open(integ.id, A, 'device_bind_user', w, title='Bind a user to ' ~ w, ep=E) }}<input type="hidden" name="device_id" value="{{ d.id }}"><input type="email" name="email" required placeholder="user@example.com" aria-label="User to bind to {{ w }}" style="width:170px;font-size:13px;padding:3px 6px"> <button class="btn sm" type="submit">Bind</button></form>
+      {% for u in d.users %}{{ zai.act(integ.id, A, 'device_unbind_user', {'device_id': d.id, 'email': u}, w ~ ' / ' ~ u, label='Unbind ' ~ u, ep=E) }} {% endfor %}
+      {{ zai.act(integ.id, A, 'device_revoke', {'device_id': d.id}, w, expect=w, label='Revoke', ep=E) }} {% endif %}
+      {{ zai.act(integ.id, A, 'device_delete', {'device_id': d.id}, d.hostname or d.id, expect=d.hostname or d.id, label='Delete', ep=E) }}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="{{ 7 if ctl else 6 }}" class="dim">No devices.</td></tr>{% endfor %}</tbody></table></div>
+  {% if ctl %}<p class="help" style="margin:8px 0 0">Revoking or deleting isn't permanent on its own: a managed agent enrolls again within about an hour while the fleet token it was deployed with is valid. Revoke that token on the Policies & enrollment tab to keep a device out.</p>{% endif %}</div>
+
+{% elif tab == 'activity' %}
+{% for key, title, sub in [('severe', 'High and critical AI events', 'last 24 hours, newest first'), ('blocked', 'Blocked by policy', 'last 24 hours, newest first')] %}
+<div class="p"><div class="ph"><h2>{{ title }}</h2><span class="sub">{{ sub }}</span></div>
+  <div class="scroll" style="max-height:520px;overflow:auto"><table><thead><tr><th>When</th><th>User</th><th>Device</th><th>Tool</th><th>Event</th><th>Severity</th><th>Verdict</th><th>Patterns</th></tr></thead><tbody>
+  {% for e in act.get(key) or [] %}<tr><td class="dim nw">{{ (e.at or '')[:16]|replace('T', ' ') }}</td><td style="font-size:13px">{{ e.user or '–' }}</td><td style="font-size:13px">{{ e.host or '' }}</td>
+    <td style="font-size:13px">{{ e.tool or e.source or '' }}</td><td style="font-size:13px">{{ (e.type or e.category or '')|replace('_', ' ') }}</td>
+    <td class="{{ 'bad' if e.severity in ['high', 'critical'] else '' }}">{{ e.severity or '–' }}</td><td>{{ e.verdict or '–' }}</td><td class="dim" style="font-size:12px">{{ e.patterns|join(', ') }}</td></tr>
+  {% else %}<tr><td colspan="8" class="dim">None in the last 24 hours.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endfor %}
+<p class="dim" style="font-size:12.5px">Events reach the API 15 to 20 minutes after they happen, and an offline device sends its events when it next connects. Prompts and other captured content stay in the Endpoint AI console.</p>
+
+{% elif tab == 'ai' %}
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>MCP servers</h2><span class="sub">configured in AI assistants, 7 days</span>{{ filter_box('zs-mcp', 'Name, risk, transport') }}</div>
+    <div class="scroll" style="max-height:460px;overflow:auto"><table id="zs-mcp"><thead><tr><th>Server</th><th>Risk</th><th class="n">Findings</th><th class="n">Users</th><th>Transport</th></tr></thead><tbody>
+    {% for m in ai.mcp_servers or [] %}<tr data-q="{{ [m.name, m.risk, m.transport, m.endpoint]|select|join(' ')|lower }}"><td><b>{{ m.name }}</b><div class="dim mono" style="font-size:11.5px;overflow-wrap:anywhere">{{ (m.endpoint or '')[:80] }}</div></td>
+      <td class="{{ 'bad' if (m.risk or '')|lower in ['high', 'critical', 'malicious'] else ('wa' if (m.risk or '')|lower in ['medium', 'suspicious'] else '') }}">{{ m.risk or '–' }}</td><td class="n">{{ m.findings }}</td><td class="n">{{ m.users }}</td><td>{{ m.transport or '' }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">{{ 'None seen.' if ai.mcp_servers is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c6"><div class="ph"><h2>AI assistants</h2><span class="sub">agent frameworks by user and device</span></div>
+    {% if ai.frameworks %}<p style="font-size:13px;margin:0 0 8px">{% for f, n in ai.frameworks %}<span class="tag">{{ f }} {{ n }}</span> {% endfor %}</p>{% endif %}
+    <div class="scroll" style="max-height:420px;overflow:auto"><table><thead><tr><th>Framework</th><th>User</th><th>Device</th><th class="n">MCP</th><th class="n">Skills</th><th>Suspicious</th></tr></thead><tbody>
+    {% for a in ai.assistants or [] %}<tr><td>{{ a.framework }}{% if a.running %} <span class="tag">running</span>{% endif %}</td><td style="font-size:13px">{{ a.user or '–' }}</td><td style="font-size:13px">{{ a.host or '' }}{% if a.environment and a.environment != 'host' %} <span class="dim">({{ a.environment }})</span>{% endif %}</td><td class="n">{{ a.mcp }}</td><td class="n">{{ a.skills }}</td><td class="{{ 'bad' if a.suspicious else 'dim' }}">{{ a.suspicious or '–' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="dim">{{ 'None seen.' if ai.assistants is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c6"><div class="ph"><h2>Local AI models</h2><span class="sub">by users</span></div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table><thead><tr><th>Model</th><th>Platform</th><th>Vendor</th><th class="n">Size</th><th class="n">Users</th></tr></thead><tbody>
+    {% for m in ai.models or [] %}<tr><td><b>{{ m.name }}</b>{% if m.license %}<div class="dim" style="font-size:11.5px">{{ m.license }}</div>{% endif %}</td><td>{{ m.platform or '' }}</td><td style="font-size:13px">{{ m.vendor or '' }}{% if m.country %} <span class="dim">({{ m.country }})</span>{% endif %}</td><td class="n">{{ m.size|bytes if m.size else '' }}</td><td class="n">{{ m.users }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">{{ 'None seen.' if ai.models is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="p c6"><div class="ph"><h2>AI browser extensions</h2><span class="sub">by users</span></div>
+    <div class="scroll" style="max-height:420px;overflow:auto"><table><thead><tr><th>Extension</th><th>Risk</th><th class="n">Users</th><th class="n">Devices</th><th>Browsers</th></tr></thead><tbody>
+    {% for e in ai.extensions or [] %}<tr><td><b>{{ e.name }}</b><div class="dim mono" style="font-size:11px">{{ e.id }}</div></td>{% set rk = e.risk if e.risk is number else 0 %}<td class="{{ 'bad' if rk >= 7 else ('wa' if rk >= 4 else '') }}">{{ e.risk if e.risk is not none else '–' }}</td><td class="n">{{ e.users }}</td><td class="n">{{ e.devices }}</td><td style="font-size:12.5px">{{ e.browsers|join(', ') }}</td></tr>
+    {% else %}<tr><td colspan="5" class="dim">{{ 'None seen.' if ai.extensions is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+{% elif tab == 'policy' %}
+<div class="p"><div class="ph"><h2>Policies</h2><span class="sub">in priority order</span>{% if ctl %}<a class="btn sm pri" style="margin-left:auto" href="/integrations/{{ integ.id }}/zsai/policy/new">New policy</a>{% endif %}</div>
+  <div class="scroll"><table><thead><tr><th class="n">Priority</th><th>Policy</th><th>Platforms</th><th class="n">Rules</th><th>Changed</th>{% if ctl %}<th aria-label="Actions"></th>{% endif %}</tr></thead><tbody>
+  {% for p in pol.policies or [] %}<tr class="{{ '' if p.enabled else 'dim' }}"><td class="n">{{ p.priority }}</td><td><a href="/integrations/{{ integ.id }}/zsai/policy/{{ p.id }}"><b>{{ p.name }}</b></a>{% if not p.enabled %} <span class="tag">disabled</span>{% endif %}</td>
+    <td style="font-size:13px">{{ p.os|join(', ') or 'all' }}</td><td class="n">{{ p.rules if p.rules is not none else '' }}</td><td class="dim" style="font-size:12.5px">{{ (p.updated or '')[:10] }} {{ p.updated_by or '' }}</td>
+    {% if ctl %}<td class="nw">{{ zai.act(integ.id, A, 'policy_disable' if p.enabled else 'policy_enable', {'policy_id': p.id}, p.name, label='Disable' if p.enabled else 'Enable', ep=E) }} {{ zai.act(integ.id, A, 'policy_delete', {'policy_id': p.id}, p.name, expect=p.name, label='Delete', ep=E) }}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="{{ 6 if ctl else 5 }}" class="dim">{{ 'No policies.' if pol.policies is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="grid">
+  <div class="p c6"><div class="ph"><h2>Setting profiles</h2><span class="sub">highest priority first</span></div>
+    <table><tbody>{% for p in pol.profiles or [] %}<tr class="{{ '' if p.enabled or p.default else 'dim' }}"><td>{% if p.default %}<b>{{ p.name }}</b> <span class="tag">default</span>{% else %}<a href="/integrations/{{ integ.id }}/zsai/profile/{{ p.id }}"><b>{{ p.name }}</b></a>{% if not p.enabled %} <span class="tag">disabled</span>{% endif %}{% endif %}<div class="dim" style="font-size:12px">{{ p.os|join(', ') or 'all platforms' }} · version {{ p.version }}</div></td>
+      {% if ctl and not p.default %}<td class="nw" style="text-align:right">{{ zai.act(integ.id, A, 'profile_disable' if p.enabled else 'profile_enable', {'profile_id': p.id}, p.name, label='Disable' if p.enabled else 'Enable', ep=E) }}</td>{% endif %}</tr>
+    {% else %}<tr><td class="dim">{{ 'None.' if pol.profiles is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="p c6"><div class="ph"><h2>Managed users</h2><span class="sub">sign in with a login ID and password</span></div>
+    <table><tbody>{% for u in pol.users or [] %}<tr class="{{ 'dim' if u.disabled else '' }}"><td>{{ u.login }}{% if u.disabled %} <span class="tag">sign-in off</span>{% endif %}<div class="dim" style="font-size:12px">{{ u.email or '' }}</div></td>
+      {% if ctl %}<td class="nw" style="text-align:right">{{ zai.act(integ.id, A, 'user_enable' if u.disabled else 'user_disable', {'user_id': u.id}, u.login, label='Turn sign-in on' if u.disabled else 'Turn sign-in off', ep=E) }}</td>{% endif %}</tr>
+    {% else %}<tr><td class="dim">{{ 'None.' if pol.users is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="p"><div class="ph"><h2>Enrollment tokens</h2><span class="sub">newest first, secrets hidden</span></div>
+  {% if ctl %}{{ zai.form_open(integ.id, A, 'token_create', 'new enrollment token', ep=E) }}<div class="hv-forms" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:12px">
+    <label style="flex:1 1 200px">Label<input type="text" name="label" required maxlength="200"></label>
+    <label style="width:140px">Lifetime (hours)<input type="number" name="ttl_hours" min="1" max="17280" value="168"></label>
+    <label style="width:120px">Max uses<input type="number" name="max_uses" min="1" placeholder="no limit"></label>
+    <label style="flex:1 1 200px">For one user (optional)<input type="email" name="email" placeholder="user@example.com"></label>
+    <button class="btn pri" type="submit">Create token</button></div></form>{% endif %}
+  <div class="scroll"><table><thead><tr><th>Token</th><th>Type</th><th>Status</th><th class="n">Uses</th><th>Expires</th><th>Created by</th>{% if ctl %}<th aria-label="Actions"></th>{% endif %}</tr></thead><tbody>
+  {% for t in pol.tokens or [] %}<tr class="{{ '' if t.status == 'active' else 'dim' }}"><td><b>{{ t.label or t.id }}</b> <span class="dim mono" style="font-size:12px">{{ t.preview or '' }}</span>{% if t.user %}<div class="dim" style="font-size:12px">for {{ t.user }}</div>{% endif %}</td>
+    <td>{{ t.type or '' }}</td><td class="{{ 'okc' if t.status == 'active' else '' }}">{{ t.status or '' }}</td><td class="n">{{ t.uses or 0 }}{% if t.max_uses %} / {{ t.max_uses }}{% endif %}</td><td class="dim nw">{{ (t.expires or '')[:10] }}</td><td class="dim" style="font-size:12.5px">{{ t.created_by or '' }}</td>
+    {% if ctl %}<td class="nw">{% if t.status != 'revoked' %}{{ zai.form_open(integ.id, A, 'token_extend', t.label or t.id, title='Extend token ' ~ (t.label or t.id), ep=E) }}<input type="hidden" name="token_id" value="{{ t.id }}"><input type="number" name="days" min="1" max="720" value="30" aria-label="Days to add to {{ t.label }}" style="width:70px;font-size:13px;padding:3px 6px"> <button class="btn sm" type="submit">Extend</button></form>
+      {{ zai.act(integ.id, A, 'token_revoke', {'token_id': t.id}, t.label or t.id, expect=t.label or t.id, label='Revoke', ep=E) }}{% endif %}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="{{ 7 if ctl else 6 }}" class="dim">{{ 'No tokens.' if pol.tokens is not none else "Couldn't be read (see above)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% elif tab == 'audit' %}
+<div class="p"><div class="ph"><h2>Endpoint AI audit log</h2><span class="sub">latest 100 entries, from the console</span>{{ filter_box('zs-audit', 'Actor, action') }}</div>
+  <div class="scroll" style="max-height:640px;overflow:auto"><table id="zs-audit"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead><tbody>
+  {% for a in data.audit or [] %}<tr data-q="{{ [a.actor, a.action, a.details]|select|join(' ')|lower }}"><td class="dim nw">{{ (a.at or '')[:16]|replace('T', ' ') }}</td><td style="font-size:13px">{{ a.actor or '' }}</td><td>{{ a.action }}</td><td class="dim mono" style="font-size:11.5px;overflow-wrap:anywhere">{{ a.details }}</td></tr>
+  {% else %}<tr><td colspan="4" class="dim">No entries.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}

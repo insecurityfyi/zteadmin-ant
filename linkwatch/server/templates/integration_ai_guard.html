@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_zai.html" as zai with context %}
+{% block title %}{{ ('New ' ~ label|lower) if creating else (obj.name or label) }}{% endblock %}
+{% block content %}
+{% set ctl = is_admin and control %}
+{% set name = obj.name or oid %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="/integrations/{{ integ.id }}/overview?tab=ai">{{ integ.name }}</a> · AI Guard</div>
+  <h1>{{ ('New ' ~ label|lower) if creating else name }}{% if obj.enabled == false %} <span class="tag">disabled</span>{% endif %}</h1>
+  <p>AI Guard {{ label|lower }}{% if not creating %} · ID {{ oid }}{% endif %}. AI Guard changes take effect straight away.</p></div>
+  {% if ctl and not creating and obj %}<div class="hv-bar">
+    {% if kind == 'rules' and obj.enabled is not none %}{{ zai.act(integ.id, actions, 'guard_disable' if obj.enabled else 'guard_enable', {'kind': kind, 'id': oid}, 'match rule ' ~ name, cls='btn') }}{% endif %}
+    {% if kind == 'app_credentials' %}{{ zai.act(integ.id, actions, 'guard_regenerate', {'kind': kind, 'id': oid}, name, expect=name, cls='btn') }}{% endif %}
+    {{ zai.act(integ.id, actions, 'guard_delete', {'kind': kind, 'id': oid}, name, expect=name, label='Delete', cls='btn danger') }}
+  </div>{% endif %}</div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{{ zai.control_off_note(integ.id, is_admin, control) }}
+{% if ctl %}{{ zai.dialog() }}{% endif %}
+
+{% if ctl and editable and (creating or obj) %}
+<div class="p"><div class="ph"><h2>{{ 'Create' if creating else 'Edit' }} as JSON</h2><span class="sub">the object exactly as AI Guard's API takes it</span></div>
+  {% if creating %}{{ zai.form_open(integ.id, actions, 'guard_create', 'new ' ~ label|lower) }}{% else %}{{ zai.form_open(integ.id, actions, 'guard_update', label|lower ~ ' ' ~ name, title='Save ' ~ label|lower ~ ' ' ~ name) }}<input type="hidden" name="id" value="{{ oid }}">{% endif %}
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <label class="sr" for="guard-json" style="display:block;font-size:13px;margin-bottom:6px">JSON</label>
+  <textarea id="guard-json" name="json" rows="22" spellcheck="false" class="mono" style="font-size:12.5px;line-height:1.45">{{ json_text }}</textarea>
+  <p class="help">Saving replaces the whole object, so keep every field you want to keep. Values shown as •••••• are secrets: leave them as they are to keep them, or type a new value. Fields AI Guard manages itself, such as timestamps, are ignored.{% if kind == 'rules' %} A match rule needs <span class="mono">policyId</span> and, in <span class="mono">matchCriteria.llmApplications</span>, existing application and credential IDs.{% endif %}</p>
+  <div class="actions" style="margin-top:10px"><button class="btn pri" type="submit">{{ 'Create' if creating else 'Save' }}</button><a class="btn" href="/integrations/{{ integ.id }}/overview?tab=ai">Cancel</a></div>
+  </form></div>
+{% elif obj %}
+<div class="p"><div class="ph"><h2>{{ label }}</h2><span class="sub">as AI Guard returns it, secrets hidden</span></div>
+  <pre class="mono" style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:560px;overflow:auto">{{ json_text }}</pre></div>
+{% endif %}
+{% endblock %}

@@ -16,9 +16,10 @@ from .synology import Synology
 from .unifi import UniFi
 from .vyos import VyOS
 from .zscaler import Zscaler
+from .zsai import EndpointAI
 
 REGISTRY: dict[str, type[Integration]] = {
-    cls.kind: cls for cls in (Zscaler, Netskope, Cato, PrismaAccess, Cloudflare, Meraki, PanOS, FortiGate, SonicWall, PfSense, VyOS, UniFi, Proxmox, Synology)
+    cls.kind: cls for cls in (Zscaler, Netskope, Cato, PrismaAccess, Cloudflare, Meraki, PanOS, FortiGate, SonicWall, PfSense, VyOS, UniFi, Proxmox, Synology, EndpointAI)
 }
 
 

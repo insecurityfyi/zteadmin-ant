@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "_zai.html" as zai with context %}
+{% block title %}{{ profile.name or 'Setting profile ' ~ pid }}{% endblock %}
+{% block content %}
+{% set E = 'zsai' %}
+{% set ctl = is_admin and control and not profile.is_default %}
+{% set name = profile.name or pid %}
+{% set home = '/integrations/' ~ integ.id ~ '/overview?tab=policy' %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="{{ home }}">{{ integ.name }}</a> · Setting profiles</div>
+  <h1>{{ name }}{% if profile and not profile.enabled %} <span class="tag">disabled</span>{% endif %}</h1>
+  <p>Endpoint AI Security setting profile · ID {{ pid }}{% if profile.version %} · version {{ profile.version }}{% endif %}. Devices pick changes up on their next configuration check.</p></div>
+  {% if ctl and profile %}<div class="hv-bar">
+    {{ zai.act(integ.id, actions, 'profile_disable' if profile.enabled else 'profile_enable', {'profile_id': pid, 'etag': etag}, 'setting profile ' ~ name, cls='btn', ep=E) }}
+  </div>{% endif %}</div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{% if profile.is_default %}<div class="flash warn" role="status">This is the default setting profile. Change it in the console under Policies &gt; Setting profiles.</div>
+{% elif is_admin and not control %}<div class="flash warn" role="status">Control actions are off for this integration, so this page is read-only. Tick <i>Allow control actions</i> in <a href="/integrations/{{ integ.id }}">the integration's settings</a> to edit setting profiles.</div>{% endif %}
+{% if ctl %}{{ zai.dialog() }}{% endif %}
+{% if ctl and profile %}
+<div class="p"><div class="ph"><h2>Edit as JSON</h2><span class="sub">the fields the API lets you change</span></div>
+  {{ zai.form_open(integ.id, actions, 'profile_update', 'setting profile ' ~ name, title='Save setting profile ' ~ name, ep=E) }}<input type="hidden" name="profile_id" value="{{ pid }}"><input type="hidden" name="etag" value="{{ etag }}">
+  <label class="sr" for="prof-json">Setting profile JSON</label>
+  <textarea id="prof-json" name="json" rows="24" spellcheck="false" class="mono" style="font-size:12.5px;line-height:1.45">{{ json_text }}</textarea>
+  <p class="help">Only <span class="mono">name</span>, <span class="mono">enabled</span>, <span class="mono">priority</span>, <span class="mono">os_platforms</span>, <span class="mono">settings</span> and <span class="mono">change_note</span> are sent. If someone changed the profile since this page loaded, saving is refused, so reload and edit again.</p>
+  <div class="actions" style="margin-top:10px"><button class="btn pri" type="submit">Save</button><a class="btn" href="{{ home }}">Cancel</a></div>
+  </form></div>
+{% elif profile %}
+<div class="p"><div class="ph"><h2>Setting profile</h2><span class="sub">as the API returns it</span></div>
+  <pre class="mono" style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:560px;overflow:auto">{{ json_text }}</pre></div>
+{% endif %}
+{% endblock %}

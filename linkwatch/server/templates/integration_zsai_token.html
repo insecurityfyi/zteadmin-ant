@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}New enrollment token{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="{{ back_to }}">{{ integ.name }}</a> · Enrollment</div>
+  <h1>{{ result.message }}</h1>
+  <p>Use it to enroll devices into Endpoint AI Security{% if result.expires %}. It expires {{ result.expires|string|replace('T', ' ')|truncate(16, True, '') }} UTC{% endif %}.</p></div></div>
+<div class="p">
+  {% if result.secret %}<p>Copy it now: it is shown only once and isn't stored here.</p>
+  <pre class="mono" style="font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:all;padding:10px;border:1px solid var(--line);border-radius:8px">{{ result.secret }}</pre>
+  {% else %}<p>Endpoint AI Security didn't return the token in its answer. Open Enrollment in the console to copy it.</p>{% endif %}
+  <div class="actions" style="margin-top:14px"><a class="btn pri" href="{{ back_to }}">Done</a></div></div>
+{% endblock %}

@@ -1,4 +1,5 @@
 {% from "_iv.html" import chart, legend, meter, yesno, dot, filter_box %}
+{% import "_zai.html" as zai with context %}
 {% set zia, zpa, zdx, zcc, ztb = data.zia or {}, data.zpa or {}, data.zdx or {}, data.zcc or {}, data.ztb or {} %}
 {% set ai = data.ai or {} %}
 {% set products = data.products or {} %}
@@ -112,6 +113,10 @@
 {% set apps, summ, rules = ai.apps or [], ai.summary or {}, ai.rules or [] %}
 {% set ai_bytes = summ.bytes or (apps|sum(attribute='bytes')) %}
 {% set acts = {'allow': ('Allowed', 'okc'), 'caution': ('Caution', 'wa'), 'block': ('Blocked', 'bad'), 'isolate': ('Isolated', 'wa'), 'other': ('Other', 'dim')} %}
+{% set ctl = ai_admin and ai_control %}
+{% set A = ai_actions %}
+{{ zai.control_off_note(integ.id, ai_admin, ai_control) }}
+{% if ctl %}{{ zai.pending_note(integ.id, A, ai.activation) }}{{ zai.dialog() }}{% endif %}
 <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">
   <div class="kpi"><span>AI apps in use</span><b>{{ apps|length if ai.get('apps') is not none else '–' }}</b><em>{% set uns = apps|selectattr('sanctioned', 'equalto', 'unsanctioned')|list|length %}{% if uns %}<span class="wa">{{ uns }} unsanctioned</span>{% elif ai.catalog %}of {{ ai.catalog|length|num }} known to ZIA{% else %}&nbsp;{% endif %}</em></div>
   <div class="kpi"><span>Users of AI apps</span><b>{{ summ.users|num if summ.users else ((apps|map(attribute='users')|max)|num if apps else '–') }}</b><em>{{ 'authenticated users' if summ.users else ('most on one app' if apps else '&nbsp;'|safe) }}</em></div>
@@ -121,14 +126,15 @@
 <p class="dim" style="margin:-4px 0 14px;font-size:13px">Usage covers the {{ (ai.window or {}).days or 7 }} days to {{ (ai.window or {}).end or 'yesterday' }}: Zscaler's Z-Insights data runs a day or two behind. Refreshed {{ (ai.refreshed or '')|replace('T', ' ')|replace('Z', ' UTC') }}, hourly.</p>
 <div class="grid">
   <div class="p c8"><div class="ph"><h2>AI apps in use</h2><span class="sub">from Shadow IT, by data</span>{{ filter_box('ai-apps', 'App, category, policy') }}</div>
-    <div class="scroll" style="max-height:520px;overflow:auto"><table id="ai-apps"><thead><tr><th>App</th><th>Sanctioned</th><th class="n">Risk</th><th class="n">Users</th><th class="n">Uploaded</th><th class="n">Downloaded</th><th>Policy</th><th>Last used</th></tr></thead><tbody>
+    <div class="scroll" style="max-height:520px;overflow:auto"><table id="ai-apps"><thead><tr><th>App</th><th>Sanctioned</th><th class="n">Risk</th><th class="n">Users</th><th class="n">Uploaded</th><th class="n">Downloaded</th><th>Policy</th><th>Last used</th>{% if ctl %}<th aria-label="Actions"></th>{% endif %}</tr></thead><tbody>
     {% for a in apps %}{% set act = acts.get(a.action) if a.action else none %}<tr data-q="{{ [a.name, a.category, a.sanctioned, a.action, a.rule]|select|join(' ')|lower }}"><td><b>{{ a.name }}</b><div class="dim" style="font-size:12px">{{ a.category or '' }}</div></td>
       <td class="{{ 'wa' if a.sanctioned == 'unsanctioned' else ('okc' if a.sanctioned == 'sanctioned' else 'dim') }}">{{ a.sanctioned or '–' }}</td>
       <td class="n {{ 'bad' if (a.risk or 0) >= 4 else '' }}">{{ a.risk if a.risk is not none else '–' }}</td><td class="n">{{ a.users|num }}</td>
       <td class="n">{{ a.up|bytes }}</td><td class="n">{{ a.down|bytes }}</td>
       <td class="nw">{% if act %}<span class="{{ act[1] }}" title="Rule: {{ a.rule }}">{{ act[0] }}</span>{% if a.prompt_capture %} <span class="tag" title="Prompts are captured">prompts</span>{% endif %}{% else %}<span class="dim">no AI rule</span>{% endif %}</td>
-      <td class="dim nw">{{ a.last_access[:10] if a.last_access else '' }}</td></tr>
-    {% else %}<tr><td colspan="8" class="dim">{% if ai.get('apps') is none %}Shadow IT data isn't available (see below).{% else %}No AI apps were seen in this window.{% if ai.categories_seen %} Categories seen: {{ ai.categories_seen[:12]|map('first')|join(', ') }}. Set the AI category in the integration settings if Zscaler names it differently.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      <td class="dim nw">{{ a.last_access[:10] if a.last_access else '' }}</td>
+      {% if ctl %}<td class="nw">{% if a.sanctioned != 'sanctioned' %}{{ zai.act(integ.id, A, 'app_sanction', {'app': a.name}, a.name, label='Sanction') }}{% endif %}{% if a.sanctioned != 'unsanctioned' %}{{ zai.act(integ.id, A, 'app_unsanction', {'app': a.name}, a.name, label='Unsanction') }}{% endif %}</td>{% endif %}</tr>
+    {% else %}<tr><td colspan="{{ 9 if ctl else 8 }}" class="dim">{% if ai.get('apps') is none %}Shadow IT data isn't available (see below).{% else %}No AI apps were seen in this window.{% if ai.categories_seen %} Categories seen: {{ ai.categories_seen[:12]|map('first')|join(', ') }}. Set the AI category in the integration settings if Zscaler names it differently.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
     {% if apps %}<p class="dim" style="font-size:12px;margin:8px 0 0">Policy is the first enabled AI & ML rule that names the app. Rules can be limited to some users, groups or locations, so others may get a different action.</p>{% endif %}</div>
   <div class="p c4"><div class="ph"><h2>AI data and users</h2><span class="sub">7-day totals, as polled</span></div>
     {{ legend([('Data', 'var(--s1)')]) }}
@@ -137,21 +143,33 @@
     {{ chart(integ.id, 'ai:usage', [{"key":"b","color":"var(--s2)","area":false}], 'num', 120, 'AI users') }}
     {% if apps %}<h3 style="margin:14px 0 6px">Top apps by data</h3><div class="bars">{% set top = (apps|map(attribute='bytes')|max) or 1 %}{% for a in apps[:6] %}<div class="bar"><span>{{ a.name }}</span><span class="v">{{ a.bytes|bytes }}</span><div class="tr"><b style="width:{{ (100 * a.bytes / top)|round(1) }}%;background:var(--s1)"></b></div></div>{% endfor %}</div>{% endif %}</div>
 </div>
-<div class="p"><div class="ph"><h2>AI & ML Cloud App Control rules</h2><span class="sub">in rule order</span></div>
-  <div class="scroll"><table><thead><tr><th class="n">#</th><th>Rule</th><th>Action</th><th>Apps</th><th>Applies to</th><th>Prompt capture</th><th>Isolation profile</th></tr></thead><tbody>
-  {% for r in rules %}{% set act = acts.get(r.action, acts.other) %}<tr class="{{ '' if r.enabled else 'dim' }}"><td class="n">{{ r.order }}</td><td><b>{{ r.name }}</b>{% if not r.enabled %} <span class="tag">disabled</span>{% endif %}{% if r.description %}<div class="dim" style="font-size:12px">{{ r.description[:120] }}</div>{% endif %}</td>
+<div class="p"><div class="ph"><h2>AI & ML Cloud App Control rules</h2><span class="sub">in rule order</span>{% if ctl %}<a class="btn sm pri" style="margin-left:auto" href="/integrations/{{ integ.id }}/ai/rule/new">New rule</a>{% endif %}</div>
+  <div class="scroll"><table><thead><tr><th class="n">#</th><th>Rule</th><th>Action</th><th>Apps</th><th>Applies to</th><th>Prompt capture</th><th>Isolation profile</th>{% if ctl %}<th aria-label="Actions"></th>{% endif %}</tr></thead><tbody>
+  {% for r in rules %}{% set act = acts.get(r.action, acts.other) %}<tr class="{{ '' if r.enabled else 'dim' }}"><td class="n">{{ r.order }}</td><td>{% if r.id %}<a href="/integrations/{{ integ.id }}/ai/rule/{{ r.id }}"><b>{{ r.name }}</b></a>{% else %}<b>{{ r.name }}</b>{% endif %}{% if not r.enabled %} <span class="tag">disabled</span>{% endif %}{% if r.description %}<div class="dim" style="font-size:12px">{{ r.description[:120] }}</div>{% endif %}</td>
     <td class="{{ act[1] }}">{{ act[0] }}</td>
     <td style="font-size:13px">{% if r.all_apps %}<span class="dim">all AI apps</span>{% else %}{{ r.apps[:8]|join(', ') }}{% if r.apps|length > 8 %} <span class="dim">+{{ r.apps|length - 8 }} more</span>{% endif %}{% endif %}</td>
     <td class="dim" style="font-size:12.5px">{% for k, v in (r.scope or {}).items() %}{{ k }}: {{ v[:4]|join(', ') }}{% if v|length > 4 %} +{{ v|length - 4 }}{% endif %}{{ '; ' if not loop.last }}{% else %}everyone{% endfor %}{% if r.time_quota or r.size_quota %}<div>quota{% if r.time_quota %} {{ r.time_quota }} min{% endif %}{% if r.size_quota %} {{ r.size_quota }} MB{% endif %}</div>{% endif %}</td>
-    <td>{{ yesno(r.prompt_capture) }}</td><td>{{ r.isolation or '' }}</td></tr>
-  {% else %}<tr><td colspan="7" class="dim">{{ 'No AI & ML rules are configured.' if ai.get('rules') is not none else "The rules couldn't be read (see below)." }}</td></tr>{% endfor %}</tbody></table></div></div>
+    <td>{{ yesno(r.prompt_capture) }}</td><td>{{ r.isolation or '' }}</td>
+    {% if ctl %}<td class="nw">{% if r.id %}{% set w = r.name %}
+      {{ zai.form_open(integ.id, A, 'rule_set_action', w, title='Change the action of rule ' ~ w) }}<input type="hidden" name="rule_id" value="{{ r.id }}"><select name="simple_action" aria-label="New action for {{ r.name }}" style="width:auto;font-size:13px;padding:3px 6px">{% for k in ['allow', 'caution', 'block', 'isolate'] %}<option value="{{ k }}"{% if k == r.action %} selected{% endif %}>{{ k|capitalize }}</option>{% endfor %}</select> <button class="btn sm" type="submit">Set</button></form>
+      {{ zai.act(integ.id, A, 'rule_disable' if r.enabled else 'rule_enable', {'rule_id': r.id}, w, label='Disable' if r.enabled else 'Enable') }}
+      {% if r.has_prompt_capture %}{{ zai.act(integ.id, A, 'rule_prompt_capture', {'rule_id': r.id, 'prompt_capture': '0' if r.prompt_capture else '1'}, w, label='Stop capture' if r.prompt_capture else 'Capture prompts') }}{% endif %}
+      {{ zai.act(integ.id, A, 'rule_delete', {'rule_id': r.id}, w, expect=r.name, label='Delete') }}{% endif %}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="{{ 8 if ctl else 7 }}" class="dim">{{ 'No AI & ML rules are configured.' if ai.get('rules') is not none else "The rules couldn't be read (see below)." }}</td></tr>{% endfor %}</tbody></table></div></div>
 <div class="grid">
   <div class="p c6"><div class="ph"><h2>DLP rules covering AI</h2><span class="sub">rules that name an AI app or AI URL category</span></div>
     <table><thead><tr><th>Rule</th><th>Action</th><th>Covers</th><th>DLP engines</th></tr></thead><tbody>
     {% for r in ai.dlp_rules or [] %}<tr class="{{ '' if r.enabled else 'dim' }}"><td><b>{{ r.name }}</b>{% if not r.enabled %} <span class="tag">disabled</span>{% endif %}</td><td>{{ r.action or '–' }}</td><td style="font-size:13px">{{ (r.categories + r.apps)[:6]|join(', ') }}</td><td class="dim" style="font-size:12.5px">{{ r.engines|join(', ') or '–' }}</td></tr>
     {% else %}<tr><td colspan="4" class="dim">{{ 'No DLP rule names an AI app or AI category.' if ai.get('dlp_rules') is not none else "DLP rules couldn't be read (see below)." }}</td></tr>{% endfor %}</tbody></table></div>
-  <div class="p c6"><div class="ph"><h2>AI Guard</h2><span class="sub">configuration</span></div>
-    {% if ai.aiguard %}<table><tbody>
+  <div class="p c6"><div class="ph"><h2>AI Guard</h2><span class="sub">configuration</span>{% if ai_admin %}<a class="btn sm" style="margin-left:auto" href="/integrations/{{ integ.id }}/ai/scan">Scan text</a>{% endif %}</div>
+    {% set gi = ai.aiguard_items or {} %}
+    {% if gi %}
+      {% for k, label in [('policies', 'Detection policies'), ('rules', 'Policy match rules'), ('applications', 'LLM applications'), ('providers', 'LLM providers'), ('app_credentials', 'Application credentials')] if gi.get(k) is not none %}
+      <h3 style="margin:10px 0 4px;display:flex;align-items:center;gap:8px">{{ label }} <span class="dim" style="font-weight:400">{{ gi[k]|length }}</span>{% if ctl and k != 'app_credentials' %}<a class="btn sm" style="margin-left:auto" href="/integrations/{{ integ.id }}/ai/guard/{{ k }}/new">New</a>{% endif %}</h3>
+      <table><tbody>{% for o in gi[k][:50] %}<tr class="{{ 'dim' if o.enabled == false else '' }}"><td>{% if o.id is not none %}<a href="/integrations/{{ integ.id }}/ai/guard/{{ k }}/{{ o.id }}">{{ o.name }}</a>{% else %}{{ o.name }}{% endif %}{% if o.enabled == false %} <span class="tag">disabled</span>{% endif %}{% if o.type %} <span class="dim" style="font-size:12px">{{ o.type }}</span>{% endif %}</td>
+        {% if ctl and o.id is not none %}<td class="nw" style="text-align:right">{% if k == 'rules' and o.enabled is not none %}{{ zai.act(integ.id, A, 'guard_disable' if o.enabled else 'guard_enable', {'kind': k, 'id': o.id}, 'match rule ' ~ o.name, label='Disable' if o.enabled else 'Enable') }} {% endif %}{{ zai.act(integ.id, A, 'guard_delete', {'kind': k, 'id': o.id}, o.name, expect=o.name, label='Delete') }}</td>{% endif %}</tr>
+      {% else %}<tr><td class="dim">None yet.</td></tr>{% endfor %}</tbody></table>{% endfor %}
+    {% elif ai.aiguard %}<table><tbody>
       {% for k, label in [('policies', 'Detection policies'), ('applications', 'LLM applications'), ('providers', 'LLM providers')] if ai.aiguard.get(k) is not none %}
       <tr><td>{{ label }}</td><td class="n">{{ ai.aiguard[k]|length }}</td><td class="dim" style="font-size:13px">{{ ai.aiguard[k][:6]|join(', ') }}</td></tr>{% endfor %}</tbody></table>
     {% else %}<p class="dim">AI Guard didn't answer. It needs an AI Guard licence and the AI Guard role on the API client.</p>{% endif %}</div>
