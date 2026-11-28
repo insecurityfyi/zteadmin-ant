@@ -360,3 +360,45 @@ def test_outdated_poller_is_explained(logged_in, app):
         ws.send_text(json.dumps({"type": "results", "batch_id": "b2", "items": []}))
         json.loads(ws.receive_text())
     assert "update available" not in logged_in.get("/pollers").text
+
+
+# ------------------------------------------------------------------ CSRF origin check and redirects
+def test_cross_site_post_is_refused(client):
+    r = client.post("/logout", headers={"origin": "https://evil.example"}, follow_redirects=False)
+    assert r.status_code == 403
+    r = client.post("/logout", headers={"referer": "https://evil.example/page"}, follow_redirects=False)
+    assert r.status_code == 403
+    r = client.post("/logout", headers={"origin": "null"}, follow_redirects=False)
+    assert r.status_code == 403
+
+
+def test_same_site_and_headerless_posts_pass(client):
+    r = client.post("/logout", headers={"origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303
+    r = client.post("/logout", follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_public_endpoints_skip_origin_check(client):
+    # machine endpoints (Cloud NSS, pollers) and the SAML ACS, which the identity provider's page posts cross-site
+    r = client.post("/api/nss/ingest", headers={"origin": "https://evil.example"}, content=b"{}")
+    assert r.status_code == 401
+
+
+def test_api_docs_need_sign_in(app):
+    from fastapi.testclient import TestClient
+    with TestClient(app) as c:
+        assert c.get("/api/openapi.json", follow_redirects=False).status_code == 303
+        assert c.get("/api/docs", follow_redirects=False).status_code == 303
+
+
+def test_login_next_refuses_backslash_redirect(client):
+    r = client.post("/login", data={"username": "admin", "password": "pw-for-tests", "next": "/\\evil.example"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+
+
+def test_signed_in_cross_site_write_is_refused(logged_in):
+    r = logged_in.post("/admin/nss/tokens", data={"name": "x"}, headers={"origin": "https://evil.example"},
+                       follow_redirects=False)
+    assert r.status_code == 403

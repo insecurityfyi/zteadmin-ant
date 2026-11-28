@@ -11,6 +11,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import jinja2
 from fastapi import FastAPI, Form, Request
@@ -194,12 +195,29 @@ def create_app(config: Config | None = None) -> FastAPI:
     def client_ip(request: Request) -> str | None:
         return request.headers.get("x-real-ip") or (request.client.host if request.client else None)
 
+    allowed_hosts = {h for h in (urlsplit(config.public_url).netloc.lower(),) if h}
+
+    def same_origin(request: Request) -> bool:
+        """False when the request's Origin (or, without one, Referer) names a different site."""
+        source = request.headers.get("origin") or request.headers.get("referer")
+        if not source:
+            return True
+        if source == "null":
+            return False
+        netloc = urlsplit(source).netloc.lower()
+        return netloc == request.headers.get("host", "").lower() or netloc in allowed_hosts
+
     @app.middleware("http")
     async def require_login(request: Request, call_next):
         path = request.url.path
         request.state.user = None
-        if path.startswith(PUBLIC_PREFIXES) or path in ("/api/docs", "/api/openapi.json"):
+        if path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
+        writing = request.method not in ("GET", "HEAD", "OPTIONS")
+        if writing and not same_origin(request):
+            # CSRF defence in depth on top of the SameSite=Lax cookie: a browser always sends Origin (or at least
+            # Referer) on a cross-site POST, so one naming another site is refused. Non-browser clients send neither.
+            return JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
         uid = request.session.get("uid")
         user = None
         if uid:
@@ -213,7 +231,6 @@ def create_app(config: Config | None = None) -> FastAPI:
                 return JSONResponse({"detail": "Not signed in"}, status_code=401)
             return RedirectResponse(f"/login?next={path}", status_code=303)
         request.state.user = user
-        writing = request.method not in ("GET", "HEAD", "OPTIONS")
         if (path.startswith("/admin") or (writing and not path.startswith(VIEWER_MAY_POST))) and user.role != "admin":
             if path.startswith("/ui/"):
                 return JSONResponse({"detail": "Your account is read-only"}, status_code=403)
@@ -279,7 +296,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             request.session.clear()
             request.session["uid"], request.session["pwv"] = uid, pwv
             failures.pop(ip, None)
-            return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
+            from .sso import safe_next
+            return RedirectResponse(safe_next(next), status_code=303)
         failures[ip].append(now)
         return templates.TemplateResponse(request, "login.html", {**ctx, "error": blocked or "Wrong username or password.",
                                                                    "username": username}, status_code=403 if blocked else 401)
