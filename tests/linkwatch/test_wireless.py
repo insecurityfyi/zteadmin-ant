@@ -174,3 +174,56 @@ def test_alerts_series_page_and_map(logged_in, app):
 def test_wireless_page_without_unifi(logged_in):
     r = logged_in.get("/wireless")
     assert r.status_code == 200 and "No wireless source yet" in r.text
+
+
+# Fields an older poller (before the Wireless dashboard) does not send. The live error was a page built from such a snapshot.
+NEW_CLIENT = ("snr", "bssid", "tx_retries", "tx_packets", "tx_attempts", "roam_count", "idle_s", "retry_pct", "noise")
+NEW_RADIO = ("radio", "name", "self_rx", "self_tx", "interference", "noise", "tx_packets", "tx_retries", "tx_dropped", "rx_dropped")
+
+
+def old_snapshot():
+    _, data, _ = collect()
+    for c in data["clients"]:
+        for k in NEW_CLIENT:
+            c.pop(k, None)
+    for a in data["aps"]:
+        a.pop("uptime_s", None)
+        for r in a["radios"]:
+            for k in NEW_RADIO:
+                r.pop(k, None)
+    for s in data["ssids"]:
+        s.pop("events", None)
+    data.pop("events_ok", None)
+    return data
+
+
+def test_pages_render_from_an_older_poller_snapshot(logged_in, app):
+    from linkwatch.server.alerts import Alerter
+    from linkwatch.server.ingest import ingest_integration
+    from linkwatch.server.models import Integration
+    recs, _, _ = collect()
+    data = old_snapshot()
+    data["aps"][0]["radios"][0].update(channel="6", utilization="72", clients="1")      # strings, as some controllers send
+    data["clients"][0]["signal"] = "-55"
+    with app.state.lw.db.session() as s:
+        integ = Integration(kind="unifi", name="Old poller", config_enc=app.state.lw.vault.seal({"host": "192.168.1.1", "api_key": "k"}))
+        s.add(integ)
+        s.flush()
+        iid = integ.id
+        integ.data = {**copy.deepcopy(data), "ts": "2026-11-28T03:00:00Z"}     # stored by the server before the upgrade
+    for url in ("/wireless", "/wireless?problems=1", f"/unifi/{iid}/clients/cc:00:00:00:00:01", "/ui/map?clients=1"):
+        assert logged_in.get(url).status_code == 200, url
+    with app.state.lw.db.session() as s:      # the new server ingesting the old poller's data
+        ingest_integration(s, Alerter(s), s.get(Integration, iid), {"ok": True, "records": recs, "data": copy.deepcopy(data), "ts": time.time()})
+    page = logged_in.get("/wireless")
+    assert page.status_code == 200 and "this controller does not share its event log" in page.text
+    assert logged_in.get(f"/unifi/{iid}/clients/cc:00:00:00:00:02").status_code == 200
+
+
+def test_bad_wireless_data_does_not_stop_the_sync(app, monkeypatch):
+    from linkwatch.server import wireless as W
+    from linkwatch.server.models import Integration
+    monkeypatch.setattr(W, "series", lambda *a, **k: 1 / 0)
+    iid = _ingest(app)
+    with app.state.lw.db.session() as s:
+        assert s.get(Integration, iid).data["summary"]["clients"] == 3

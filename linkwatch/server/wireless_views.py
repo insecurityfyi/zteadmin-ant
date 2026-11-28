@@ -1,6 +1,7 @@
 """The Wireless dashboard: every Wi-Fi client, radio and SSID with quality figures, filters and history."""
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -25,6 +26,7 @@ def _chan_key(v: Any) -> tuple:
 
 
 def wireless_context(data: dict) -> dict[str, Any]:
+    data = W.normalize(copy.deepcopy(data or {}))
     clients = [c for c in data.get("clients") or [] if not c.get("wired")]
     aps = data.get("aps") or []
     radios = []
@@ -44,8 +46,9 @@ def wireless_context(data: dict) -> dict[str, Any]:
         if r.get("utilization") is not None:
             ch["util"] = max(ch["util"] or 0, r["utilization"])
     channel_bands = [(b, sorted(channels[b].values(), key=lambda c: _chan_key(c["channel"]))) for b in bands if b in channels]
+    w = {**W.summarize(clients, radios, aps, [], _now()), **((data.get("wifi") or {}).get("summary") or {})}
     return {
-        "w": (data.get("wifi") or {}).get("summary") or W.summarize(clients, radios, aps, [], _now()),
+        "data": data, "w": w,
         "wclients": clients, "radios": radios, "wssids": data.get("ssids") or [], "aps": aps,
         "reboots": list(reversed((data.get("wifi") or {}).get("reboots") or []))[:50],
         "f_sites": sorted({x.get("site") for x in clients + radios if x.get("site")}),

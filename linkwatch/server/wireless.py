@@ -47,10 +47,66 @@ def radio_id(ap_mac: str | None, r: dict) -> str:
     return f"{ap_mac}/{r.get('radio') or r.get('band')}"
 
 
+# ---------------------------------------------------------------- normalize
+CLIENT_KEYS = ("snr", "noise", "retry_pct", "roam_count", "tx_retries", "tx_packets", "tx_attempts", "bssid", "idle_s", "proto",
+               "signal", "channel", "band", "ssid", "ap", "ap_mac", "satisfaction", "tx_rate_mbps", "rx_rate_mbps", "uptime_s")
+RADIO_KEYS = ("radio", "name", "band", "channel", "width", "tx_power", "clients", "utilization", "self_rx", "self_tx", "interference",
+              "noise", "tx_packets", "tx_retries", "tx_dropped", "rx_dropped", "satisfaction", "retry_pct", "drops", "avg_signal")
+EVENT_KEYS = ("auth_fail", "assoc_fail", "dhcp_fail", "roam", "connect", "disconnect")
+
+
+def normalize(data: dict) -> dict:
+    """Fill in every field the Wireless pages read, so a snapshot from an older poller (or one UniFi left gaps in)
+    renders instead of failing. Works in place and returns ``data``."""
+    if not isinstance(data, dict):
+        return {}
+    for c in data.get("clients") or []:
+        if c.get("wired"):
+            continue
+        for k in CLIENT_KEYS:
+            c.setdefault(k, None)
+        for k in ("signal", "noise", "snr", "retry_pct", "roam_count", "satisfaction", "tx_rate_mbps", "rx_rate_mbps"):
+            c[k] = _num(c.get(k))
+        if c["snr"] is None and c["signal"] is not None and c["noise"] is not None:
+            c["snr"] = round(c["signal"] - c["noise"], 1)
+        c.setdefault("roamed", False)
+        c.setdefault("sticky", False)
+        c.setdefault("weak_polls", 0)
+        c["flags"] = [f for f in c.get("flags") or flags(c) if f in ("weak", "low_snr", "retries", "sticky")]
+    for a in data.get("aps") or []:
+        a.setdefault("uptime_s", None)
+        a.setdefault("reboots_7d", 0)
+        a["ssids"] = [x for x in a.get("ssids") or [] if x]
+        a["radios"] = [r for r in a.get("radios") or [] if isinstance(r, dict)]
+        for r in a["radios"]:
+            for k in RADIO_KEYS:
+                r.setdefault(k, None)
+            for k in ("tx_power", "utilization", "self_rx", "self_tx", "interference", "noise", "retry_pct", "drops", "avg_signal"):
+                r[k] = _num(r.get(k))
+            r["clients"] = None if _num(r.get("clients")) is None else int(_num(r["clients"]))
+            r.setdefault("congested", (r["utilization"] or 0) >= UTIL_BAD)
+    for x in data.get("ssids") or []:
+        ev = x.get("events") if isinstance(x.get("events"), dict) else {}
+        x["events"] = {k: int(_num(ev.get(k)) or 0) for k in EVENT_KEYS}
+        for k in ("avg_signal", "avg_retry"):
+            x[k] = _num(x.get(k))
+        x["weak"] = int(_num(x.get("weak")) or 0)
+        for k in ("series", "band", "security", "site", "vlan"):
+            x.setdefault(k, None)
+        if not isinstance(x.get("band"), str):
+            x["band"] = None
+        x.setdefault("enabled", True)
+        x.setdefault("guest", False)
+        x["aps"] = [a for a in x.get("aps") or [] if a]
+    data.setdefault("events_ok", False)
+    return data
+
+
 # ---------------------------------------------------------------- enrich
 def enrich(prev: dict | None, data: dict, ts: datetime) -> None:
     """Work out rates and experience figures from two snapshots; writes into ``data`` (and ``data["wifi"]``)."""
     prev = prev if isinstance(prev, dict) else {}
+    normalize(data)
     prev_clients = {c.get("mac"): c for c in prev.get("clients") or [] if c.get("mac") and not c.get("wired")}
     prev_aps = {a.get("mac"): a for a in prev.get("aps") or [] if a.get("mac")}
     prev_radios = {radio_id(a.get("mac"), r): r for a in prev.get("aps") or [] for r in a.get("radios") or []}
