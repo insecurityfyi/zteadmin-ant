@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Scan text with AI Guard{% endblock %}
+{% block content %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="/integrations/{{ integ.id }}/overview?tab=ai">{{ integ.name }}</a> · AI Guard</div>
+  <h1>Scan text with AI Guard</h1>
+  <p>Checks a prompt or a model's answer against your AI Guard policy, the way an app connected to AI Guard would. Use it to test a policy change. AI Guard records each scan as a detection event; the text itself isn't stored here.</p></div></div>
+{% if not has_key %}<div class="flash warn" role="status">Scanning needs an <b>AI Guard API key</b> in <a href="/integrations/{{ integ.id }}">the integration's settings</a>. Zscaler offers AI Guard's detection API with its own key, not through OneAPI.</div>{% endif %}
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{% if scan %}
+<div class="p" role="status" aria-live="polite"><div class="ph"><h2>Result: <span class="{{ 'bad' if (scan.action or '')|upper == 'BLOCK' else ('wa' if (scan.action or '')|upper in ('DETECT', 'REDACT') else 'okc') }}">{{ (scan.action or 'allow')|lower }}</span></h2><span class="sub">{{ scan.length }} characters, {{ 'prompt (in)' if scan.direction == 'IN' else 'response (out)' }}{% if scan.policy %} · policy {{ scan.policy }}{% endif %}{% if scan.severity %} · severity {{ scan.severity|lower }}{% endif %}</span></div>
+  <table><thead><tr><th>Detector</th><th>Triggered</th><th>Action</th><th>Severity</th></tr></thead><tbody>
+  {% for d in scan.detectors %}<tr class="{{ '' if d.triggered else 'dim' }}"><td>{{ d.name|replace('_', ' ') }}</td><td>{{ 'yes' if d.triggered else 'no' }}</td><td>{{ (d.action or '–')|lower }}</td><td>{{ (d.severity or '–')|lower }}{% if d.error %} <span class="bad" style="font-size:12px">{{ d.error }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="dim">AI Guard didn't list any detectors.</td></tr>{% endfor %}</tbody></table>
+  {% if scan.transaction %}<p class="dim" style="font-size:12px;margin:8px 0 0">Transaction {{ scan.transaction }}</p>{% endif %}</div>
+{% endif %}
+<div class="p"><form method="post" action="/integrations/{{ integ.id }}/ai/scan">
+  <label for="scan-text" style="display:block;font-size:13px;margin-bottom:6px">Text to scan</label>
+  <textarea id="scan-text" name="content" rows="8" maxlength="32768" required>{{ content }}</textarea>
+  <div class="hv-forms" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:12px">
+    <label>Direction<select name="direction"><option value="IN"{% if direction != 'OUT' %} selected{% endif %}>Prompt sent to the model (in)</option><option value="OUT"{% if direction == 'OUT' %} selected{% endif %}>Model's answer (out)</option></select></label>
+    <label>Policy<select name="policy_id"><option value="">Whichever policy AI Guard picks for this key</option>{% for p in policies if p.id is not none %}<option value="{{ p.id }}"{% if p.id|string == policy_id|string %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="actions" style="margin-top:14px"><button class="btn pri" type="submit"{% if not has_key %} disabled{% endif %}>Scan</button><a class="btn" href="/integrations/{{ integ.id }}/overview?tab=ai">Back to the AI tab</a></div>
+</form></div>
+{% endblock %}

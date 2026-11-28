@@ -41,6 +41,12 @@ def integration_overview(request: Request, iid: int, tab: str = "overview"):
         ctx.update(tabs=tabs, tab=tab if tab in dict(tabs) else "overview")
         if ctx["tab"] != "overview":
             ctx["devices"] = [d for d in devices if (d.extra or {}).get("product") == ctx["tab"]]
+        if ctx["tab"] == "ai":
+            from ..integrations.zscaler_ai_control import ACTIONS as AI_ACTIONS
+            me = getattr(request.state, "user", None)
+            cfg = st(request).vault.open(integ.config_enc)
+            ctx.update(ai_admin=bool(me and me.role == "admin"), ai_control=bool(cfg.get("allow_control")),
+                       ai_actions=AI_ACTIONS, ai_scan_key=bool(str(cfg.get("aiguard_api_key") or "").strip()))
     elif getattr(ctx["cls"], "sse", False):
         cls = ctx["cls"]
         products = data.get("products") or {}

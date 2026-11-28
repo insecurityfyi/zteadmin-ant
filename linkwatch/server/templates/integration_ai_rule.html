@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_zai.html" as zai with context %}
+{% block title %}{{ 'New AI & ML rule' if creating else (rule.name or 'AI & ML rule') }}{% endblock %}
+{% block content %}
+{% set ctl = is_admin and control %}
+{% set w = rule.name or rid %}
+<div class="head"><div><div class="crumb"><a href="/integrations">Integrations</a> · <a href="/integrations/{{ integ.id }}/overview?tab=ai">{{ integ.name }}</a> · AI & ML rules</div>
+  <h1>{{ 'New AI & ML rule' if creating else rule.name }}{% if not creating %} <span class="tag">{{ 'enabled' if (rule.state or 'ENABLED')|upper != 'DISABLED' else 'disabled' }}</span>{% endif %}</h1>
+  <p>ZIA Cloud App Control, rule type AI & ML{% if not creating %} · ID {{ rid }}{% if rule.lastModifiedBy %} · last changed by {{ rule.lastModifiedBy.name or rule.lastModifiedBy }}{% endif %}{% endif %}. Changes are pending until ZIA changes are activated.</p></div>
+  {% if ctl and not creating %}<div class="hv-bar">
+    {{ zai.act(integ.id, actions, 'rule_disable' if (rule.state or 'ENABLED')|upper != 'DISABLED' else 'rule_enable', {'rule_id': rid}, w, cls='btn') }}
+    {{ zai.act(integ.id, actions, 'zia_activate', {}, 'pending ZIA changes', label='Activate ZIA changes', cls='btn') }}
+    {{ zai.act(integ.id, actions, 'rule_delete', {'rule_id': rid}, w, expect=rule.name, label='Delete', cls='btn danger', back='/integrations/' ~ integ.id ~ '/overview?tab=ai') }}
+  </div>{% endif %}</div>
+{% if error %}<div class="flash bad" role="alert">{{ error }}</div>{% endif %}
+{{ zai.control_off_note(integ.id, is_admin, control) }}
+{% if ctl %}{{ zai.dialog() }}{% endif %}
+
+{% if ctl and (creating or rule) %}
+<div class="p"><div class="ph"><h2>{{ 'Rule settings' if not creating else 'Create the rule' }}</h2><span class="sub">who it applies to (users, groups, locations, time windows) is set in the ZIA admin portal and kept as it is</span></div>
+  {% if creating %}{{ zai.form_open(integ.id, actions, 'rule_create', 'new AI & ML rule') }}{% else %}{{ zai.form_open(integ.id, actions, 'rule_update', w, title='Save rule ' ~ w) }}<input type="hidden" name="rule_id" value="{{ rid }}">{% endif %}
+  <div class="hv-forms" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+    <label>Name<input type="text" name="name" required maxlength="127" value="{{ rule.name or '' }}"></label>
+    <label>Rule order<input type="number" name="order" min="1" max="10000" value="{{ rule.order or 1 }}"></label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:22px"><input type="hidden" name="has_enabled" value="1"><input type="checkbox" name="enabled" style="width:auto"{% if creating or (rule.state or 'ENABLED')|upper != 'DISABLED' %} checked{% endif %}> Enabled</label>
+    {% if creating or 'promptCaptureEnabled' in rule %}<label style="display:flex;align-items:center;gap:8px;margin-top:22px"><input type="hidden" name="has_prompt_capture" value="1"><input type="checkbox" name="prompt_capture" style="width:auto"{% if rule.promptCaptureEnabled %} checked{% endif %}> Capture prompts</label>{% endif %}
+  </div>
+  <label style="display:block;margin-top:12px">Description<textarea name="description" rows="2" maxlength="10240">{{ rule.description or '' }}</textarea></label>
+  <fieldset style="margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:10px 14px"><legend>Action</legend><input type="hidden" name="has_actions" value="1">
+    {% for a in available %}<label style="display:inline-flex;align-items:center;gap:6px;margin:0 16px 6px 0;font-size:14px"><input type="checkbox" name="actions" value="{{ a }}" style="width:auto"{% if a in (rule.actions or []) %} checked{% endif %}>{{ a|replace('_AI_ML', '')|replace('_', ' ')|lower|capitalize }}</label>{% endfor %}
+    <p class="help" style="margin:4px 0 0">Pick one main action (allow, caution, block or isolate); ZIA may offer finer actions such as blocking uploads only. Isolating needs an isolation profile on the rule, set in the ZIA portal.</p></fieldset>
+  <label style="display:block;margin-top:12px">AI apps <span class="dim" style="font-size:12.5px">(none selected means every AI app)</span>
+    <input type="hidden" name="has_applications" value="1">
+    <select name="applications" multiple size="10" style="font-size:14px">{% for a in catalog %}<option value="{{ a }}"{% if a in chosen %} selected{% endif %}>{{ names.get(a) or a }} ({{ a }})</option>{% endfor %}</select></label>
+  {% if not catalog %}<p class="help">ZIA's AI app catalogue isn't available, so apps can't be picked here. The rule will cover every AI app.</p>{% endif %}
+  <div class="actions" style="margin-top:14px"><button class="btn pri" type="submit">{{ 'Create rule' if creating else 'Save rule' }}</button><a class="btn" href="/integrations/{{ integ.id }}/overview?tab=ai">Cancel</a></div>
+  </form></div>
+{% endif %}
+
+{% if rule %}
+<details class="p"{% if not ctl %} open{% endif %}><summary class="sub" style="cursor:pointer">The rule as ZIA returns it</summary>
+  <pre class="mono" style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto">{{ rule_json }}</pre></details>
+{% endif %}
+{% endblock %}

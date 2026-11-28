@@ -1,0 +1,21 @@
+{# Shared pieces for the Zscaler AI control pages. Uses hv.js for the confirmation dialog. #}
+{% macro form_open(iid, actions, name, what='', expect='', title=None, back='') %}{% set a = actions[name] %}<form class="inline" method="post" action="/integrations/{{ iid }}/ai/action"{% if a.confirm %} data-confirm="{{ a.confirm }}" data-expect="{{ expect }}" data-title="{{ title or (a.label ~ (' ' ~ what if what else '')) }}?" data-help="{{ a.help }}"{% endif %}><input type="hidden" name="action" value="{{ name }}"><input type="hidden" name="what" value="{{ what }}"><input type="hidden" name="back" value="{{ back or (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) }}"><input type="hidden" name="confirm" value=""><input type="hidden" name="confirm_text" value="">{% endmacro %}
+
+{# One button that posts one action, with hidden fields from `fields` (a dict). #}
+{% macro act(iid, actions, name, fields, what='', expect='', label=None, cls='btn sm', back='') %}{% set a = actions[name] %}{{ form_open(iid, actions, name, what, expect, None, back) }}{% for k, v in fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}<button class="{{ cls }}{{ ' danger' if a.confirm == 'typed' else '' }}" type="submit"{% if a.help %} title="{{ a.help }}"{% endif %}>{{ label or a.label }}</button></form>{% endmacro %}
+
+{% macro dialog() %}
+<dialog id="hv-confirm" class="hv-dialog" aria-labelledby="hv-confirm-title">
+  <form method="dialog">
+    <h2 id="hv-confirm-title">Are you sure?</h2>
+    <p class="help" id="hv-confirm-help"></p>
+    <div id="hv-confirm-typed" hidden><label for="hv-confirm-input" style="display:block;font-size:13px;margin-bottom:6px">Type <b class="mono" id="hv-confirm-expect"></b> to confirm</label><input type="text" autocomplete="off" spellcheck="false" id="hv-confirm-input" style="width:100%"></div>
+    <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn" value="cancel" type="submit">Cancel</button><button class="btn pri" value="ok" type="submit" id="hv-confirm-ok">Confirm</button></div>
+  </form>
+</dialog>
+<script src="/static/hv.js?v={{ version }}" defer></script>
+{% endmacro %}
+
+{% macro control_off_note(iid, is_admin, control) %}{% if is_admin and not control %}<div class="flash warn" role="status">Control actions are off for this integration, so the AI tab is read-only. To change AI & ML rules, sanction apps or manage AI Guard, tick <i>Allow control actions</i> in <a href="/integrations/{{ iid }}">the integration's settings</a> and give the API client the roles in the <a href="https://github.com/insecurityfyi/zteadmin-ant/blob/main/docs/zscaler-ai.md#control-actions" target="_blank" rel="noopener">Zscaler AI guide</a>.</div>{% endif %}{% endmacro %}
+
+{% macro pending_note(iid, actions, activation) %}{% if activation and activation|upper != 'ACTIVE' %}<div class="flash warn" role="status" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span><b>ZIA has changes waiting to be activated</b> ({{ activation|lower }}). Rule and app changes made here, or by other admins, don't apply until they are.</span>{{ act(iid, actions, 'zia_activate', {}, 'pending ZIA changes', label='Activate now', cls='btn sm pri') }}</div>{% endif %}{% endmacro %}

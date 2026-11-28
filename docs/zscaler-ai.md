@@ -58,6 +58,80 @@ In ZIdentity, the API client needs:
 - Z-Insights (Analytics) access for the usage panels;
 - AI Guard, if you use it.
 
+For control actions it needs more; see the next section.
+
+## Control actions
+
+Admins can change Zscaler's generative AI policy from the AI tab. It is off until you tick
+**Allow control actions** in the integration settings, and it works like the Proxmox and
+Synology pages:
+
+- only admins see the buttons, and the server refuses the request from anyone else;
+- the integration must have **Allow control actions** ticked, checked on every request;
+- every action asks for confirmation, and deleting a rule or AI Guard object, or regenerating
+  a credential, needs its name typed;
+- every action, whether it worked or failed, is written to the audit log (Administration)
+  and the event log, with who did it and what changed. Rule contents, the JSON you save and
+  text you scan are never logged.
+
+### What you can do
+
+| Where | Action | API call |
+|---|---|---|
+| AI & ML rules table | Change the action (allow, caution, block, isolate), enable or disable, turn prompt capture on or off, delete | `GET`, then `PUT` or `DELETE` `/zia/api/v1/webApplicationRules/AI_ML/{id}` |
+| AI & ML rules: **New rule**, or a rule's name | Create or edit a rule: name, order, enabled, actions (including the finer ones ZIA offers, such as blocking uploads), AI apps, prompt capture | `POST /zia/api/v1/webApplicationRules/AI_ML`, `PUT .../{id}`, `POST .../availableActions` |
+| AI apps table | Sanction or unsanction an app | `GET /zia/api/v1/cloudApplications/lite` to find its ID, then `PUT /zia/api/v1/cloudApplications/bulkUpdate` |
+| Banner, rule page | Activate pending ZIA changes | `POST /zia/api/v1/status/activate` |
+| AI Guard panel | Create, edit (as JSON) or delete detection policies, policy match rules, LLM applications and LLM providers; enable or disable match rules | `/aiguard/v1/detections/policies`, `/aiguard/v1/detections/policy-match-rules`, `/aiguard/v1/llm-applications`, `/aiguard/v1/llm-providers` |
+| AI Guard panel | Regenerate or delete an application credential | `POST /aiguard/v1/llm-application-credentials/{id}/regenerate`, `DELETE .../{id}` |
+| AI Guard panel: **Scan text** | Check a prompt or a model's answer against your AI Guard policy | `POST https://api.<cloud>.zseclipse.net/v1/detection/execute-policy` (or `resolve-and-execute-policy`) |
+
+Things to know:
+
+- **ZIA changes are pending until activated**, as in the admin portal. The AI tab shows a
+  banner with an **Activate now** button while ZIA has pending changes. Activating pushes
+  every pending change, including changes other admins made in the portal.
+- Editing a rule keeps everything the page doesn't show: who it applies to (users, groups,
+  departments, locations), time windows, quotas and the isolation profile. Set those in the
+  ZIA admin portal.
+- Isolating needs an isolation profile on the rule. If the rule has none, the page says so
+  instead of sending a change ZIA would refuse.
+- The prompt capture switch only appears when ZIA returns a prompt capture setting for the rule.
+- AI Guard changes take effect straight away; AI Guard has no activation step.
+- AI Guard objects are edited as JSON, exactly as AI Guard's API takes them. Saving replaces
+  the whole object. Secrets, such as a provider's API key, are shown as `••••••`; leave
+  them as they are to keep them.
+- A regenerated credential's new secret is shown once, on its own page. It isn't stored
+  in Linkwatch or written to any log.
+- When Zscaler refuses a change, the page and the audit log show Zscaler's own message,
+  such as a duplicate rule name or a missing role.
+- After each action the AI tab re-reads the rules, AI Guard and activation state, so it
+  reflects the change straight away. Shadow IT usage figures still refresh hourly.
+
+### Roles for control
+
+In ZIdentity, edit the API client and give it:
+
+| For | Role |
+|---|---|
+| Rule changes and app sanctioning | A ZIA admin role with **full** (not view-only) policy access to Cloud App Control and to cloud applications / Shadow IT |
+| Activate now | The same ZIA role must be allowed to activate changes |
+| AI Guard changes | An AI Guard role with write access to policies, match rules, LLM applications, providers and application credentials |
+| Scan text | Not a ZIdentity role: an **AI Guard API key** from the AI Guard portal, pasted into the integration settings, plus the AI Guard cloud (`us1` by default; the `us1` in `api.us1.zseclipse.net`). Zscaler only offers the detection API with its own key, not through OneAPI. |
+
+Keep a read-only API client if you don't want control: the AI tab works without these roles.
+
+### Not yet checked on a live tenant
+
+The control actions follow Zscaler's Python SDK (zscaler-sdk-python 1.11) and haven't been
+tried on a live tenant. In particular:
+
+- the name of ZIA's prompt capture field on AI & ML rules (`promptCaptureEnabled`), which is
+  why the switch only appears when ZIA returns it;
+- the shape of the regenerate-credential answer (the page says so if it can't find the new
+  secret, and you can copy it from the AI Guard portal);
+- the exact ZIdentity role names, which Zscaler words differently in different consoles.
+
 ## Not yet checked on a live tenant
 
 These came from Zscaler's SDKs and haven't been tried against a live tenant:
