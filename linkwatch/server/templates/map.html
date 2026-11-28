@@ -16,6 +16,7 @@
   <svg id="netmap" data-src="/ui/map?site={{ site|urlencode }}&external={{ external }}&all={{ request.query_params.get('all', '') }}&hide_aps={{ request.query_params.get('hide_aps', '') }}" data-focus="{{ focus }}" style="display:block;width:100%;height:min(74vh,820px);cursor:grab;touch-action:none" role="img" aria-label="Network map"></svg>
   <div id="map-empty" class="empty-state" hidden><h2>Nothing to draw yet</h2><p>{% if link_count %}No links for this filter.{% else %}Turn on LLDP (or CDP) on your switches, routers and firewalls. VisCon1 reads neighbours over SNMP on every poll and draws them here; UniFi uplinks appear after the next sync.{% endif %}</p></div>
 </div>
+{% include "_map_layers.html" %}
 <div class="p" id="wan-isps"><div class="ph"><h2>Internet uplinks and ISPs</h2></div>
   <p class="sub">Each WAN is drawn to a circle for its ISP, with its speed and live throughput. Type the ISP for each WAN; WANs with the same name share a circle. Leave it empty to use the ISP found automatically: an IP range under <a href="/settings#isps">Settings</a>, what the gateway reports, or an online lookup of the WAN's public address. To add a WAN that is not listed, open its port and turn on <b>Internet uplink</b>.</p>
   {% if wans %}<form method="post" action="/map/isps"><div class="scroll"><table><thead><tr><th>Gateway</th><th>WAN</th><th>Speed</th><th>Now</th><th>Detected ISP</th><th>ISP on the map</th></tr></thead><tbody>

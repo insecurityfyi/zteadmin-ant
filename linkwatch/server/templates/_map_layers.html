@@ -1,0 +1,24 @@
+{# Layer 3 and Layer 2 (VLAN) maps, drawn by static/layers.js from /ui/map/l3 and /ui/map/l2 (see layers.py) #}
+<div class="p" id="l3-map"><div class="ph"><h2>Layer 3: subnets</h2>
+    <div class="actions"><label class="chk"><input type="checkbox" data-layer-opt="hosts"> Every host</label>
+      <button class="btn sm" type="button" data-layer-fit>Fit</button><button class="btn sm" type="button" data-layer-relayout>Re-arrange</button></div></div>
+  <p class="sub">Each bubble is a subnet, with its VLAN when the interface is a VLAN interface. Routers, firewalls and layer 3 switches connect to every subnet they have an address in, and the link shows that address (the gateway). Monitored boxes whose address is in a subnet hang off it. Other hosts are counted on the bubble unless <b>Every host</b> is on. Addresses come from SNMP (the IP address table) and from pfSense, VyOS, PAN-OS, FortiGate and SonicWall.</p>
+  <div class="layer-wrap" style="position:relative;overflow:hidden;background:#08111c;border:1px solid #1c3247;border-radius:10px">
+    <div class="legend" style="position:absolute;left:12px;top:10px;z-index:2;background:#0d1b2acc;color:#a9bccd;border:1px solid #1c3247;padding:4px 10px;border-radius:8px">
+      <span><i style="background:#4c9bff"></i>gateway address</span><span><i style="background:repeating-linear-gradient(90deg,#56677a 0 4px,transparent 4px 7px)"></i>host in the subnet</span></div>
+    <svg class="layer-map" data-layer="l3" data-src="/ui/map/l3?site={{ site|urlencode }}" style="display:block;width:100%;height:min(66vh,720px);cursor:grab;touch-action:none" role="img" aria-label="Layer 3 map"></svg>
+    <div class="empty-state" data-layer-empty hidden><h2>No subnets found yet</h2><p>Subnets appear once a router, firewall or layer 3 switch reports its interface addresses: over SNMP after the next poll, or from a pfSense, VyOS, PAN-OS, FortiGate or SonicWall integration after its next sync.</p></div>
+  </div>
+</div>
+<div class="p" id="l2-map"><div class="ph"><h2>Layer 2: VLANs</h2>
+    <div class="actions"><label class="chk"><input type="checkbox" data-layer-opt="clients"> Show clients</label>
+      <button class="btn sm" type="button" data-layer-fit>Fit</button><button class="btn sm" type="button" data-layer-relayout>Re-arrange</button></div></div>
+  <p class="sub">Each bubble is a VLAN, labelled with its name and number, with its subnet and SSIDs when known. Switches connect to the VLANs they carry, and the link names the access ports (or <i>tagged</i> for trunks). Routers and firewalls connect to the VLANs they route, access points to the VLANs their clients are on, and monitored hosts to the VLAN their address is on. VLANs come from SNMP (Q-BRIDGE-MIB, or Cisco VTP), from firewall VLAN interfaces, and from UniFi clients and SSIDs.</p>
+  <div class="layer-wrap" style="position:relative;overflow:hidden;background:#08111c;border:1px solid #1c3247;border-radius:10px">
+    <div class="legend" style="position:absolute;left:12px;top:10px;z-index:2;background:#0d1b2acc;color:#a9bccd;border:1px solid #1c3247;padding:4px 10px;border-radius:8px">
+      <span><i style="background:#39e58c"></i>access ports</span><span><i style="background:#ffc23d"></i>tagged (trunk)</span><span><i style="background:#4c9bff"></i>gateway</span><span><i style="background:repeating-linear-gradient(90deg,#56677a 0 4px,transparent 4px 7px)"></i>host or client</span></div>
+    <svg class="layer-map" data-layer="l2" data-src="/ui/map/l2?site={{ site|urlencode }}" style="display:block;width:100%;height:min(66vh,720px);cursor:grab;touch-action:none" role="img" aria-label="Layer 2 VLAN map"></svg>
+    <div class="empty-state" data-layer-empty hidden><h2>No VLANs found yet</h2><p>VLANs appear once a switch reports them over SNMP (Q-BRIDGE-MIB or Cisco VTP) after its next poll, a firewall has VLAN interfaces, or UniFi reports clients on a VLAN.</p></div>
+  </div>
+</div>
+<script src="/static/layers.js?v={{ asset_version }}" defer></script>
